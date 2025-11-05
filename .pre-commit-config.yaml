@@ -1,0 +1,71 @@
+# Pre-commit hooks for playwright-rust
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Standard pre-commit hooks for common issues
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-toml
+        name: Check TOML syntax
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: check-case-conflict
+        name: Check for case conflicts
+      - id: detect-private-key
+        name: Detect private keys
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+
+  # Spell checking
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.26.8
+    hooks:
+      - id: typos
+        name: Check for typos
+
+  # Rust-specific checks (matches CI exactly)
+  - repo: local
+    hooks:
+      # 1. Format check (same as CI: cargo fmt -- --check)
+      - id: cargo-fmt
+        name: cargo fmt
+        description: Check Rust code formatting
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # 2. Clippy (same as CI: cargo clippy -- -D warnings)
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Run clippy linter
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # 3. Cargo check (fast compilation check)
+      - id: cargo-check
+        name: cargo check
+        description: Check Rust code compiles
+        entry: cargo check --workspace
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # 4. Run tests (same as CI: cargo test --verbose)
+      - id: cargo-test
+        name: cargo test
+        description: Run unit and integration tests
+        entry: cargo test --workspace
+        language: system
+        types: [rust]
+        pass_filenames: false

@@ -1,0 +1,19 @@
+[package]
+name = "playwright"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Rust bindings for Microsoft Playwright"
+keywords = ["playwright", "browser", "automation", "testing", "e2e"]
+categories = ["development-tools::testing", "web-programming"]
+readme = "../../README.md"
+
+[dependencies]
+playwright-core = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }

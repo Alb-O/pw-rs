@@ -1,0 +1,212 @@
+# Playwright for Rust
+
+> 🎭 Rust language bindings for [Microsoft Playwright](https://playwright.dev)
+
+**Status:** 🚧 Active Development - Not yet ready for production use
+
+## Vision
+
+Provide official-quality Rust bindings for Microsoft Playwright, following the same architecture as [playwright-python](https://github.com/microsoft/playwright-python), [playwright-java](https://github.com/microsoft/playwright-java), and [playwright-dotnet](https://github.com/microsoft/playwright-dotnet).
+
+**Goal:** Build this library to a production-quality state for broad adoption as `@playwright/rust` or `playwright-rust`.
+
+## How It Works
+
+`playwright-rust` follows Microsoft's proven architecture for language bindings:
+
+```
+┌─────────────────────────────────────────────────────┐
+│ playwright-rust (Rust API)                          │
+│ - High-level, idiomatic Rust API                    │
+│ - Async/await with tokio                           │
+│ - Type-safe bindings                               │
+└─────────────────────┬───────────────────────────────┘
+                      │ JSON-RPC over stdio
+┌─────────────────────▼───────────────────────────────┐
+│ Playwright Server (Node.js/TypeScript)             │
+│ - Browser automation logic                          │
+│ - Cross-browser protocol abstraction                │
+│ - Maintained by Microsoft Playwright team           │
+└─────────────────────┬───────────────────────────────┘
+                      │ Native protocols
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+    Chromium      Firefox       WebKit
+```
+
+This means:
+- ✅ **Full feature parity** with Playwright (JS/Python/Java/.NET)
+- ✅ **Cross-browser support** (Chromium, Firefox, WebKit)
+- ✅ **Automatic updates** when Playwright server updates
+- ✅ **Minimal maintenance** - protocols handled by Microsoft's server
+- ✅ **Production-tested** architecture used by millions
+
+## Quick Example
+
+```rust
+use playwright::Playwright;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Launch Playwright
+    let playwright = Playwright::launch().await?;
+
+    // Launch browser
+    let browser = playwright
+        .chromium()
+        .launch()
+        .headless(true)
+        .await?;
+
+    // Create page
+    let page = browser.new_page().await?;
+
+    // Navigate and interact
+    page.goto("https://playwright.dev").await?;
+
+    // Use Playwright-style locators
+    let title = page.locator("h1").text_content().await?;
+    println!("Title: {}", title);
+
+    // Playwright assertions
+    playwright::expect(page.locator(".hero__title"))
+        .to_be_visible()
+        .await?;
+
+    // Take screenshot
+    page.screenshot()
+        .path("screenshot.png")
+        .await?;
+
+    // Cleanup
+    browser.close().await?;
+
+    Ok(())
+}
+```
+
+## Project Status
+
+**Current Phase:** Foundation & Protocol Implementation
+
+- [x] Project structure and planning
+- [ ] JSON-RPC protocol client
+- [ ] Playwright server management (download, launch, lifecycle)
+- [ ] Core API: Browser, Context, Page
+- [ ] Locators and selectors
+- [ ] Actions (click, fill, etc.)
+- [ ] Assertions (`expect()` API)
+- [ ] Screenshots and videos
+- [ ] Network interception
+- [ ] Mobile emulation
+- [ ] Comprehensive test suite
+
+See [Development Roadmap](docs/roadmap.md) for detailed plans.
+
+## Installation
+
+**Not yet published to crates.io** - Library is under active development.
+
+Once published:
+```toml
+[dependencies]
+playwright = "0.1"
+tokio = { version = "1", features = ["full"] }
+```
+
+## Development
+
+### Prerequisites
+
+- Rust 1.70+
+- Node.js 18+ (for Playwright server)
+- tokio async runtime
+
+### Building from Source
+
+```bash
+# Clone repository
+git clone https://github.com/YOUR_USERNAME/playwright-rust.git
+cd playwright-rust
+
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
+
+# Build
+cargo build
+
+# Run tests
+cargo test
+
+# Run examples
+cargo run --example basic
+```
+
+### Testing
+
+```bash
+# Unit tests
+cargo test --lib
+
+# Integration tests
+cargo test --test '*'
+
+# Run specific test
+cargo test test_browser_launch
+
+# With logging
+RUST_LOG=debug cargo test
+```
+
+## API Design Philosophy
+
+Following Playwright's cross-language consistency:
+
+1. **Match Playwright API exactly** - Same method names, same semantics
+2. **Idiomatic Rust** - Use Result<T>, async/await, builder patterns where appropriate
+3. **Type safety** - Leverage Rust's type system for compile-time safety
+4. **Auto-waiting** - Built-in smart waits like other Playwright implementations
+5. **Testing-first** - Designed for reliable end-to-end testing
+
+## Comparison with Alternatives
+
+| Library | Protocol | Cross-Browser | Playwright Compatible |
+|---------|----------|---------------|----------------------|
+| **playwright-rust** | JSON-RPC to Playwright | ✅ All 3 | ✅ Official API |
+| fantoccini | WebDriver | ✅ Via drivers | ❌ Different API |
+| thirtyfour | WebDriver | ✅ Via drivers | ❌ Different API |
+| chromiumoxide | CDP | ❌ Chrome only | ❌ Different API |
+| headless_chrome | CDP | ❌ Chrome only | ❌ Different API |
+
+## Contributing
+
+This project aims for **production-quality** Rust bindings matching Playwright's standards. Contributions should:
+
+- Follow Playwright API conventions
+- Include comprehensive tests
+- Maintain type safety
+- Document public APIs with examples
+- Pass CI checks (fmt, clippy, tests)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## Roadmap to Broad Adoption
+
+1. 🚧 **Phase 1:** Protocol Foundation (in progress)
+2. **Phase 2:** Browser API (Browser, Context, Page lifecycle)
+3. **Phase 3:** Page Interactions (navigation, locators, actions)
+4. **Phase 4:** Advanced Features (assertions, network, mobile)
+5. **Phase 5:** Production Hardening (testing, docs, polish)
+
+See [Development Roadmap](docs/roadmap.md) for detailed phase descriptions and timelines.
+
+## License
+
+Apache-2.0 (same as Microsoft Playwright)
+
+## Acknowledgments
+
+- **Microsoft Playwright Team** - For the amazing browser automation framework
+- **playwright-python** - API design reference
+- **Folio Project** - Initial driver for development needs
