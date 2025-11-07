@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = "0.1"
 parking_lot = "0.12"
+base64 = "0.22"
 
 [dev-dependencies]
 anyhow = { workspace = true }

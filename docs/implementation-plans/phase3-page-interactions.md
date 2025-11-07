@@ -1,6 +1,6 @@
 # Phase 3: Page Interactions
 
-**Status:** In Progress - Slices 1-4 COMPLETE ✅
+**Status:** In Progress - Slices 1-5 COMPLETE ✅
 
 **Goal:** Implement core page interactions (navigation, locators, actions) matching playwright-python API.
 
@@ -466,46 +466,60 @@ Following Phase 2's successful vertical slicing approach, Phase 3 is divided int
 
 **Why Fifth:** Common form interactions. File upload needed for many test scenarios.
 
+**Status:** ✅ **COMPLETE**
+
+**Implementation Notes:**
+- Implemented 4 new methods: select_option(), select_option_multiple(), set_input_files(), set_input_files_multiple()
+- All methods delegate to Frame with strict=true
+- Options support deferred - all methods accept Option<()> for now
+- select_option() accepts single value string, returns Vec<String> of selected values
+- select_option_multiple() accepts slice of strings, returns Vec<String>
+- set_input_files() accepts PathBuf reference for single file
+- set_input_files_multiple() accepts slice of PathBuf references for multiple files or empty array to clear
+- File contents are read and base64-encoded for protocol transmission
+- Protocol messages: "selectOption" with "options" parameter (array of {value: "..."})
+- Protocol messages: "setInputFiles" with "payloads" parameter (array of {name, buffer})
+- Added select.html and upload.html to test_server
+- Created select_upload_test.rs with comprehensive tests
+- Cross-browser testing: All tests pass on Chromium, Firefox, WebKit
+- Added base64 dependency for file encoding
+
 **Tasks:**
-- [ ] Implement `locator.select_option(values, options)`
-  - Accept single value or Vec of values
-  - Options: force, timeout
-  - Protocol: "selectOption" message
-  - Support selecting by value, label, or index
-  - Return Vec<String> of selected values
-- [ ] Define file input types
-  - `FilePayload { name, mime_type, buffer }`
-  - `FileInput` enum: Path, Paths, Payload, Payloads
-- [ ] Implement `locator.set_input_files(files, options)`
-  - Options: timeout
-  - Protocol: "setInputFiles" message
-  - Accept PathBuf, Vec<PathBuf>, FilePayload, Vec<FilePayload>
-  - Convert paths to file data (read bytes)
-  - Base64 encode file contents for protocol
-- [ ] Tests
-  - Test select single option by value
-  - Test select multiple options
-  - Test select by label
-  - Test select by index
-  - Test file upload with single file
-  - Test file upload with multiple files
-  - Test file upload with FilePayload
-  - Test clearing file input (empty array)
-  - Test invalid file path error
-  - Cross-browser tests
+- [x] Implement `locator.select_option(value, options)` - Single value selection
+- [x] Implement `locator.select_option_multiple(values, options)` - Multiple value selection
+- [x] Implement `locator.set_input_files(file, options)` - Single file upload
+- [x] Implement `locator.set_input_files_multiple(files, options)` - Multiple files or clear
+- [x] Frame delegate methods - Added 4 methods (select, select_multiple, upload, upload_multiple)
+- [x] Test infrastructure - Added select.html and upload.html to test_server
+- [x] Tests - Created select_upload_test.rs with comprehensive coverage + cross-browser tests
+- [x] File handling - Read files, base64 encode, send to protocol
+- [x] Added base64 dependency to Cargo.toml
+- [x] Added InvalidArgument error variant
+
+**Deferred to Future Slices:**
+- Options implementation (SelectOption with builder pattern for force, timeout)
+- FilePayload struct for in-memory file creation (currently only supports PathBuf)
+- Select by label or index (currently only supports value)
+- FileInput enum for different input types
+
+**Files Created:**
+- `crates/playwright-core/tests/select_upload_test.rs` - Select and file upload integration tests
 
 **Files Modified:**
-- `crates/playwright/src/api/locator.rs` - Add select_option, set_input_files methods
-- `crates/playwright/src/api/options.rs` - Add SelectOptionOptions, SetInputFilesOptions
-- `crates/playwright/src/api/types.rs` - Add FilePayload, FileInput
-- `tests/actions_test.rs` - Add select and file upload tests
+- `crates/playwright-core/src/protocol/locator.rs` - Added 4 methods (select_option, select_option_multiple, set_input_files, set_input_files_multiple)
+- `crates/playwright-core/src/protocol/frame.rs` - Added 4 Frame delegate methods
+- `crates/playwright-core/src/error.rs` - Added InvalidArgument error variant
+- `crates/playwright-core/tests/test_server.rs` - Added select.html and upload.html pages
+- `crates/playwright-core/Cargo.toml` - Added base64 = "0.22" dependency
 
 **Acceptance Criteria:**
-- Select option successfully changes dropdown value
-- File upload successfully uploads files
-- Multiple file upload works
-- FilePayload allows in-memory file creation
-- All tests pass cross-browser
+- ✅ Select option successfully selects dropdown values
+- ✅ Select option returns array of selected values
+- ✅ Multiple select works with multiple values
+- ✅ File upload successfully uploads single file
+- ✅ File upload successfully uploads multiple files
+- ✅ Clear file input works (empty array)
+- ✅ All tests pass cross-browser (Chromium, Firefox, WebKit)
 
 ### Slice 6: Keyboard and Mouse APIs
 

@@ -30,7 +30,9 @@ impl TestServer {
             .route("/keyboard.html", get(keyboard_page))
             .route("/locator.html", get(locator_page))
             .route("/checkbox.html", get(checkbox_page))
-            .route("/hover.html", get(hover_page));
+            .route("/hover.html", get(hover_page))
+            .route("/select.html", get(select_page))
+            .route("/upload.html", get(upload_page));
 
         // Bind to port 0 to get any available port
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -242,6 +244,70 @@ async fn hover_page() -> Response<Body> {
 <body>
   <button id="hover-button">Hover over me</button>
   <div id="tooltip">This is a tooltip</div>
+</body>
+</html>"#,
+        ))
+        .unwrap()
+}
+
+async fn select_page() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/html")
+        .body(Body::from(
+            r#"<!DOCTYPE html>
+<html>
+<head><title>Select Test</title></head>
+<body>
+  <select id="single-select">
+    <option value="">--Please choose an option--</option>
+    <option value="apple">Apple</option>
+    <option value="banana">Banana</option>
+    <option value="cherry">Cherry</option>
+  </select>
+  <br /><br />
+  <select id="multi-select" multiple>
+    <option value="red">Red</option>
+    <option value="green">Green</option>
+    <option value="blue">Blue</option>
+    <option value="yellow">Yellow</option>
+  </select>
+  <br /><br />
+  <select id="select-by-index">
+    <option>First</option>
+    <option>Second</option>
+    <option>Third</option>
+  </select>
+</body>
+</html>"#,
+        ))
+        .unwrap()
+}
+
+async fn upload_page() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/html")
+        .body(Body::from(
+            r#"<!DOCTYPE html>
+<html>
+<head><title>File Upload Test</title></head>
+<body>
+  <input type="file" id="single-file" />
+  <br /><br />
+  <input type="file" id="multi-file" multiple />
+  <br /><br />
+  <div id="file-info"></div>
+  <script>
+    document.getElementById('single-file').addEventListener('change', (e) => {
+      const files = Array.from(e.target.files).map(f => f.name).join(', ');
+      document.getElementById('file-info').textContent = 'Single: ' + files;
+    });
+    document.getElementById('multi-file').addEventListener('change', (e) => {
+      const files = Array.from(e.target.files).map(f => f.name).join(', ');
+      document.getElementById('file-info').textContent = 'Multiple: ' + files;
+    });
+  </script>
 </body>
 </html>"#,
         ))

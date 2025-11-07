@@ -57,7 +57,7 @@ This roadmap outlines the path to a production-ready `playwright-rust` library. 
 
 **Goal:** Implement core page interactions (navigation, locators, actions) matching playwright-python API.
 
-**Status:** Not Started
+**Status:** In progress - See [phase3-page-interactions.md](./implementation-plans/phase3-page-interactions.md)
 
 **Key Deliverables:**
 - Navigation: `page.goto()`, `page.go_back()`, `page.go_forward()`, `page.reload()`
@@ -216,22 +216,6 @@ Throughout all phases, we maintain:
 - **Changelog** - Detailed change log in CHANGELOG.md
 - **Blog Posts** - Major milestone announcements
 - **Community Updates** - Regular progress updates
-
----
-
-## Success Metrics
-
-We'll know we're ready for broad community adoption when:
-
-- ✅ Follow Playwright architecture (JSON-RPC to server) - **Achieved**
-- ⬜ API parity with playwright-python (core features)
-- ⬜ Comprehensive test suite (>90% coverage)
-- ⬜ Production usage by 3+ projects
-- ⬜ 100+ GitHub stars
-- ⬜ 5-10 active contributors
-- ⬜ Maintained for 6+ months
-- ⬜ Published to crates.io
-- ⬜ Comprehensive documentation
 
 ---
 

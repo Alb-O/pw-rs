@@ -491,6 +491,154 @@ impl Frame {
 
         Ok(response.value)
     }
+
+    pub(crate) async fn locator_select_option(
+        &self,
+        selector: &str,
+        value: &str,
+    ) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct SelectOptionResponse {
+            values: Vec<String>,
+        }
+
+        let response: SelectOptionResponse = self
+            .channel()
+            .send(
+                "selectOption",
+                serde_json::json!({
+                    "selector": selector,
+                    "strict": true,
+                    "options": [{"value": value}]
+                }),
+            )
+            .await?;
+
+        Ok(response.values)
+    }
+
+    pub(crate) async fn locator_select_option_multiple(
+        &self,
+        selector: &str,
+        values: &[&str],
+    ) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct SelectOptionResponse {
+            values: Vec<String>,
+        }
+
+        let values_array: Vec<_> = values
+            .iter()
+            .map(|v| serde_json::json!({"value": v}))
+            .collect();
+
+        let response: SelectOptionResponse = self
+            .channel()
+            .send(
+                "selectOption",
+                serde_json::json!({
+                    "selector": selector,
+                    "strict": true,
+                    "options": values_array
+                }),
+            )
+            .await?;
+
+        Ok(response.values)
+    }
+
+    pub(crate) async fn locator_set_input_files(
+        &self,
+        selector: &str,
+        file: &std::path::PathBuf,
+    ) -> Result<()> {
+        use base64::{engine::general_purpose, Engine as _};
+        use std::io::Read;
+
+        // Read file contents
+        let mut file_handle = std::fs::File::open(file)?;
+        let mut buffer = Vec::new();
+        file_handle.read_to_end(&mut buffer)?;
+
+        // Base64 encode the file contents
+        let base64_content = general_purpose::STANDARD.encode(&buffer);
+
+        // Get file name
+        let file_name = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| crate::error::Error::InvalidArgument("Invalid file path".to_string()))?;
+
+        self.channel()
+            .send_no_result(
+                "setInputFiles",
+                serde_json::json!({
+                    "selector": selector,
+                    "strict": true,
+                    "payloads": [{
+                        "name": file_name,
+                        "buffer": base64_content
+                    }]
+                }),
+            )
+            .await
+    }
+
+    pub(crate) async fn locator_set_input_files_multiple(
+        &self,
+        selector: &str,
+        files: &[&std::path::PathBuf],
+    ) -> Result<()> {
+        use base64::{engine::general_purpose, Engine as _};
+        use std::io::Read;
+
+        // If empty array, clear the files
+        if files.is_empty() {
+            return self
+                .channel()
+                .send_no_result(
+                    "setInputFiles",
+                    serde_json::json!({
+                        "selector": selector,
+                        "strict": true,
+                        "payloads": []
+                    }),
+                )
+                .await;
+        }
+
+        // Read and encode each file
+        let mut file_objects = Vec::new();
+        for file_path in files {
+            let mut file_handle = std::fs::File::open(file_path)?;
+            let mut buffer = Vec::new();
+            file_handle.read_to_end(&mut buffer)?;
+
+            let base64_content = general_purpose::STANDARD.encode(&buffer);
+            let file_name = file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| {
+                    crate::error::Error::InvalidArgument("Invalid file path".to_string())
+                })?;
+
+            file_objects.push(serde_json::json!({
+                "name": file_name,
+                "buffer": base64_content
+            }));
+        }
+
+        self.channel()
+            .send_no_result(
+                "setInputFiles",
+                serde_json::json!({
+                    "selector": selector,
+                    "strict": true,
+                    "payloads": file_objects
+                }),
+            )
+            .await
+    }
 }
 
 impl ChannelOwner for Frame {

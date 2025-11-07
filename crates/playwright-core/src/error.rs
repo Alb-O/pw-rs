@@ -55,4 +55,8 @@ pub enum Error {
     /// Channel closed unexpectedly
     #[error("Channel closed unexpectedly")]
     ChannelClosed,
+
+    /// Invalid argument provided to method
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
 }

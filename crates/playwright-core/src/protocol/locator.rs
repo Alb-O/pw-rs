@@ -215,6 +215,58 @@ impl Locator {
     pub async fn input_value(&self, _options: Option<()>) -> Result<String> {
         self.frame.locator_input_value(&self.selector).await
     }
+
+    /// Selects one or more options in a select element.
+    ///
+    /// Returns an array of option values that have been successfully selected.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-locator#locator-select-option>
+    pub async fn select_option(&self, value: &str, _options: Option<()>) -> Result<Vec<String>> {
+        self.frame
+            .locator_select_option(&self.selector, value)
+            .await
+    }
+
+    /// Selects multiple options in a select element.
+    ///
+    /// Returns an array of option values that have been successfully selected.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-locator#locator-select-option>
+    pub async fn select_option_multiple(
+        &self,
+        values: &[&str],
+        _options: Option<()>,
+    ) -> Result<Vec<String>> {
+        self.frame
+            .locator_select_option_multiple(&self.selector, values)
+            .await
+    }
+
+    /// Sets the file path(s) to upload to a file input element.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-locator#locator-set-input-files>
+    pub async fn set_input_files(
+        &self,
+        file: &std::path::PathBuf,
+        _options: Option<()>,
+    ) -> Result<()> {
+        self.frame
+            .locator_set_input_files(&self.selector, file)
+            .await
+    }
+
+    /// Sets multiple file paths to upload to a file input element.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-locator#locator-set-input-files>
+    pub async fn set_input_files_multiple(
+        &self,
+        files: &[&std::path::PathBuf],
+        _options: Option<()>,
+    ) -> Result<()> {
+        self.frame
+            .locator_set_input_files_multiple(&self.selector, files)
+            .await
+    }
 }
 
 impl std::fmt::Debug for Locator {

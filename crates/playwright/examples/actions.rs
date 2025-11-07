@@ -8,6 +8,8 @@
 // - Checkbox interactions
 // - Hover actions
 // - Reading input values
+// - Select dropdown interactions
+// - File upload interactions
 //
 // Note: This is a smoke test showing the API.
 // Full interaction testing requires custom test pages.
@@ -52,6 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   • check() - Check checkboxes/radio buttons");
     println!("   • uncheck() - Uncheck checkboxes");
     println!("   • input_value() - Read input values");
+    println!("   • select_option(value) - Select dropdown options");
+    println!("   • select_option_multiple(values) - Select multiple options");
+    println!("   • set_input_files(path) - Upload files");
+    println!("   • set_input_files_multiple(paths) - Upload multiple files");
     println!("\\n   See integration tests for full examples with forms!");
 
     // Cleanup

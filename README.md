@@ -86,6 +86,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let button = page.locator("button").await;
     button.hover(None).await?;
 
+    // Select dropdown options
+    let select = page.locator("select#colors").await;
+    select.select_option("blue", None).await?;
+
+    // Multiple select
+    select.select_option_multiple(&["red", "green"], None).await?;
+
+    // File upload
+    let file_input = page.locator("input[type=file]").await;
+    let file_path = std::path::PathBuf::from("./test.txt");
+    file_input.set_input_files(&file_path, None).await?;
+
     // Cleanup
     page.close().await?;
     browser.close().await?;
@@ -112,6 +124,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - ✅ Checkbox actions (`check()`, `uncheck()`)
 - ✅ Mouse interactions (`hover()`)
 - ✅ Input value reading (`input_value()`)
+- ✅ Select interactions (`select_option()`, multiple selections)
+- ✅ File uploads (`set_input_files()`, multiple files)
 - ✅ Proper lifecycle management and cleanup
 
 **Coming next:** Screenshots, waiting methods, assertions
