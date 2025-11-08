@@ -232,7 +232,7 @@ Phase 4 will be considered complete when:
 - [x] ElementHandle protocol implemented ✅ (Slice 1)
 - [x] locator.screenshot() works with ElementHandles ✅ (Slice 1)
 - [x] Screenshot options fully implemented (type, quality, full_page, clip, etc.) ✅ (Slice 2)
-- [ ] Navigation timeout error handling tested
+- [x] Navigation timeout error handling tested ✅ (Slice 3)
 - [ ] ClickOptions with builder pattern implemented
 - [ ] Action position and modifiers work correctly
 - [ ] SelectOption supports value, label, and index
@@ -244,7 +244,7 @@ Phase 4 will be considered complete when:
 
 ## Implementation Plan
 
-**Status:** In Progress - Slices 1 & 2 Complete ✅, Ready for Slice 3
+**Status:** In Progress - Slices 1-3 Complete ✅, Ready for Slice 4
 
 Phase 4 follows the same TDD and vertical slicing approach as Phase 3.
 
@@ -361,18 +361,32 @@ Phase 4 follows the same TDD and vertical slicing approach as Phase 3.
 
 ---
 
-### Slice 3: Navigation Error Handling
+### Slice 3: Navigation Error Handling ✅
+
+**Status:** Complete (2025-11-08)
 
 **Goal:** Add timeout tests and error handling for navigation methods.
 
 **Why Third:** High-priority deferred item from Phase 3 Slice 1.
 
 **Tasks:**
-- [ ] Test goto() timeout errors
-- [ ] Test reload() timeout errors
-- [ ] Test wait_until option behavior
-- [ ] Verify descriptive error messages
-- [ ] Cross-browser error tests
+- [x] Test goto() timeout errors
+- [x] Test reload() timeout errors
+- [x] Test wait_until option behavior (Load, DomContentLoaded, NetworkIdle)
+- [x] Verify descriptive error messages
+- [x] Cross-browser error tests (Chromium, Firefox, WebKit)
+
+**Files Created:**
+- `crates/playwright-core/tests/navigation_errors_test.rs`
+
+**Acceptance Criteria:** ✅ All Met
+- ✅ Navigation timeout errors properly tested (unreachable URLs)
+- ✅ Valid navigation with timeout options works
+- ✅ Invalid URL errors handled correctly
+- ✅ reload() timeout behavior tested
+- ✅ wait_until options work (Load, DomContentLoaded, NetworkIdle)
+- ✅ Error messages contain "timeout" for timeout errors
+- ✅ All tests pass cross-browser (Chromium, Firefox, WebKit)
 
 ---
 
