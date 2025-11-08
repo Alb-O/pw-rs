@@ -206,6 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - ✅ Hover options (force, modifiers, position, timeout, trial)
 - ✅ Input value reading (`input_value()`)
 - ✅ Select interactions (`select_option()`, multiple selections)
+- ✅ Select by value, label, or index
 - ✅ Select options (force, timeout)
 - ✅ File uploads (`set_input_files()`, multiple files)
 - ✅ Low-level keyboard control (`keyboard.down()`, `up()`, `press()`, `type_text()`, `insert_text()`)
@@ -217,7 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - ✅ Element queries (`page.query_selector()`, `query_selector_all()`)
 - ✅ Proper lifecycle management and cleanup
 
-**Coming next:** SelectOption variants (label, index selection), assertions, network interception
+**Coming next:** Assertions with auto-retry, network interception, mobile emulation
 
 ## Installation
 
