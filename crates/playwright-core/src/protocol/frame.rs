@@ -880,7 +880,7 @@ impl Frame {
             .await
     }
 
-    /// Evaluates JavaScript expression in the frame context.
+    /// Evaluates JavaScript expression in the frame context (without return value).
     ///
     /// This is used internally by Page.evaluate().
     pub(crate) async fn frame_evaluate_expression(&self, expression: &str) -> Result<()> {
@@ -892,11 +892,67 @@ impl Frame {
             }
         });
 
-        // For now, we ignore the return value
-        // TODO: Support returning values from evaluate
         let _: serde_json::Value = self.channel().send("evaluateExpression", params).await?;
-
         Ok(())
+    }
+
+    /// Evaluates JavaScript expression and returns the result as a String.
+    ///
+    /// The return value is automatically converted to a string representation.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - JavaScript code to evaluate
+    ///
+    /// # Returns
+    ///
+    /// The result as a String
+    pub(crate) async fn frame_evaluate_expression_value(&self, expression: &str) -> Result<String> {
+        let params = serde_json::json!({
+            "expression": expression,
+            "arg": {
+                "value": {"v": "null"},
+                "handles": []
+            }
+        });
+
+        #[derive(Deserialize)]
+        struct EvaluateResult {
+            value: serde_json::Value,
+        }
+
+        let result: EvaluateResult = self.channel().send("evaluateExpression", params).await?;
+
+        // Playwright protocol returns values in a wrapped format:
+        // - String: {"s": "value"}
+        // - Number: {"n": 123}
+        // - Boolean: {"b": true}
+        // - Null: {"v": "null"}
+        // - Undefined: {"v": "undefined"}
+        match &result.value {
+            Value::Object(map) => {
+                if let Some(s) = map.get("s").and_then(|v| v.as_str()) {
+                    // String value
+                    Ok(s.to_string())
+                } else if let Some(n) = map.get("n") {
+                    // Number value
+                    Ok(n.to_string())
+                } else if let Some(b) = map.get("b").and_then(|v| v.as_bool()) {
+                    // Boolean value
+                    Ok(b.to_string())
+                } else if let Some(v) = map.get("v").and_then(|v| v.as_str()) {
+                    // null or undefined
+                    Ok(v.to_string())
+                } else {
+                    // Unknown format, return JSON
+                    Ok(result.value.to_string())
+                }
+            }
+            _ => {
+                // Fallback for unexpected formats
+                Ok(result.value.to_string())
+            }
+        }
     }
 }
 

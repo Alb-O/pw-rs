@@ -47,7 +47,16 @@ impl Route {
     ///
     /// See: <https://playwright.dev/docs/api/class-route#route-request>
     pub fn request(&self) -> Request {
-        // Get request data from initializer
+        // The Route's parent is the Request object
+        // Try to downcast the parent to Request
+        if let Some(parent) = self.parent() {
+            if let Some(request) = parent.as_any().downcast_ref::<Request>() {
+                return request.clone();
+            }
+        }
+
+        // Fallback: Create a stub Request from initializer data
+        // This should rarely happen in practice
         let request_data = self
             .initializer()
             .get("request")
@@ -59,23 +68,15 @@ impl Route {
                 })
             });
 
-        // Extract request GUID if available, otherwise use route's parent
-        let parent = if let Some(_guid) = request_data.get("guid").and_then(|v| v.as_str()) {
-            // Try to get Request from registry
-            // For now, use self as parent (will work for basic case)
-            Arc::new(self.clone()) as Arc<dyn ChannelOwner>
-        } else {
-            self.parent()
-                .unwrap_or_else(|| Arc::new(self.clone()) as Arc<dyn ChannelOwner>)
-        };
+        let parent = self
+            .parent()
+            .unwrap_or_else(|| Arc::new(self.clone()) as Arc<dyn ChannelOwner>);
 
         let request_guid = request_data
             .get("guid")
             .and_then(|v| v.as_str())
             .unwrap_or("request-stub");
 
-        // Create Request object
-        // TODO: Properly retrieve Request from connection's object registry
         Request::new(
             parent,
             "Request".to_string(),

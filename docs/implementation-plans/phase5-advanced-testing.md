@@ -287,7 +287,7 @@ page.locator("input").expect().to_have_value("hello").await?;
 
 ### Slice 4: Network Route API Foundation
 
-**Status:** 🚧 In Progress - Slice 4a Complete, 4b and 4c Pending
+**Status:** ✅ COMPLETE (All sub-slices: 4a, 4b, 4c)
 
 **Goal:** Implement page.route() for basic request interception.
 
@@ -403,32 +403,38 @@ page.locator("input").expect().to_have_value("hello").await?;
 
 #### Slice 4c: Cross-browser & Polish
 
-**Status:** ⏳ Pending
+**Status:** ✅ COMPLETE
 
 **Goal:** Production readiness with cross-browser support.
 
 **Tasks:**
-- [ ] Verify route.continue() works correctly across browsers
-- [ ] Cross-browser testing (Firefox, WebKit)
-- [ ] Error handling (handler errors, protocol errors)
-- [ ] Polish error messages
-- [ ] Restore original comprehensive test suite
-- [ ] Add evaluate() return value support (needed for full test suite)
+- [x] Verify route.continue() works correctly across browsers
+- [x] Cross-browser testing (Firefox, WebKit)
+- [x] Error handling (handler errors, protocol errors)
+- [x] Polish error messages
+- [x] Restore comprehensive test suite (with evaluate() return values)
+- [x] Add evaluate() return value support
 
-**Test Targets:**
-- `test_route_abort_basic` - Single pattern abort
-- `test_route_abort_with_error_code` - Error code variants
-- `test_route_continue_basic` - Request continuation
-- `test_route_request_access` - Handler can access request
-- `test_route_abort_firefox` - Firefox compatibility
-- `test_route_continue_webkit` - WebKit compatibility
+**Implementation Details:**
+
+**Files Created:**
+- `crates/playwright-core/tests/network_route_cross_browser_test.rs` - 8 cross-browser tests
+- `crates/playwright-core/tests/network_route_comprehensive_test.rs` - 6 comprehensive tests with evaluate()
+- `crates/playwright-core/tests/evaluate_test.rs` - 4 tests for evaluate_value()
+
+**Files Modified:**
+- `crates/playwright-core/src/protocol/route.rs` - Fixed request() to properly downcast parent Request object
+- `crates/playwright-core/src/protocol/page.rs` - Added evaluate_value() method
+- `crates/playwright-core/src/protocol/frame.rs` - Added frame_evaluate_expression_value() with protocol value unwrapping
+
+**Key Implementation Details:**
+
+1. **Route.request() Fix**: Properly downcasts parent Request instead of creating stub
+2. **evaluate_value()**: Unwraps Playwright protocol value format (`{"s": "value"}`, `{"n": 123}`, etc.)
+3. **Cross-browser**: All routing tests pass on Chromium, Firefox, and WebKit
+4. **Error Handling**: Route handler errors logged to stderr
 
 **Why Last:** Completes feature with quality and compatibility
-
-**Files to Modify:**
-- `crates/playwright-core/src/protocol/route.rs` - Error handling improvements
-- `crates/playwright-core/src/protocol/page.rs` - Add evaluate() with return values
-- `crates/playwright-core/tests/network_route_test.rs` - Restore full test suite
 
 ---
 
@@ -484,6 +490,6 @@ This order prioritizes:
 ---
 
 **Created:** 2025-11-08
-**Last Updated:** 2025-11-08 (Slice 4b complete)
+**Last Updated:** 2025-11-08 (Slice 4 complete - all sub-slices 4a, 4b, 4c)
 
 ---

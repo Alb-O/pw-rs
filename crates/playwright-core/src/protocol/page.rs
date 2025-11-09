@@ -840,6 +840,43 @@ impl Page {
         frame.frame_evaluate_expression(expression).await
     }
 
+    /// Evaluates a JavaScript expression and returns the result as a String.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - JavaScript code to evaluate
+    ///
+    /// # Returns
+    ///
+    /// The result converted to a String
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use playwright_core::protocol::Playwright;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let playwright = Playwright::launch().await?;
+    /// let browser = playwright.chromium().launch().await?;
+    /// let page = browser.new_page().await?;
+    ///
+    /// page.goto("https://example.com", None).await?;
+    ///
+    /// let result = page.evaluate_value("1 + 1").await?;
+    /// assert_eq!(result, "2");
+    ///
+    /// let text = page.evaluate_value("document.title").await?;
+    /// println!("Title: {}", text);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-evaluate>
+    pub async fn evaluate_value(&self, expression: &str) -> Result<String> {
+        let frame = self.main_frame().await?;
+        frame.frame_evaluate_expression_value(expression).await
+    }
+
     /// Registers a route handler for network interception.
     ///
     /// When a request matches the specified pattern, the handler will be called

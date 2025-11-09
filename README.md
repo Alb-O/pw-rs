@@ -287,8 +287,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - ✅ Request data access in route handlers (`route.request().url()`, `method()`)
 - ✅ Glob pattern matching for routes (`**/*.png`, `**/*`, etc.)
 - ✅ Multiple route handlers with priority (last registered wins)
+- ✅ Cross-browser routing (Chromium, Firefox, WebKit)
+- ✅ JavaScript evaluation with return values (`page.evaluate_value()`)
 
-**Coming next:** Cross-browser route testing, route.fulfill(), downloads/dialogs
+**Coming next:** route.fulfill(), downloads/dialogs
 
 ## Installation
 
