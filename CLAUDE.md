@@ -84,6 +84,58 @@ playwright-rust/
 
 This project uses **test-driven development (TDD)** and **incremental delivery** with focus on Microsoft Playwright API compatibility.
 
+### Specialized Development Agents
+
+For complex workflows, use these specialized agents (located in `.claude/agents/`):
+
+1. **TDD Feature Implementation Agent** (`tdd-feature-implementation.md`)
+   - Use when: Implementing any new Playwright API feature
+   - Automates: Red → Green → Refactor workflow, cross-browser testing, API compatibility checks
+   - Ensures: Tests written first, API matches Playwright exactly, rustdoc complete
+
+2. **Documentation Maintenance Agent** (`documentation-maintenance.md`)
+   - Use when: Completing slices/phases, updating docs, releasing versions
+   - Automates: Just-in-time doc updates, hierarchy enforcement, CHANGELOG generation
+   - Ensures: README shows current features only, roadmap stays strategic, implementation plans stay current
+
+3. **API Compatibility Validator Agent** (`api-compatibility-validator.md`)
+   - Use when: Reviewing API implementations, validating compatibility
+   - Automates: Cross-language API comparison, parameter validation, type checking
+   - Ensures: API exactly matches playwright-python/JS/Java, no drift
+
+#### Automatic Agent Invocation
+
+**IMPORTANT**: Proactively use agents when user requests match these patterns:
+
+**TDD Feature Implementation Agent** - Use automatically when user:
+- Says "implement {feature}" or "add {method}"
+- Mentions implementing a Playwright API (page.goto, browser.launch, etc.)
+- Asks to "create a new feature" or "add support for"
+- Example triggers: "implement page.screenshot()", "add browser.pdf() method"
+
+**Documentation Maintenance Agent** - Use automatically when user:
+- Says "Slice X complete", "Phase Y done", or "finished Slice Z"
+- Asks to "update documentation" or "update docs"
+- Mentions "release" or "preparing for release"
+- Says "phase complete" or "slice finished"
+- Example triggers: "Phase 5 complete", "Slice 6 done", "update docs for new features"
+
+**API Compatibility Validator Agent** - Use automatically when user:
+- Asks to "validate {API}" or "check {API} compatibility"
+- Says "does {class} match Playwright?" or "is {method} compatible?"
+- Asks to "review API implementation"
+- Mentions "API compatibility" or "cross-language consistency"
+- Example triggers: "validate Page API", "check if Locator matches Playwright"
+
+**Don't use agents for**:
+- Simple single-file edits
+- Reading files or searching code
+- Running a single test
+- Quick bug fixes (< 10 lines)
+- Formatting or clippy fixes
+
+**General rule**: If the task requires 3+ steps or involves checking multiple sources (Playwright docs, playwright-python, tests), proactively use the appropriate agent.
+
 ### Planning and Documentation Structure
 
 **Documentation Hierarchy** (Just-In-Time Philosophy):
@@ -130,87 +182,18 @@ This project uses **test-driven development (TDD)** and **incremental delivery**
 
 **IMPORTANT**: Always check Playwright's official API docs first.
 
-**When starting work:**
-1. **Check official Playwright docs** at https://playwright.dev/docs/api
-2. **Reference playwright-python** implementation for API design
-3. **Read implementation plans** in `docs/implementation-plans/`
-4. **Follow TDD workflow**: Red → Green → Refactor
+**For implementing new features**, use the **TDD Feature Implementation Agent** which automates:
+- Research of Playwright API and playwright-python reference
+- Writing failing tests first (Red → Green → Refactor)
+- Protocol layer and high-level API implementation
+- Cross-browser testing (Chromium, Firefox, WebKit)
+- Rustdoc documentation with examples
 
-**When implementing features:**
-1. **Write failing test first** that matches Playwright API
-2. **Match Playwright API exactly** - same method names, same behavior
-3. **Implement in playwright-core** (protocol layer) if needed
-4. **Expose in playwright crate** (high-level API)
-5. **Document with examples** in rustdoc
-6. **Test cross-browser** (Chromium, Firefox, and WebKit from the beginning)
-
-### Test-Driven Development (TDD) for Playwright-Rust
-
-**This project follows strict TDD for all features.**
-
-For each feature:
-
-1. **Write Playwright-compatible Test (Red)**
-   - Test should match how Playwright works in other languages
-   - Example: If testing `page.goto()`, reference playwright-python's test
-   - Test both happy path and error cases
-
-2. **Implement Protocol Layer (Green)**
-   - Implement JSON-RPC communication in `playwright-core`
-   - Handle serialization/deserialization
-   - Manage Playwright server connection
-
-3. **Implement High-Level API (Green)**
-   - Create idiomatic Rust API in `playwright` crate
-   - Builder patterns where appropriate
-   - Type-safe wrappers
-
-4. **Refactor**
-   - Clean up code structure
-   - Extract common patterns
-   - Improve error messages
-
-5. **Document**
-   - Rustdoc with examples
-   - Link to Playwright docs
-   - Note any Rust-specific patterns
-
-6. **Cross-browser Test**
-   - Verify works with Chromium
-   - Eventually test Firefox and WebKit
-
-**Example Test Pattern:**
-
-```rust
-#[tokio::test]
-async fn test_page_goto() {
-    let playwright = Playwright::launch().await.unwrap();
-    let browser = playwright.chromium().launch().await.unwrap();
-    let page = browser.new_page().await.unwrap();
-
-    // Should navigate successfully
-    let response = page.goto("https://example.com").await.unwrap();
-    assert!(response.ok());
-
-    // Should have correct URL
-    assert_eq!(page.url(), "https://example.com/");
-
-    browser.close().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_page_goto_invalid_url() {
-    let playwright = Playwright::launch().await.unwrap();
-    let browser = playwright.chromium().launch().await.unwrap();
-    let page = browser.new_page().await.unwrap();
-
-    // Should return error for invalid URL
-    let result = page.goto("invalid://url").await;
-    assert!(result.is_err());
-
-    browser.close().await.unwrap();
-}
-```
+**For simple tasks** (bug fixes, refactoring), work directly:
+1. Check implementation plans in `docs/implementation-plans/`
+2. Follow TDD workflow: Write test → Implement → Refactor
+3. Run tests: `cargo test`
+4. Ensure clippy clean: `cargo clippy -- -D warnings`
 
 ## Documentation
 
@@ -220,6 +203,7 @@ async fn test_page_goto_invalid_url() {
 - **Markdown for architecture** - ADRs, design decisions
 - **Link to Playwright docs** - Don't duplicate, reference official docs
 - **Show Rust-specific patterns** - Where we diverge for idiomatic reasons
+- **Just-in-time updates** - Use **Documentation Maintenance Agent** for coordinated doc updates
 
 ### API Documentation Standards
 
@@ -434,6 +418,7 @@ pub enum Error {
 - Don't add Rust-specific features (stay compatible)
 - Use idiomatic Rust patterns where possible
 - Document differences from other languages
+- **Use API Compatibility Validator Agent** to verify cross-language consistency
 
 ### Pull Requests
 
