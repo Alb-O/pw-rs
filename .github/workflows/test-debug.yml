@@ -40,4 +40,4 @@ jobs:
     - name: Run single simple test
       timeout-minutes: 5
       run: |
-        cargo test --package playwright-core --test browser_launch_test test_browser_launch_chromium -- --nocapture --test-threads=1
+        cargo test --package playwright-core --test browser_launch_integration test_launch_chromium -- --nocapture --test-threads=1

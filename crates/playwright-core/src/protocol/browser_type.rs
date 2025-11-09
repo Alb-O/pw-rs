@@ -178,6 +178,54 @@ impl BrowserType {
     ///
     /// See: <https://playwright.dev/docs/api/class-browsertype#browser-type-launch>
     pub async fn launch_with_options(&self, options: LaunchOptions) -> Result<Browser> {
+        // Add Windows CI-specific browser args to prevent hanging
+        let options = {
+            #[cfg(windows)]
+            {
+                let mut options = options;
+                // Check if we're in a CI environment (GitHub Actions, Jenkins, etc.)
+                let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+
+                if is_ci {
+                    eprintln!(
+                        "[playwright-rust] Detected Windows CI environment, adding stability flags"
+                    );
+
+                    // Get existing args or create empty vec
+                    let mut args = options.args.unwrap_or_default();
+
+                    // Add Windows CI stability flags if not already present
+                    let ci_flags = vec![
+                        "--no-sandbox",            // Disable sandboxing (often problematic in CI)
+                        "--disable-dev-shm-usage", // Overcome limited /dev/shm resources
+                        "--disable-gpu",           // Disable GPU hardware acceleration
+                        "--disable-web-security",  // Avoid CORS issues in CI
+                        "--disable-features=IsolateOrigins,site-per-process", // Reduce process overhead
+                    ];
+
+                    for flag in ci_flags {
+                        if !args.iter().any(|a| a == flag) {
+                            args.push(flag.to_string());
+                        }
+                    }
+
+                    // Update options with enhanced args
+                    options.args = Some(args);
+
+                    // Increase timeout for Windows CI (slower startup)
+                    if options.timeout.is_none() {
+                        options.timeout = Some(60000.0); // 60 seconds for Windows CI
+                    }
+                }
+                options
+            }
+
+            #[cfg(not(windows))]
+            {
+                options
+            }
+        };
+
         // Normalize options for protocol transmission
         let params = options.normalize();
 

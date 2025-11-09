@@ -286,9 +286,23 @@ impl Browser {
     pub async fn close(&self) -> Result<()> {
         // Send close RPC to server
         // The protocol expects an empty object as params
-        self.channel()
+        let result = self
+            .channel()
             .send_no_result("close", serde_json::json!({}))
-            .await
+            .await;
+
+        // Add delay on Windows CI to ensure browser process fully terminates
+        // This prevents subsequent browser launches from hanging
+        #[cfg(windows)]
+        {
+            let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+            if is_ci {
+                eprintln!("[playwright-rust] Adding Windows CI browser cleanup delay");
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+
+        result
     }
 }
 
