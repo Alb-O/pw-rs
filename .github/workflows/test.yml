@@ -49,13 +49,22 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-playwright-drivers-
 
-    - name: Cache Playwright Browsers
+    - name: Cache Playwright Browsers (Linux/macOS)
+      if: runner.os != 'Windows'
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/ms-playwright
           ~/Library/Caches/ms-playwright
-          %USERPROFILE%\AppData\Local\ms-playwright
+        key: ${{ runner.os }}-playwright-browsers-1.49.0
+        restore-keys: |
+          ${{ runner.os }}-playwright-browsers-
+
+    - name: Cache Playwright Browsers (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v3
+      with:
+        path: ~\AppData\Local\ms-playwright
         key: ${{ runner.os }}-playwright-browsers-1.49.0
         restore-keys: |
           ${{ runner.os }}-playwright-browsers-
@@ -71,7 +80,9 @@ jobs:
 
     - name: Install Playwright browsers (Windows)
       if: runner.os == 'Windows'
-      run: npx playwright@1.49.0 install chromium firefox webkit
+      run: |
+        npx playwright@1.49.0 install chromium firefox webkit
+        npx playwright@1.49.0 install-deps chromium firefox webkit
 
     - name: Check formatting
       run: cargo fmt --all -- --check
@@ -82,8 +93,14 @@ jobs:
     - name: Build
       run: cargo build --verbose
 
-    - name: Run tests (all platforms)
+    - name: Run tests (Linux/macOS)
+      if: runner.os != 'Windows'
       run: cargo test --verbose --workspace
+
+    - name: Run tests (Windows)
+      if: runner.os == 'Windows'
+      timeout-minutes: 30
+      run: cargo test --verbose --workspace -- --test-threads=1
 
     - name: Build all examples
       run: cargo build --package playwright --examples
