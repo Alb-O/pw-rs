@@ -31,10 +31,10 @@ function Show-BrowserProcesses {
     }
 }
 
-function Kill-BrowserProcesses {
-    Write-Host "`nKilling browser processes..." -ForegroundColor Yellow
+function Stop-BrowserProcesses {
+    Write-Host "`nStopping browser processes..." -ForegroundColor Yellow
 
-    $killed = 0
+    $stopped = 0
     $browsers = @("chromium", "chrome", "firefox", "webkit", "pw_*", "msedge")
 
     foreach ($browser in $browsers) {
@@ -43,19 +43,19 @@ function Kill-BrowserProcesses {
             foreach ($proc in $processes) {
                 try {
                     $proc.Kill()
-                    Write-Host "Killed: $($proc.ProcessName) (PID: $($proc.Id))" -ForegroundColor Red
-                    $killed++
+                    Write-Host "Stopped: $($proc.ProcessName) (PID: $($proc.Id))" -ForegroundColor Red
+                    $stopped++
                 } catch {
-                    Write-Host "Failed to kill: $($proc.ProcessName) (PID: $($proc.Id))" -ForegroundColor Yellow
+                    Write-Host "Failed to stop: $($proc.ProcessName) (PID: $($proc.Id))" -ForegroundColor Yellow
                 }
             }
         }
     }
 
-    if ($killed -eq 0) {
-        Write-Host "No browser processes to kill" -ForegroundColor Green
+    if ($stopped -eq 0) {
+        Write-Host "No browser processes to stop" -ForegroundColor Green
     } else {
-        Write-Host "Killed $killed process(es)" -ForegroundColor Red
+        Write-Host "Stopped $stopped process(es)" -ForegroundColor Red
     }
 }
 
@@ -88,17 +88,53 @@ function Test-BrowserLaunch {
     }
 }
 
+# Check if CI environment variables are set
+function Show-CIStatus {
+    Write-Host "`nCI Environment Status:" -ForegroundColor Cyan
+    if ($env:CI -eq "true") {
+        Write-Host "  CI = $env:CI" -ForegroundColor Green
+    } else {
+        Write-Host "  CI = (not set)" -ForegroundColor Yellow
+    }
+
+    if ($env:GITHUB_ACTIONS -eq "true") {
+        Write-Host "  GITHUB_ACTIONS = $env:GITHUB_ACTIONS" -ForegroundColor Green
+    } else {
+        Write-Host "  GITHUB_ACTIONS = (not set)" -ForegroundColor Yellow
+    }
+}
+
+function Set-CIEnvironment {
+    Write-Host "`nSetting CI environment variables..." -ForegroundColor Yellow
+    $env:CI = "true"
+    $env:GITHUB_ACTIONS = "true"
+    $env:RUST_LOG = "debug"
+
+    Write-Host "  CI = $env:CI" -ForegroundColor Green
+    Write-Host "  GITHUB_ACTIONS = $env:GITHUB_ACTIONS" -ForegroundColor Green
+    Write-Host "  RUST_LOG = $env:RUST_LOG" -ForegroundColor Green
+    Write-Host "`nCI environment configured! This enables:" -ForegroundColor Cyan
+    Write-Host "  - Windows stability flags (--no-sandbox, etc.)" -ForegroundColor Gray
+    Write-Host "  - Browser cleanup delay (500ms)" -ForegroundColor Gray
+    Write-Host "  - Debug logging" -ForegroundColor Gray
+}
+
+# Show CI status at startup
+Show-CIStatus
+
 # Main diagnostic flow
 $choice = Read-Host @"
 
 Choose diagnostic action:
 1. Show browser processes
-2. Kill all browser processes
+2. Stop all browser processes
 3. Test browser cleanup (run tests and check for leaks)
 4. Full diagnostic (all of the above)
 5. Monitor processes (continuous)
+6. Set CI environment variables (enable Windows stability flags)
+7. Show CI environment status
 
-Enter choice (1-5)
+Enter choice (1-7)
 "@
 
 switch ($choice) {
@@ -132,6 +168,12 @@ switch ($choice) {
             Show-BrowserProcesses
             Start-Sleep -Seconds 3
         }
+    }
+    "6" {
+        Set-CIEnvironment
+    }
+    "7" {
+        Show-CIStatus
     }
     default {
         Write-Host "Invalid choice" -ForegroundColor Red

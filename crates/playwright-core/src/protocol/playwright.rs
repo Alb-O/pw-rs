@@ -12,6 +12,8 @@ use crate::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use crate::connection::ConnectionLike;
 use crate::error::Result;
 use crate::protocol::BrowserType;
+use crate::server::PlaywrightServer;
+use parking_lot::Mutex;
 use serde_json::Value;
 use std::any::Any;
 use std::sync::Arc;
@@ -48,6 +50,13 @@ pub struct Playwright {
     firefox: Arc<dyn ChannelOwner>,
     /// WebKit browser type (stored as `Arc<dyn ChannelOwner>`, downcast on access)
     webkit: Arc<dyn ChannelOwner>,
+    /// Playwright server process (for clean shutdown)
+    ///
+    /// Stored as `Option<PlaywrightServer>` wrapped in Arc<Mutex<>> to allow:
+    /// - Sharing across clones (Arc)
+    /// - Taking ownership during shutdown (Option::take)
+    /// - Interior mutability (Mutex)
+    server: Arc<Mutex<Option<PlaywrightServer>>>,
 }
 
 impl Playwright {
@@ -132,6 +141,7 @@ impl Playwright {
             chromium: Arc::clone(&playwright.chromium),
             firefox: Arc::clone(&playwright.firefox),
             webkit: Arc::clone(&playwright.webkit),
+            server: Arc::new(Mutex::new(Some(server))),
         })
     }
 
@@ -199,6 +209,7 @@ impl Playwright {
             chromium,
             firefox,
             webkit,
+            server: Arc::new(Mutex::new(None)), // No server for protocol-created objects
         })
     }
 
@@ -235,6 +246,42 @@ impl Playwright {
             .as_any()
             .downcast_ref::<BrowserType>()
             .expect("webkit should be BrowserType")
+    }
+
+    /// Shuts down the Playwright server gracefully.
+    ///
+    /// This method should be called when you're done using Playwright to ensure
+    /// the server process is terminated cleanly, especially on Windows.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use playwright_core::protocol::Playwright;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let playwright = Playwright::launch().await?;
+    /// // ... use playwright ...
+    /// playwright.shutdown().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Platform-Specific Behavior
+    ///
+    /// **Windows**: Closes stdio pipes before shutting down to prevent hangs.
+    ///
+    /// **Unix**: Standard graceful shutdown.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server shutdown fails.
+    pub async fn shutdown(&self) -> Result<()> {
+        // Take server from mutex without holding the lock across await
+        let server = self.server.lock().take();
+        if let Some(server) = server {
+            tracing::debug!("Shutting down Playwright server");
+            server.shutdown().await?;
+        }
+        Ok(())
     }
 }
 
@@ -289,6 +336,36 @@ impl ChannelOwner for Playwright {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+impl Drop for Playwright {
+    /// Ensures Playwright server is shut down when Playwright is dropped.
+    ///
+    /// This is critical on Windows to prevent process hangs when tests complete.
+    /// The Drop implementation will attempt to kill the server process synchronously.
+    ///
+    /// Note: For graceful shutdown, prefer calling `playwright.shutdown().await`
+    /// explicitly before dropping.
+    fn drop(&mut self) {
+        if let Some(mut server) = self.server.lock().take() {
+            tracing::debug!("Drop: Force-killing Playwright server");
+
+            // We can't call async shutdown in Drop, so use blocking kill
+            // This is less graceful but ensures the process terminates
+            #[cfg(windows)]
+            {
+                // On Windows: Close stdio pipes before killing
+                drop(server.process.stdin.take());
+                drop(server.process.stdout.take());
+                drop(server.process.stderr.take());
+            }
+
+            // Force kill the process
+            if let Err(e) = server.process.start_kill() {
+                tracing::warn!("Failed to kill Playwright server in Drop: {}", e);
+            }
+        }
     }
 }
 
