@@ -60,6 +60,7 @@
 ## Phase 6 Slices
 
 ### Slice 1: Windows Support and Stdio Cleanup ✅ COMPLETE
+### Slice 1: Windows Support and Stdio Cleanup ✅ COMPLETE
 
 **Goal:** Fix Windows integration test hangs and enable full Windows CI support.
 
