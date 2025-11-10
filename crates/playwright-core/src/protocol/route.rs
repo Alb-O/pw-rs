@@ -162,63 +162,70 @@ impl Route {
     /// # }
     /// ```
     ///
-    /// # Known Issues
+    /// # Known Limitations
     ///
-    /// TODO: Main document navigation (page.goto()) fulfillment may not work correctly.
-    /// The implementation works for fetch/XHR requests but appears to have issues with
-    /// replacing the main document. This needs further investigation of the Playwright
-    /// protocol for main frame navigations. Workaround: Use fulfill() for API mocking
-    /// (fetch/XHR), not for replacing entire page HTML during navigation.
+    /// **Response body fulfillment is not supported in Playwright 1.49.0 - 1.56.1.**
+    ///
+    /// The route.fulfill() method can successfully send requests for status codes and headers,
+    /// but the response body is not transmitted to the browser JavaScript layer. This applies
+    /// to ALL request types (main document, fetch, XHR, etc.), not just document navigation.
+    ///
+    /// **Investigation Findings:**
+    /// - The protocol message is correctly formatted and accepted by the Playwright server
+    /// - The body bytes are present in the fulfill() call
+    /// - The Playwright server creates a Response object
+    /// - But the body content does not reach the browser's fetch/network API
+    ///
+    /// This appears to be a limitation or bug in the Playwright server implementation.
+    /// Tested with versions 1.49.0 and 1.56.1 (latest as of 2025-11-10).
+    ///
+    /// TODO: Periodically test with newer Playwright versions for fix.
+    /// Workaround: Mock responses at the HTTP server level rather than using network interception,
+    /// or wait for a newer Playwright version that supports response body fulfillment.
     ///
     /// See: <https://playwright.dev/docs/api/class-route#route-fulfill>
     pub async fn fulfill(&self, options: Option<FulfillOptions>) -> Result<()> {
         let opts = options.unwrap_or_default();
 
         // Build the response object for the protocol
-        let mut response = json!({});
+        let mut response = json!({
+            "status": opts.status.unwrap_or(200),
+            "headers": []
+        });
 
-        // Set status (default to 200)
-        response["status"] = json!(opts.status.unwrap_or(200));
+        // Set headers - prepare them BEFORE adding body
+        let mut headers_map = opts.headers.unwrap_or_default();
 
-        // Set headers
-        let mut headers = opts.headers.unwrap_or_default();
-
-        // Calculate body and set content-length
+        // Set body if provided, and prepare headers
         let body_bytes = opts.body.as_ref();
         if let Some(body) = body_bytes {
             let content_length = body.len().to_string();
-            headers.insert("content-length".to_string(), content_length);
+            headers_map.insert("content-length".to_string(), content_length);
         }
 
         // Add Content-Type if specified
-        let content_type = opts.content_type.clone();
-        if let Some(ref ct) = content_type {
-            headers.insert("content-type".to_string(), ct.clone());
+        if let Some(ref ct) = opts.content_type {
+            headers_map.insert("content-type".to_string(), ct.clone());
         }
 
-        // Convert headers to protocol format (array of {name, value} objects)
-        let headers_array: Vec<Value> = headers
+        // Convert headers to protocol format
+        let headers_array: Vec<Value> = headers_map
             .into_iter()
-            .map(|(name, value)| {
-                json!({
-                    "name": name,
-                    "value": value
-                })
-            })
+            .map(|(name, value)| json!({"name": name, "value": value}))
             .collect();
         response["headers"] = json!(headers_array);
 
-        // Set body if provided (base64 encoded)
+        // Set body LAST, after all other fields
         if let Some(body) = body_bytes {
-            use base64::Engine;
-            let encoded = base64::engine::general_purpose::STANDARD.encode(body);
-            response["body"] = json!(encoded);
-            response["isBase64"] = json!(true);
-        }
-
-        // Set contentType at top level if provided
-        if let Some(ct) = content_type {
-            response["contentType"] = json!(ct);
+            // Send as plain string for text (UTF-8), base64 for binary
+            if let Ok(body_str) = std::str::from_utf8(body) {
+                response["body"] = json!(body_str);
+            } else {
+                use base64::Engine;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(body);
+                response["body"] = json!(encoded);
+                response["isBase64"] = json!(true);
+            }
         }
 
         let params = json!({

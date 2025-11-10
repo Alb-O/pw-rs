@@ -60,6 +60,24 @@ impl Request {
             .and_then(|v| v.as_str())
             .unwrap_or("GET")
     }
+
+    /// Returns the resource type of the request (e.g., "document", "stylesheet", "image", "fetch", etc.).
+    ///
+    /// See: <https://playwright.dev/docs/api/class-request#request-resource-type>
+    pub fn resource_type(&self) -> &str {
+        self.initializer()
+            .get("resourceType")
+            .and_then(|v| v.as_str())
+            .unwrap_or("other")
+    }
+
+    /// Check if this request is for a navigation (main document).
+    ///
+    /// A navigation request is when the request is for the main frame's document.
+    /// This is used to distinguish between main document loads and subresource loads.
+    pub fn is_navigation_request(&self) -> bool {
+        self.resource_type() == "document"
+    }
 }
 
 impl ChannelOwner for Request {
