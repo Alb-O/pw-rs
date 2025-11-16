@@ -1,12 +1,14 @@
 # Phase 7: Real-World Validation - Implementation Plan
 
-**Status:** 📋 **PLANNED**
+**Status:** 🚧 **IN PROGRESS**
 
-**Goal:** Validate playwright-rust through real-world usage, incorporate user feedback, complete deferred documentation, and prepare for v1.0.0 release.
+**Goal:** Validate playwright-rust through real-world usage (Folio integration), address architectural issues discovered, and prepare for v1.0.0 release with single-crate architecture.
 
-**User Story:** As a Rust developer using playwright-rust in production, I want comprehensive examples and migration guides based on real usage patterns, performance optimizations informed by actual bottlenecks, and a stable v1.0.0 release that addresses real-world needs.
+**User Story:** As a Rust developer using playwright-rust in production, I want a simple, production-ready library that works correctly as a crates.io dependency, matches official Playwright patterns, and provides comprehensive examples based on real usage.
 
-**Approach:** Feedback-driven development based on v0.6.0 usage and folio integration
+**Approach:** Feedback-driven development based on v0.6.1 usage and Folio integration
+
+**Key Discovery:** Folio integration revealed Issue #3 (build script workspace detection) which exposed fundamental complexity in the two-crate architecture. This drives the decision to consolidate to single-crate architecture (see ADR 0003).
 
 ---
 
@@ -61,11 +63,70 @@ This feedback-driven approach ensures we're solving real problems, not theoretic
 
 ---
 
-## Phase 7 Slices (Tentative)
+## Phase 7 Slices
+
+### Slice 0: Single-Crate Architecture Consolidation (Phase 7 Initiation) ✅ **PARTIALLY COMPLETED**
+
+**Goal:** Consolidate two-crate architecture into single crate matching official Playwright implementations - Release as v0.7.0
+
+**Motivation:** Issue #3 discovered during Folio integration revealed fundamental complexity in two-crate split. All official Playwright implementations use single packages.
+
+**Why v0.7.0 (not v1.0.0)?**
+- Major architectural change warrants minor version bump
+- v1.0.0 reserved for post-validation stability milestone
+- Allows iteration based on feedback before committing to 1.0 API stability
+
+**Related:**
+- Issue: [#3 - Build script workspace detection](https://github.com/padamson/playwright-rust/issues/3)
+- ADR: [0003-single-crate-architecture.md](../adr/0003-single-crate-architecture.md)
+- Release: v0.6.1 (fixed issue #3 as interim solution, added robust workspace detection)
+
+**Sub-tasks:**
+
+1. **Deprecation of playwright-core** (Estimated: 1 hour)
+   - [ ] Publish playwright-core v0.6.2 with deprecation notice
+   - [ ] Update playwright-core README with migration instructions
+   - [ ] Yank v0.6.0 and v0.6.1 from crates.io
+   - [ ] Leave v0.6.2 as deprecation marker
+
+2. **Code Consolidation** (Estimated: 2 days) - **Trunk-based development**
+   - [ ] Move `playwright-core/src/` code to `playwright/src/protocol/` and `src/server/`
+   - [ ] Update visibility: `pub` → `pub(crate)` for internal modules
+   - [ ] Merge Cargo.toml dependencies
+   - [ ] Merge build.rs (already has robust workspace detection from v0.6.1)
+   - [ ] Update lib.rs to export only public API
+   - [ ] Fix all import paths
+   - [ ] Remove `crates/playwright-core/` directory
+
+3. **Testing & Validation** (Estimated: 1 day)
+   - [ ] All 248+ tests pass
+   - [ ] All examples work
+   - [ ] Clippy clean
+   - [ ] CI passes (Linux, macOS, Windows)
+   - [ ] Test in Folio as real-world validation
+
+4. **Documentation & Release** (Estimated: 1 day)
+   - [ ] Update README (single-crate architecture)
+   - [ ] Update CHANGELOG for v0.7.0
+   - [ ] Create MIGRATION.md guide (v0.6.x → v0.7.0)
+   - [ ] Publish playwright-rs v0.7.0 to crates.io
+   - [ ] Create GitHub release
+   - [ ] Update Folio to use v0.7.0
+
+**Success Criteria:**
+- [x] Issue #3 root cause documented (ADR 0003)
+- [ ] Single crate published as playwright-rs v0.7.0
+- [ ] playwright-core deprecated and yanked
+- [ ] All tests pass
+- [ ] Folio successfully using v0.7.0
+
+**Estimated Time:** 5 days total
+
+---
 
 ### Slice 1: Folio Integration & Dogfooding
 
-**Goal:** Integrate playwright-rust into folio project, document pain points
+**Goal:** Complete integration of playwright-rust (v0.7.0 single-crate) into Folio project, document pain points
 
 **Tasks:**
 - [ ] Replace existing browser automation with playwright-rust
@@ -83,7 +144,7 @@ This feedback-driven approach ensures we're solving real problems, not theoretic
 
 ### Slice 2: Community Feedback Analysis
 
-**Goal:** Gather and analyze technical feedback from v0.6.0 early adopters
+**Goal:** Gather and analyze technical feedback from v0.7.0 early adopters
 
 **Tasks:**
 - [ ] Collect bug reports and feature requests
@@ -153,22 +214,37 @@ This feedback-driven approach ensures we're solving real problems, not theoretic
 
 ### Slice 6: v1.0.0 Release Preparation
 
-**Goal:** Prepare for stable v1.0.0 release
+**Goal:** Prepare and release stable v1.0.0 after real-world validation
+
+**Note:** This comes AFTER v0.7.0 single-crate consolidation (Slice 0) has been validated through Slices 1-5
+
+**Prerequisites:**
+- v0.7.0 validated in production (Folio)
+- Community feedback incorporated
+- Performance optimized
+- API polished
+- Examples complete
 
 **Tasks:**
-- [ ] API stability review
-- [ ] Breaking change assessment
-- [ ] Comprehensive CHANGELOG
-- [ ] Migration guide from v0.6.0 to v1.0.0
+- [ ] API stability review - Lock down public API for 1.0
+- [ ] Breaking change assessment - Any final changes before 1.0?
+- [ ] Comprehensive CHANGELOG review
+- [ ] Migration guide from v0.7.0 to v1.0.0 (if breaking changes)
 - [ ] Security audit
 - [ ] License review
+- [ ] Version bump to 1.0.0
 - [ ] Publish to crates.io
+- [ ] Create GitHub release
+- [ ] Community announcement (Rust forums, Reddit, etc.)
+- [ ] Update Folio to v1.0.0
 
 **Success Criteria:**
 - API stable with no planned breaking changes
 - Security and license approved
 - v1.0.0 published and announced
-- Positive initial reception
+- Positive community reception
+- Folio running on v1.0.0 in production
+- Clear commitment to semver stability going forward
 
 ---
 
@@ -211,12 +287,33 @@ This feedback-driven approach ensures we're solving real problems, not theoretic
 
 ## Notes
 
-- This plan will be refined based on actual Phase 6 completion
-- Slices may be reordered based on technical priorities
-- Focus on solving real problems discovered through usage
-- Keep implementation lean until patterns emerge
+### Architectural Discovery
+
+**Issue #3 Impact:** During Folio integration (real-world validation), we discovered that the build script in `playwright-core` couldn't correctly determine workspace root when used as a crates.io dependency. This revealed fundamental architectural complexity in the two-crate split.
+
+**Decision Process:**
+1. Fixed issue #3 in v0.6.1 with robust workspace detection (interim solution)
+2. Analyzed root cause → two-crate split adds complexity without value
+3. Researched all official Playwright implementations → ALL use single packages
+4. Created ADR 0003 documenting analysis and decision
+5. Integrated consolidation into Phase 7 as Slice 1
+
+This is **exactly the type of discovery** Phase 7 was designed for: real-world usage revealing architectural issues that theoretical planning missed.
+
+### Implementation Approach
+
+- **Trunk-based development:** Small, frequent commits directly to main
+- **CI validation:** Every commit must pass full test suite
+- **Real-world testing:** Validate in Folio throughout process
+- **No long-lived branches:** Changes integrated continuously
+
+### Plan Evolution
+
+- This plan evolved based on actual Folio integration discoveries
+- Slices may continue to evolve based on technical priorities
+- Focus remains on solving real problems, not theoretical ones
 
 ---
 
 **Created:** 2025-11-10
-**Last Updated:** 2025-11-12
+**Last Updated:** 2025-11-15 (Added Slice 1: Single-Crate Consolidation)

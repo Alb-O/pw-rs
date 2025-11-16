@@ -1,12 +1,12 @@
 [package]
 name = "playwright-core"
-version.workspace = true
+version = "0.6.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Internal implementation of Playwright protocol for Rust"
+description = "⚠️ DEPRECATED: Use playwright-rs instead. This crate has been merged into playwright-rs as of v0.7.0."
 
 [lib]
 doctest = false  # Disable doc-tests by default (run with: cargo test --doc)
