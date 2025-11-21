@@ -6,8 +6,8 @@
 
 **Related Documents:**
 - [ADR 0001: Protocol Architecture](./0001-protocol-architecture.md)
-- [Phase 1 Implementation Plan](../implementation-plans/phase1-protocol-foundation.md)
-- [Initialization Flow Research](../technical/initialization-flow-research.md)
+- [Version 0.1 Implementation Plan](../implementation-plans/v0.1-protocol-foundation.md)
+- [Initialization Flow Research](../technical/v0.1-slice1-initialization-flow-research.md)
 - Python: https://github.com/microsoft/playwright-python/blob/main/playwright/_impl/_connection.py
 - Java: https://github.com/microsoft/playwright-java
 - .NET: https://github.com/microsoft/playwright-dotnet
@@ -360,15 +360,15 @@ impl Playwright {
 
 **Decision:** Clone the Playwright struct when returning from `initialize_playwright()`.
 
-This is straightforward and works well. Future optimization (if needed) deferred to Phase 2.
+This is straightforward and works well. Future optimization (if needed) deferred to Version 0.2.
 
 ### Initialization Timeout
 
-No explicit timeout implemented in Phase 1. The connection layer will detect server failures via broken pipe errors. Explicit timeouts can be added in Phase 2 if needed.
+No explicit timeout implemented in Version 0.1. The connection layer will detect server failures via broken pipe errors. Explicit timeouts can be added in Version 0.2 if needed.
 
 ### Cleanup on Drop
 
-Phase 1 does not implement `Drop` for Playwright. Server process is killed when parent process exits. Graceful cleanup and explicit `close()` methods will be addressed in Phase 2 alongside Browser/Page lifecycle management.
+Version 0.1 does not implement `Drop` for Playwright. Server process is killed when parent process exits. Graceful cleanup and explicit `close()` methods will be addressed in Version 0.2 alongside Browser/Page lifecycle management.
 
 ## Testing Strategy
 
@@ -406,7 +406,7 @@ async fn test_initialize_with_real_server() {
 
 ### Research Document
 
-See [Initialization Flow Research](../technical/initialization-flow-research.md) for detailed analysis of all three official bindings.
+See [Initialization Flow Research](../technical/v0.1-slice1-initialization-flow-research.md) for detailed analysis of all three official bindings.
 
 ### Source Code References
 
@@ -425,7 +425,7 @@ See [Initialization Flow Research](../technical/initialization-flow-research.md)
 ## Related Decisions
 
 - [ADR 0001: Protocol Architecture](./0001-protocol-architecture.md) - Base protocol design
-- Phase 1 Slice 5 implementation follows this ADR
+- Version 0.1 Slice 5 implementation follows this ADR
 
 ---
 

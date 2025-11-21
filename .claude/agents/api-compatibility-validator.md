@@ -266,7 +266,7 @@ When validating an entire class, provide a summary:
 ### Recommended Actions
 1. Fix screenshot() - add missing parameters
 2. Fix pdf() - change timeout type
-3. Implement drag_and_drop() next (high priority for Phase 6)
+3. Implement drag_and_drop() next (high priority for Version 0.6)
 ```
 
 ## Cross-Reference Sources

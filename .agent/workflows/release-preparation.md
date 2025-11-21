@@ -12,7 +12,7 @@ Execute comprehensive pre-release verification, update version files, validate C
 
 ## Release Workflow
 
-### Phase 1: Pre-Release Verification (Automated)
+### Stage 1: Pre-Release Verification (Automated)
 
 **Run these checks and report results**:
 
@@ -54,11 +54,11 @@ Execute comprehensive pre-release verification, update version files, validate C
 
 **If ANY check fails**: Stop and report issues. User must fix before proceeding.
 
-**If ALL checks pass**: Proceed to Phase 2.
+**If ALL checks pass**: Proceed to Stage 2.
 
 ---
 
-### Phase 2: Version Management (Interactive)
+### Stage 2: Version Management (Interactive)
 
 **Current version detection**:
 1. Read `Cargo.toml` workspace version
@@ -86,7 +86,7 @@ Execute comprehensive pre-release verification, update version files, validate C
 
 ---
 
-### Phase 3: Pre-Release Validation (Automated)
+### Stage 3: Pre-Release Validation (Automated)
 
 **Run tests again after version bump**:
 ```bash
@@ -106,7 +106,7 @@ cargo nextest run --workspace
 
 ---
 
-### Phase 4: Release Instructions (Manual Steps)
+### Stage 4: Release Instructions (Manual Steps)
 
 **After all automated checks pass**, provide user with clear instructions:
 
@@ -151,11 +151,11 @@ cargo publish -p playwright-core
 
 ---
 
-### Phase 5: Post-Release Tasks
+### Stage 5: Post-Release Tasks
 
 **Update documentation**:
 1. Mark slice as complete in implementation plan
-2. Update roadmap.md if phase is complete
+2. Update roadmap.md if version is complete
 3. Consider updating README.md development status
 
 **Announce release** (optional):

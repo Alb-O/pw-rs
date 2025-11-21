@@ -1,5 +1,5 @@
 ---
-description: Use this workflow when completing slices/phases, updating documentation, or preparing releases. Enforces Just-In-Time documentation philosophy and maintains documentation hierarchy.
+description: Use this workflow when completing slices/versions, updating documentation, or preparing releases. Enforces Just-In-Time documentation philosophy and maintains documentation hierarchy.
 ---
 
 # Documentation Maintenance Workflow
@@ -26,7 +26,7 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 - ❌ Keep brief (< 250 lines)
 
 **Update Triggers**:
-- Phase completes (add newly working features)
+- Version completes (add newly working features)
 - Installation process changes
 - Major API changes that affect quick start example
 
@@ -36,22 +36,22 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 **Purpose**: Long-term direction, milestone planning
 
 **Content Rules**:
-- ✅ High-level phase overview (1 paragraph each)
+- ✅ High-level version overview (1 paragraph each)
 - ✅ Milestones with completion status
-- ✅ API preview for FUTURE phases only
+- ✅ API preview for FUTURE versions only
 - ✅ Strategic direction
 - ❌ NO slice-level details
 - ❌ NO file lists
 - ❌ NO implementation details
 
 **Update Triggers**:
-- Phase completes (mark phase as complete, update status)
-- New phase starts (add high-level scope)
+- Version completes (mark version as complete, update status)
+- New version starts (add high-level scope)
 - Major milestone reached
 
-**Update Frequency**: Medium (phase boundaries)
+**Update Frequency**: Medium (version boundaries)
 
-### 3. docs/implementation-plans/phaseN-*.md - Detailed Work Tracking
+### 3. docs/implementation-plans/vX.Y-*.md - Detailed Work Tracking
 **Purpose**: Day-to-day development, historical record
 
 **Content Rules**:
@@ -67,9 +67,9 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 - Slice completes (mark as complete, add architectural insights only)
 - Implementation challenges discovered (document the insight, not the fix)
 
-**Update Frequency**: High (during active phase)
+**Update Frequency**: High (during active version)
 
-**After Phase Complete**: Becomes historical reference, rarely updated
+**After Version Complete**: Becomes historical reference, rarely updated
 
 **Philosophy**: The code is self-documenting. Implementation plans document WHY and HOW (architecture), not WHAT (files/tests/methods).
 
@@ -132,16 +132,16 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 
 ### When a Slice Completes
 
-1. **Read the implementation plan**: `docs/implementation-plans/phase{N}-*.md`
+1. **Read the implementation plan**: `docs/implementation-plans/v{X.Y}-*.md`
 2. **Mark the slice as complete** in the implementation plan
-3. **Check if all slices in the phase are complete**:
+3. **Check if all slices in the version are complete**:
    - If NO: Only update the implementation plan
-   - If YES: Proceed to phase completion workflow
+   - If YES: Proceed to version completion workflow
 
-### When a Phase Completes
+### When a Version Completes
 
 1. **Update docs/roadmap.md**:
-   - Mark the phase as complete (✅)
+   - Mark the version as complete (✅)
    - Update milestone status
    - Add completion date
 
@@ -152,7 +152,7 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 
 3. **Check examples** (`crates/playwright/examples/`):
    - Verify existing examples still compile and run
-   - Identify if new examples are needed for phase features
+   - Identify if new examples are needed for version features
    - Suggest creating examples for major new features
    - Flag outdated examples that use old APIs
 
@@ -167,18 +167,18 @@ Ensure that documentation stays current, accurate, and follows the strict docume
    - Patch version (0.x.y): Bug fixes only
    - Suggest preparing for crates.io release
 
-### When a New Phase Starts
+### When a New Version Starts
 
 1. **Check if implementation plan exists**:
    - If NO: Suggest creating from TEMPLATE_IMPLEMENTATION_PLAN.md
    - If YES: Verify it's ready for development
 
 2. **Update docs/roadmap.md**:
-   - Add high-level scope for new phase (1 paragraph)
+   - Add high-level scope for new version (1 paragraph)
    - Don't add detailed slices (those go in implementation plan)
 
 3. **Verify README.md**:
-   - Ensure it doesn't preview this phase's features yet
+   - Ensure it doesn't preview this version's features yet
    - Confirm it only shows currently working code
 
 ### When API Changes
@@ -219,10 +219,10 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 - [ ] Installation instructions are current
 
 ### docs/roadmap.md Validation
-- [ ] Phase statuses are accurate (✅ for complete)
+- [ ] Version statuses are accurate (✅ for complete)
 - [ ] High-level only (no slice details)
-- [ ] Future phases have 1 paragraph overview
-- [ ] Completed phases have completion dates
+- [ ] Future versions have 1 paragraph overview
+- [ ] Completed versions have completion dates
 - [ ] Links to implementation plans
 
 ### Implementation Plan Validation

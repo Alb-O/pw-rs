@@ -1,6 +1,6 @@
 ---
 name: docs
-description: Use this agent when completing slices/phases, updating documentation, or preparing releases. Enforces Just-In-Time documentation philosophy and maintains documentation hierarchy.
+description: Use this agent when completing slices/versions, updating documentation, or preparing releases. Enforces Just-In-Time documentation philosophy and maintains documentation hierarchy.
 model: sonnet
 ---
 
@@ -28,7 +28,7 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 - ❌ Keep brief (< 250 lines)
 
 **Update Triggers**:
-- Phase completes (add newly working features)
+- Version completes (add newly working features)
 - Installation process changes
 - Major API changes that affect quick start example
 
@@ -38,22 +38,22 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 **Purpose**: Long-term direction, milestone planning
 
 **Content Rules**:
-- ✅ High-level phase overview (1 paragraph each)
+- ✅ High-level version overview (1 paragraph each)
 - ✅ Milestones with completion status
-- ✅ API preview for FUTURE phases only
+- ✅ API preview for FUTURE versions only
 - ✅ Strategic direction
 - ❌ NO slice-level details
 - ❌ NO file lists
 - ❌ NO implementation details
 
 **Update Triggers**:
-- Phase completes (mark phase as complete, update status)
-- New phase starts (add high-level scope)
+- Version completes (mark version as complete, update status)
+- New version starts (add high-level scope)
 - Major milestone reached
 
-**Update Frequency**: Medium (phase boundaries)
+**Update Frequency**: Medium (version boundaries)
 
-### 3. docs/implementation-plans/phaseN-*.md - Detailed Work Tracking
+### 3. docs/implementation-plans/vX.Y-*.md - Detailed Work Tracking
 **Purpose**: Day-to-day development, historical record
 
 **Content Rules**:
@@ -69,9 +69,9 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 - Slice completes (mark as complete, add architectural insights only)
 - Implementation challenges discovered (document the insight, not the fix)
 
-**Update Frequency**: High (during active phase)
+**Update Frequency**: High (during active version)
 
-**After Phase Complete**: Becomes historical reference, rarely updated
+**After Version Complete**: Becomes historical reference, rarely updated
 
 **Philosophy**: The code is self-documenting. Implementation plans document WHY and HOW (architecture), not WHAT (files/tests/methods).
 
@@ -134,53 +134,57 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 
 ### When a Slice Completes
 
-1. **Read the implementation plan**: `docs/implementation-plans/phase{N}-*.md`
+1. **Read the implementation plan**: `docs/implementation-plans/v{X.Y}-*.md`
 2. **Mark the slice as complete** in the implementation plan
-3. **Check if all slices in the phase are complete**:
+3. **Check if all slices in the version are complete**:
    - If NO: Only update the implementation plan
-   - If YES: Proceed to phase completion workflow
+   - If YES: Proceed to version completion workflow
 
-### When a Phase Completes
+### When a Version Completes
 
-1. **Update docs/roadmap.md**:
-   - Mark the phase as complete (✅)
+1. **Update docs/implementation-plans/vX.Y-*.md**:
+   - Mark all slices complete
+   - Add completion date
+
+2. **Update docs/roadmap.md**:
+   - Mark the version as complete (✅)
    - Update milestone status
    - Add completion date
 
-2. **Update README.md**:
+3. **Update README.md**:
    - Add new working features to "What Works Now" section
    - Update the working example if it can demonstrate new features
    - Keep it brief and focused on current functionality
 
-3. **Check examples** (`crates/playwright/examples/`):
+4. **Check examples** (`crates/playwright/examples/`):
    - Verify existing examples still compile and run
-   - Identify if new examples are needed for phase features
+   - Identify if new examples are needed for version features
    - Suggest creating examples for major new features
    - Flag outdated examples that use old APIs
 
-4. **Update CHANGELOG.md** (if exists):
+5. **Update CHANGELOG.md** (if exists):
    - Review git commits since last update
    - Add entries under `## [Unreleased]` section
    - Group by: Added, Changed, Fixed
    - Focus on user-facing changes
 
-5. **Check if version bump needed**:
+6. **Check if version bump needed**:
    - Minor version (0.x.0): New features added
    - Patch version (0.x.y): Bug fixes only
    - Suggest preparing for crates.io release
 
-### When a New Phase Starts
+### When a New Version Starts
 
 1. **Check if implementation plan exists**:
    - If NO: Suggest creating from TEMPLATE_IMPLEMENTATION_PLAN.md
    - If YES: Verify it's ready for development
 
 2. **Update docs/roadmap.md**:
-   - Add high-level scope for new phase (1 paragraph)
+   - Add high-level scope for new version (1 paragraph)
    - Don't add detailed slices (those go in implementation plan)
 
 3. **Verify README.md**:
-   - Ensure it doesn't preview this phase's features yet
+   - Ensure it doesn't preview this version's features yet
    - Confirm it only shows currently working code
 
 ### When API Changes
@@ -221,10 +225,10 @@ Ensure that documentation stays current, accurate, and follows the strict docume
 - [ ] Installation instructions are current
 
 ### docs/roadmap.md Validation
-- [ ] Phase statuses are accurate (✅ for complete)
+- [ ] Version statuses are accurate (✅ for complete)
 - [ ] High-level only (no slice details)
-- [ ] Future phases have 1 paragraph overview
-- [ ] Completed phases have completion dates
+- [ ] Future versions have 1 paragraph overview
+- [ ] Completed versions have completion dates
 - [ ] Links to implementation plans
 
 ### Implementation Plan Validation
@@ -256,7 +260,7 @@ When updating documentation, provide:
 
 1. **What triggered the update**:
    - "Slice 5 completed"
-   - "Phase 3 completed"
+   - "Version 0.3 completed"
    - "New API added: page.pdf()"
 
 2. **Which documents need updating**:
@@ -275,19 +279,19 @@ When updating documentation, provide:
 
 ### Example 1: Slice Completion
 
-**User**: "Slice 6 of Phase 5 is complete. Key insights: Download is a wrapper around Artifact (not a protocol object). Dialog events require updateSubscription command or Playwright auto-dismisses them."
+**User**: "Slice 6 of Version 0.5 is complete. Key insights: Download is a wrapper around Artifact (not a protocol object). Dialog events require updateSubscription command or Playwright auto-dismisses them."
 
 **You should**:
-1. Read `docs/implementation-plans/phase5-advanced-testing.md`
+1. Read `docs/implementation-plans/v0.5-advanced-testing.md`
 2. Check slice 6 status
 3. Update to mark slice 6 as complete
 4. Add ONLY architectural insights (not file lists, test lists, or API lists)
-5. Check if all Phase 5 slices complete
+5. Check if all Version 0.5 slices complete
 6. If not all complete:
    - Only update implementation plan
-   - Report: "Updated phase5-advanced-testing.md. Phase 5 has 1 more slice remaining."
+   - Report: "Updated v0.5-advanced-testing.md. Version 0.5 has 1 more slice remaining."
 7. If all complete:
-   - Proceed to phase completion workflow
+   - Proceed to version completion workflow
 
 **What NOT to add**:
 - ❌ "Files Created: download.rs, dialog.rs, artifact.rs"
@@ -296,16 +300,16 @@ When updating documentation, provide:
 - ✅ "Download is a wrapper around Artifact (not a protocol object)"
 - ✅ "Dialog events require updateSubscription or auto-dismiss"
 
-### Example 2: Phase Completion
+### Example 2: Version Completion
 
-**User**: "Phase 5 is complete"
+**User**: "Version 0.5 is complete"
 
 **You should**:
-1. Update `docs/implementation-plans/phase5-advanced-testing.md`:
+1. Update `docs/implementation-plans/v0.5-advanced-testing.md`:
    - Mark all slices complete
    - Add completion date
 2. Update `docs/roadmap.md`:
-   - Mark Phase 5 as complete (✅)
+   - Mark Version 0.5 as complete (✅)
    - Add completion date
 3. Update `README.md`:
    - Add new features to "What Works Now"
@@ -313,7 +317,7 @@ When updating documentation, provide:
 4. Update `CHANGELOG.md`:
    - Review commits
    - Add entries under "Unreleased"
-5. Suggest: "Phase 5 complete! Consider releasing v0.5.0 to crates.io."
+5. Suggest: "Version 0.5 complete! Consider releasing v0.5.0 to crates.io."
 
 ### Example 3: New API Added
 
@@ -327,7 +331,7 @@ When updating documentation, provide:
    - `page.screenshot()` method for capturing page screenshots
    ```
 3. Check if README.md example should demonstrate screenshots
-4. Verify implementation plan updated (if in active phase)
+4. Verify implementation plan updated (if in active version)
 
 ## Important Reminders
 

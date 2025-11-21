@@ -331,10 +331,10 @@ We chose [Option X] because:
 
 [If replacing existing implementation, describe migration approach]
 
-- **Phase 1:** [e.g., "Implement new API in parallel module"]
-- **Phase 2:** [e.g., "Migrate tests to use new API"]
-- **Phase 3:** [e.g., "Deprecate old API, update documentation"]
-- **Phase 4:** [e.g., "Remove old implementation in next major version"]
+- **Stage 1:** [e.g., "Implement new API in parallel module"]
+- **Stage 2:** [e.g., "Migrate tests to use new API"]
+- **Stage 3:** [e.g., "Deprecate old API, update documentation"]
+- **Stage 4:** [e.g., "Remove old implementation in next major version"]
 
 ### Code Changes Required
 

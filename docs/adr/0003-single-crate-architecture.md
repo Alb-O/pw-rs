@@ -5,7 +5,7 @@
 **Date:** 2025-11-15
 
 **Related Documents:**
-- Implementation Plan: [docs/implementation-plans/phase7-single-crate-consolidation.md](../implementation-plans/phase7-single-crate-consolidation.md)
+- Implementation Plan: [docs/implementation-plans/v1.0-real-world-validation.md](../implementation-plans/v1.0-real-world-validation.md)
 - Issue: [#3 - Build script workspace detection](https://github.com/padamson/playwright-rust/issues/3)
 - Triggered by: v0.6.1 bug fix revealing architectural complexity
 
@@ -403,28 +403,28 @@ The two-crate split provides **no proven benefits**:
 
 ### Migration Path
 
-See detailed implementation plan: [docs/implementation-plans/phase7-single-crate-consolidation.md](../implementation-plans/phase7-single-crate-consolidation.md)
+See detailed implementation plan: [docs/implementation-plans/v1.0-real-world-validation.md](../implementation-plans/v1.0-real-world-validation.md)
 
 **High-Level Phases:**
 
-- **Phase 1: Preparation** (1 day)
+- **Stage 1: Preparation** (1 day)
   - Document current structure
   - Plan module organization
   - Create implementation plan
 
-- **Phase 2: Code Consolidation** (2 days)
+- **Stage 2: Code Consolidation** (2 days)
   - Move `playwright-core` code into `playwright`
   - Update visibility (`pub` → `pub(crate)` for internals)
   - Merge `Cargo.toml` files
   - Merge build scripts
 
-- **Phase 3: Testing & Validation** (1 day)
+- **Stage 3: Testing & Validation** (1 day)
   - Run full test suite
   - Update examples
   - Verify clippy/fmt
   - Test publishing
 
-- **Phase 4: Documentation & Release** (1 day)
+- **Stage 4: Documentation & Release** (1 day)
   - Update README
   - Update CHANGELOG (v1.0.0 or v0.7.0)
   - Migration guide

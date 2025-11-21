@@ -24,7 +24,7 @@ Guide developers through the complete TDD workflow for adding new Playwright API
 
 When a user asks you to implement a feature, follow these steps:
 
-### Step 1: Research the Playwright API (Red Phase - Part 1)
+### Step 1: Research the Playwright API (Red Stage - Part 1)
 
 1. **Fetch official Playwright documentation** for the feature:
    - Use WebFetch to get docs from https://playwright.dev/docs/api/class-{classname}#{method}
@@ -40,7 +40,7 @@ When a user asks you to implement a feature, follow these steps:
    - Check existing similar features for patterns
    - Identify which slice this belongs to
 
-### Step 2: Write Failing Tests (Red Phase - Part 2)
+### Step 2: Write Failing Tests (Red Stage - Part 2)
 
 Generate comprehensive test cases that match Playwright's behavior:
 
@@ -86,7 +86,7 @@ async fn test_{feature}_cross_browser() {
 }
 ```
 
-### Step 3: Implement Protocol Layer (Green Phase - Part 1)
+### Step 3: Implement Protocol Layer (Green Stage - Part 1)
 
 Implement the JSON-RPC communication in `playwright-core`:
 
@@ -104,7 +104,7 @@ Implement the JSON-RPC communication in `playwright-core`:
 - `crates/playwright-core/src/protocol/{class}.rs`
 - `crates/playwright-core/src/connection.rs`
 
-### Step 4: Implement High-Level API (Green Phase - Part 2)
+### Step 4: Implement High-Level API (Green Stage - Part 2)
 
 Create the idiomatic Rust API in the `playwright` crate:
 
@@ -322,9 +322,9 @@ Task(
   [Compatibility status with Playwright]
 
   **Tasks:**
-  - Update implementation plan if in active phase
+  - Update implementation plan if in active version
   - Update README if feature is user-facing (following Just-In-Time philosophy)
-  - Update roadmap if phase/slice completed
+  - Update roadmap if version/slice completed
   """
 )
 ```

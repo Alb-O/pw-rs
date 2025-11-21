@@ -94,7 +94,7 @@ For complex workflows, use these specialized agents (located in `.claude/agents/
    - Ensures: Tests written first, API matches Playwright exactly, rustdoc complete
 
 2. **Documentation Maintenance Agent** (`documentation-maintenance.md`)
-   - Use when: Completing slices/phases, updating docs, releasing versions
+   - Use when: Completing slices/versions, updating docs, releasing versions
    - Automates: Just-in-time doc updates, hierarchy enforcement, CHANGELOG generation
    - Ensures: README shows current features only, roadmap stays strategic, implementation plans stay current
 
@@ -119,11 +119,11 @@ For complex workflows, use these specialized agents (located in `.claude/agents/
 - Example triggers: "implement page.screenshot()", "add browser.pdf() method"
 
 **Documentation Maintenance Agent** - Use automatically when user:
-- Says "Slice X complete", "Phase Y done", or "finished Slice Z"
+- Says "Slice X complete", "Version Y done", or "finished Slice Z"
 - Asks to "update documentation" or "update docs"
 - Mentions "release" or "preparing for release"
-- Says "phase complete" or "slice finished"
-- Example triggers: "Phase 5 complete", "Slice 6 done", "update docs for new features"
+- Says "version complete" or "slice finished"
+- Example triggers: "Version 0.5 complete", "Slice 6 done", "update docs for new features"
 
 **API Compatibility Validator Agent** - Use automatically when user:
 - Asks to "validate {API}" or "check {API} compatibility"
@@ -155,19 +155,19 @@ For complex workflows, use these specialized agents (located in `.claude/agents/
 1. **README.md** - Project landing page for GitHub visitors
    - **Purpose**: First impression, quick start
    - **Content**: Vision, working example (current code ONLY), what works now, installation
-   - **Update**: When phase completes or installation changes
+   - **Update**: When version completes or installation changes
    - **Keep brief**: < 250 lines, no future API previews, link to roadmap for details
 
 2. **docs/roadmap.md** - Strategic vision and timeline
    - **Purpose**: Long-term direction, milestone planning
-   - **Content**: High-level phase overview (1 paragraph each), milestones, API preview for FUTURE phases only
-   - **Update**: When phase completes (mark complete), when planning new phase (add high-level scope)
+   - **Content**: High-level version overview (1 paragraph each), milestones, API preview for FUTURE versions only
+   - **Update**: When version completes (mark complete), when planning new version (add high-level scope)
    - **Keep strategic**: No slice details, no file lists, focus on what's coming
 
-3. **docs/implementation-plans/phaseN-*.md** - Detailed work tracking
+3. **docs/implementation-plans/vX.Y-*.md** - Detailed work tracking
    - **Purpose**: Day-to-day development, historical record
    - **Content**: Slice-by-slice tasks, files modified, tests added, implementation gotchas, technical decisions
-   - **Create**: Just-in-time when starting the phase (not before)
+   - **Create**: Just-in-time when starting the version (not before)
    - **Update**: Daily during active development
    - **After complete**: Becomes historical reference, rarely updated
 
@@ -187,7 +187,7 @@ For complex workflows, use these specialized agents (located in `.claude/agents/
 - ✅ Roadmap shows high-level vision for next 1-2 phases
 - ✅ Implementation plans created ONLY when starting that phase
 - ❌ Don't duplicate slice lists across docs
-- ❌ Don't create Phase 4 plan while working on Phase 2
+- ❌ Don't create Version 0.4 plan while working on Version 0.2
 - ❌ Don't show future APIs in README examples
 
 ### Working on Features
@@ -375,7 +375,7 @@ cargo test --doc --package playwright-core 'protocol::page::Page' -- --ignored
 
 ### Semantic Versioning
 
-- **0.x.y** - Pre-1.0, API may change (current phase)
+- **0.x.y** - Pre-1.0, API may change (current stage)
 - **1.0.0** - Stable API, ready for production
 - **2.0.0+** - Major version aligns with Playwright version if possible
 

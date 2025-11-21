@@ -1,11 +1,11 @@
 # ADR 0001: Protocol Architecture - JSON-RPC over Stdio
 
-**Status:** Accepted | **Phase 1:** ✅ Complete (2025-11-06)
+**Status:** Accepted | **Version 0.1:** ✅ Complete (2025-11-06)
 
 **Date:** 2025-11-05
 
 **Related Documents:**
-- Implementation Plan: [Phase 1: Protocol Foundation](../implementation-plans/phase1-protocol-foundation.md)
+- Implementation Plan: [Version 0.1 Implementation Plan](../implementation-plans/v0.1-protocol-foundation.md)
 - Microsoft Playwright Python: https://github.com/microsoft/playwright-python
 - Microsoft Playwright Java: https://github.com/microsoft/playwright-java
 - Microsoft Playwright .NET: https://github.com/microsoft/playwright-dotnet
@@ -343,7 +343,7 @@ We chose **Option 2 (JSON-RPC to Playwright Server)** because it is the **only o
 
 ### Positive Consequences
 
-- **Fast implementation** - Can ship Phase 1 in weeks, not months
+- **Fast implementation** - Can ship Version 0.1 in weeks, not months
 - **Microsoft-compatible** - Clear path to official adoption
 - **Cross-browser support** - All three browsers from day one
 - **Minimal maintenance** - Server maintained by Microsoft
@@ -377,13 +377,13 @@ We chose **Option 2 (JSON-RPC to Playwright Server)** because it is the **only o
 
 - [x] Research all three official implementations (Python, Java, .NET) - **Completed 2025-11-05**
 - [x] Research driver bundling strategy across all bindings - **Completed 2025-11-05**
-- [x] Implement Phase 1: Slice 1 (Server launch) - **Completed 2025-11-05**
-- [x] Implement Phase 1: Slice 2 (Transport layer) - **Completed 2025-11-05**
-- [x] Implement Phase 1: Slice 3 (Connection layer) - **Completed 2025-11-06**
-- [x] Implement Phase 1: Slice 4 (Object factory) - **Completed 2025-11-06**
-- [x] Implement Phase 1: Slice 5 (Entry point) - **Completed 2025-11-06**
+- [x] Implement Version 0.1: Slice 1 (Server launch) - **Completed 2025-11-05**
+- [x] Implement Version 0.1: Slice 2 (Transport layer) - **Completed 2025-11-05**
+- [x] Implement Version 0.1: Slice 3 (Connection layer) - **Completed 2025-11-06**
+- [x] Implement Version 0.1: Slice 4 (Object factory) - **Completed 2025-11-06**
+- [x] Implement Version 0.1: Slice 5 (Entry point) - **Completed 2025-11-06**
 - [x] Test cross-browser compatibility (Chromium, Firefox, WebKit) - All three browser types accessible
-- [x] Verify API matches playwright-python for Phase 1 features
+- [x] Verify API matches playwright-python for Version 0.1 features
 
 ### Success Criteria
 
@@ -393,10 +393,16 @@ We chose **Option 2 (JSON-RPC to Playwright Server)** because it is the **only o
 - [x] Can create protocol objects (Playwright, BrowserType)
 - [x] Can handle protocol lifecycle messages (__create__, __dispose__, __adopt__)
 - [x] Can launch Playwright and access browser types
-- [x] API matches playwright-python for Phase 1 features
+- [x] API matches playwright-python for Version 0.1 features
 - [x] Tests pass on macOS and Linux
 
-**Note:** Additional testing and optimization deferred to [Phase 2 Implementation Plan](../implementation-plans/phase2-browser-api.md).
+Browser automation features are intentionally deferred to future versions:
+- **Version 0.2:** Browser launching, contexts, pages
+- **Version 0.3:** Navigation, locators, actions
+- **Version 0.4:** Screenshots, network interception, assertions
+- **Version 0.5:** Mobile emulation, advanced features
+
+See [Version 0.2 Implementation Plan](../implementation-plans/v0.2-browser-api.md) for next steps.
 
 ---
 
@@ -404,7 +410,7 @@ We chose **Option 2 (JSON-RPC to Playwright Server)** because it is the **only o
 
 ### Code Changes Required
 
-Phase 1 implementation (see [phase1-protocol-foundation.md](../implementation-plans/phase1-protocol-foundation.md)):
+Version 0.1 implementation (see [v0.1-protocol-foundation.md](../implementation-plans/v0.1-protocol-foundation.md)):
 
 1. **Server Management** (`src/server.rs`) - ✅ Complete (2025-11-05)
    - Build-time driver download via `build.rs`

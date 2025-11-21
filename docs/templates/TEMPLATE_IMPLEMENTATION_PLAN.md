@@ -2,7 +2,7 @@
 
 **Feature:** [Short feature name]
 
-**User Story:** [Link to user story, e.g., `feature-name.md`]
+**User Story:** [As a <role>, I want to <capability>, so that <benefit>]
 
 **Related ADR (if applicable):** [Link to ADR if this feature involves major architectural decisions, e.g., `../adr/0001-feature-decision.md`]
 
