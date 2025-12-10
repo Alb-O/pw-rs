@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "crates/playwright",
+    "crates/pw-core",
+    "crates/pw-cli",
 ]
 resolver = "2"
 

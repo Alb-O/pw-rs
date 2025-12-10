@@ -1,0 +1,56 @@
+[package]
+name = "pw-rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Rust bindings for Microsoft Playwright"
+keywords = ["playwright", "browser", "automation", "testing", "e2e"]
+categories = ["development-tools::testing", "web-programming"]
+readme.workspace = true
+
+[lib]
+name = "pw"
+doctest = false  # Disable doc-tests by default (run with: cargo test --doc)
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing = "0.1"
+parking_lot = "0.12"
+base64 = "0.22"
+regex = "1.10"
+glob = "0.3"
+
+[dev-dependencies]
+anyhow.workspace = true
+axum = "0.7"
+tower = "0.5"
+tower-http = "0.6"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+criterion = { version = "0.7", features = ["html_reports", "async_tokio"] }
+urlencoding = "2.1"
+
+[target.'cfg(windows)'.dev-dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "psapi", "minwindef"] }
+
+[build-dependencies]
+reqwest = { version = "0.12", features = ["blocking"] }
+zip = "2.1"
+dirs = "5.0"
+
+[[bench]]
+name = "browser_operations"
+harness = false
+
+[[bench]]
+name = "page_operations"
+harness = false
+
+[[bench]]
+name = "guid_operations"
+harness = false
