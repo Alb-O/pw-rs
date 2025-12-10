@@ -24,3 +24,8 @@ Thumbs.db
 
 # Documentation
 *gap-analysis.md
+
+/tmp
+/.playwright-browsers
+/.direnv
+/result
