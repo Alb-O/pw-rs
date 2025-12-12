@@ -46,25 +46,11 @@ pub fn execute(options: InitOptions) -> Result<()> {
     let nix_mode = options.nix;
     let result = scaffold_project(options)?;
 
-    // Print summary
+    // Print summary as tree
     println!("Initialized playwright project at: {}", result.project_root.display());
     println!();
-
-    if !result.directories_created.is_empty() {
-        println!("Created directories:");
-        for dir in &result.directories_created {
-            println!("  {}", dir.display());
-        }
-        println!();
-    }
-
-    if !result.files_created.is_empty() {
-        println!("Created files:");
-        for file in &result.files_created {
-            println!("  {}", file.display());
-        }
-        println!();
-    }
+    print_tree(&result.project_root, &result.files_created, &result.directories_created);
+    println!();
 
     println!("Next steps:");
     if nix_mode {
@@ -83,6 +69,51 @@ pub fn execute(options: InitOptions) -> Result<()> {
     println!("  View report: playwright show-report playwright/reports/html-report");
 
     Ok(())
+}
+
+/// Print created files/directories as a tree
+fn print_tree(root: &Path, files: &[PathBuf], dirs: &[PathBuf]) {
+    use std::collections::BTreeMap;
+
+    // Build a simple tree: path -> is_directory
+    let mut all_paths: BTreeMap<PathBuf, bool> = BTreeMap::new();
+    
+    for d in dirs {
+        if let Ok(rel) = d.strip_prefix(root) {
+            all_paths.insert(rel.to_path_buf(), true);
+        }
+    }
+    for f in files {
+        if let Ok(rel) = f.strip_prefix(root) {
+            all_paths.insert(rel.to_path_buf(), false);
+        }
+    }
+
+    // Group by parent directory for tree rendering
+    fn print_level(paths: &BTreeMap<PathBuf, bool>, parent: &Path, prefix: &str) {
+        let children: Vec<_> = paths.iter()
+            .filter(|(p, _)| {
+                p.parent() == Some(parent) || (parent.as_os_str().is_empty() && p.components().count() == 1)
+            })
+            .collect();
+        
+        let count = children.len();
+        for (i, (path, is_dir)) in children.iter().enumerate() {
+            let is_last = i == count - 1;
+            let connector = if is_last { "└── " } else { "├── " };
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let suffix = if **is_dir { "/" } else { "" };
+            
+            println!("{}{}{}{}", prefix, connector, name, suffix);
+            
+            if **is_dir {
+                let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+                print_level(paths, path, &new_prefix);
+            }
+        }
+    }
+
+    print_level(&all_paths, Path::new(""), "");
 }
 
 /// Scaffold the project structure
