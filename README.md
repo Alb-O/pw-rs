@@ -1,220 +1,109 @@
-# Playwright for Rust
+# pw-rs
 
-> 🎭 Rust language bindings for [Microsoft Playwright](https://playwright.dev)
+Rust bindings for Microsoft Playwright. Communicates with the Playwright server over JSON-RPC, giving you the same browser automation capabilities as the official Python, Java, and .NET bindings.
 
-**Status:** 🚧 Active Development - Not yet ready for production use
+The library spawns a bundled Playwright server (Node.js) as a subprocess and exchanges messages over stdio. Your Rust code calls methods like `page.click(".button")`, which serializes to JSON-RPC, travels to the server, and the server drives Chromium, Firefox, or WebKit using their native debugging protocols. This architecture means pw-rs inherits Playwright's cross-browser abstractions, auto-waiting logic, and ongoing maintenance from Microsoft without reimplementing any of it.
 
-## 🎯 Why playwright-rust?
-
-Read our [WHY.md](WHY.md) to understand the vision, timing, and philosophy behind this project.
-
-**TL;DR:** Rust is emerging as a serious web development language, with frameworks like Axum and Actix gaining traction. AI coding assistants are making Rust accessible to more developers. Test-Driven Development is experiencing a renaissance as the optimal way to work with AI agents.  **These trends are converging now, and they need production-quality E2E testing.** `playwright-rust` fills that gap by bringing Playwright's industry-leading browser automation to the Rust ecosystem.
-
-## Roadmap and Goals
-
-See [Development Roadmap](docs/roadmap.md) for plans and status of the development approach for `playwright-rust`.
-
-**Goal:** Build this library to a production-quality state for broad adoption as `@playwright/rust` or `playwright-rs`. Provide official-quality Rust bindings for Microsoft Playwright, following the same architecture as [playwright-python](https://github.com/microsoft/playwright-python), [playwright-java](https://github.com/microsoft/playwright-java), and [playwright-dotnet](https://github.com/microsoft/playwright-dotnet).
-
-## How It Works
-
-`playwright-rust` follows Microsoft's proven architecture for language bindings:
-
-```
-┌──────────────────────────────────────────────┐
-│ playwright-rs (Rust API)                     │
-│ - High-level, idiomatic Rust API             │
-│ - Async/await with tokio                     │
-│ - Type-safe bindings                         │
-└─────────────────────┬────────────────────────┘
-                      │ JSON-RPC over stdio
-┌─────────────────────▼────────────────────────┐
-│ Playwright Server (Node.js/TypeScript)       │
-│ - Browser automation logic                   │
-│ - Cross-browser protocol abstraction         │
-│ - Maintained by Microsoft Playwright team    │
-└─────────────────────┬────────────────────────┘
-                      │ Native protocols
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-    Chromium      Firefox       WebKit
-```
-
-This means:
-- ✅ **Full feature parity** with Playwright (JS/Python/Java/.NET)
-- ✅ **Cross-browser support** (Chromium, Firefox, WebKit)
-- ✅ **Automatic updates** when Playwright server updates
-- ✅ **Minimal maintenance** - protocols handled by Microsoft's server
-- ✅ **Production-tested** architecture used by millions
-
-### API Design Philosophy
-
-Following Playwright's cross-language consistency:
-
-1. **Match Playwright API exactly** - Same method names, same semantics
-2. **Idiomatic Rust** - Use Result<T>, async/await, builder patterns where appropriate
-3. **Type safety** - Leverage Rust's type system for compile-time safety
-4. **Auto-waiting** - Built-in smart waits like other Playwright implementations
-5. **Testing-first** - Designed for reliable end-to-end testing
-
-## Installation
-
-Add to your `Cargo.toml`:
+## Quick start
 
 ```toml
 [dependencies]
-playwright-rs = "0.7.0"
+pw-core = "0.7"
 tokio = { version = "1", features = ["full"] }
 ```
 
-See the [CHANGELOG](CHANGELOG.md) for version history and features.
+```rust
+use pw_core::Playwright;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let pw = Playwright::new().await?;
+    let browser = pw.chromium().launch().await?;
+    let context = browser.new_context().await?;
+    let page = context.new_page().await?;
+
+    page.goto("https://example.com").await?;
+    let title = page.title().await?;
+    println!("Title: {title}");
+
+    browser.close().await?;
+    Ok(())
+}
+```
+
+The API mirrors Playwright's official bindings. If you know `playwright-python` or the JavaScript original, the method names and semantics are identical. Rust idioms apply throughout: `Result<T, Error>` for fallible operations, builders for complex option structs, async/await for all I/O.
+
+## Installing browsers
+
+`cargo build` downloads the Playwright driver (currently 1.56.1) to `drivers/playwright-1.56.1-<platform>/` in your workspace root. The driver bundles its own Node.js runtime. After building, install browsers using the driver's CLI:
+
+```bash
+cargo build
+drivers/playwright-1.56.1-*/node drivers/playwright-1.56.1-*/package/cli.js install chromium
+```
+
+Replace the glob with your actual platform directory (`mac-arm64`, `mac`, `linux`, `win32_x64`). You can install `firefox` and `webkit` the same way. Playwright caches browsers in platform-specific locations (`~/.cache/ms-playwright/` on Linux, `~/Library/Caches/ms-playwright/` on macOS, `%USERPROFILE%\AppData\Local\ms-playwright\` on Windows).
+
+The driver version determines which browser builds are compatible. Version 1.56.1 expects chromium-1194, firefox-1495, and webkit-2215. Using mismatched versions produces cryptic protocol errors.
+
+## CLI
+
+The `pw-cli` crate provides a command-line interface for browser automation tasks without writing Rust code.
+
+```bash
+cargo install --path crates/pw-cli
+
+pw screenshot https://example.com -o page.png
+pw text https://example.com "h1"
+pw click https://example.com ".accept-cookies"
+pw eval https://example.com "document.title"
+```
+
+For authenticated sessions, the `auth` subcommand opens a headed browser where you log in manually, then saves cookies and localStorage to a JSON file:
+
+```bash
+pw auth login https://app.example.com -o auth.json
+```
+
+Subsequent commands can load that session state:
+
+```bash
+pw --auth auth.json screenshot https://app.example.com/dashboard -o dash.png
+```
+
+## Session persistence
+
+`BrowserContext` exposes methods for cookie and storage management. `add_cookies()` injects cookies, `cookies()` retrieves them, `storage_state()` exports everything (cookies plus localStorage per origin) to a struct you can serialize to disk.
+
+```rust
+let state = context.storage_state(None).await?;
+state.to_file("auth.json")?;
+
+// Later, in a new context:
+let saved = StorageState::from_file("auth.json")?;
+let context = browser.new_context_with_options(
+    BrowserContextOptions::new().storage_state(saved)
+).await?;
+```
+
+This pattern avoids repeating login flows when scraping authenticated pages or running E2E tests.
 
 ## Development
 
-### Prerequisites
-
-- Rust 1.70+
-- Node.js 18+ (for Playwright server and browser installation)
-- tokio async runtime
-
-### Building from Source
+Requires Rust 1.70+ and the nix flake handles Node.js and other dependencies. Run `nix develop` to enter a shell with everything configured.
 
 ```bash
-# Clone repository
-git clone https://github.com/YOUR_USERNAME/playwright-rust.git
-cd playwright-rust
-
-# Install pre-commit hooks
-pip install pre-commit
-pre-commit install
-
-# Build
-cargo build
+cargo build --workspace
+cargo test --workspace
+cargo nextest run  # faster, install with: cargo install cargo-nextest
 ```
 
-### Installing Browsers
+Integration tests require browsers to be installed. The `crates/pw-core/tests/` directory contains tests for specific features; `crates/pw-core/examples/` demonstrates common patterns.
 
-**⚠️ IMPORTANT:** Browsers are installed **automatically** after building the project!
+## Project structure
 
-When you run `cargo build`, the build script ([build.rs](crates/playwright/build.rs)) automatically:
-1. Downloads the Playwright driver (version **1.56.1**) from Azure CDN
-2. Extracts it to the appropriate location based on your setup:
-   - **Workspace projects**: `drivers/playwright-1.56.1-<platform>/` in your workspace root
-   - **Non-workspace projects**: Platform-specific cache directory (e.g., `~/.cache/playwright-rust/drivers/` on Linux/macOS)
-
-The build script uses robust workspace detection to find the right location automatically.
-
-After building, install browsers using the downloaded driver's CLI:
-
-```bash
-# Build the project (downloads Playwright 1.56.1 driver)
-cargo build
-
-# Install browsers using the driver's CLI
-# macOS/Linux:
-drivers/playwright-1.56.1-*/node drivers/playwright-1.56.1-*/package/cli.js install chromium firefox webkit
-
-# Windows:
-drivers\playwright-1.56.1-win32_x64\node.exe drivers\playwright-1.56.1-win32_x64\package\cli.js install chromium firefox webkit
-```
-
-**Platform-specific examples:**
-
-```bash
-# macOS (arm64):
-drivers/playwright-1.56.1-mac-arm64/node drivers/playwright-1.56.1-mac-arm64/package/cli.js install chromium firefox webkit
-
-# macOS (x64):
-drivers/playwright-1.56.1-mac/node drivers/playwright-1.56.1-mac/package/cli.js install chromium firefox webkit
-
-# Linux:
-drivers/playwright-1.56.1-linux/node drivers/playwright-1.56.1-linux/package/cli.js install chromium firefox webkit
-```
-
-**Why this matters:**
-- Playwright server 1.56.1 expects specific browser builds (chromium-1194, firefox-1495, webkit-2215)
-- Using the driver's CLI ensures version compatibility
-- The `drivers/` directory is gitignored, so each developer/CI environment installs its own
-
-**Platform Support:**
-- ✅ **Windows**: Full support with CI stability flags enabled (2025-11-09)
-- ✅ **macOS**: Full support
-- ✅ **Linux**: Full support
-
-**Note:** CI automatically installs the correct browser versions - see `.github/workflows/test.yml`
-
-**Verify installation:**
-```bash
-# Browsers are cached in:
-# macOS: ~/Library/Caches/ms-playwright/
-# Linux: ~/.cache/ms-playwright/
-# Windows: %USERPROFILE%\AppData\Local\ms-playwright\
-
-ls ~/Library/Caches/ms-playwright/
-# Should show: chromium-1194, chromium_headless_shell-1194, firefox-1495, webkit-2215
-```
-
-### Running Tests
-
-**Note:** This project uses [cargo-nextest](https://nexte.st/) for faster test execution. Install it once globally:
-```bash
-cargo install cargo-nextest
-```
-
-```bash
-# All tests (recommended - faster)
-cargo nextest run
-
-# All tests (standard cargo)
-cargo test
-
-# Integration tests only (requires browsers)
-cargo nextest run --test '*'
-
-# Specific test
-cargo nextest run test_launch_chromium
-
-# With logging
-RUST_LOG=debug cargo nextest run
-
-# Doc-tests (nextest doesn't run these)
-# Compile-only check (fast, used in pre-commit)
-cargo test --doc --no-fail-fast
-
-# Run ignored doctests (requires browsers, what CI does)
-cargo test --doc -- --ignored
-```
-
-### Running Examples
-
-> **Note:** See [examples/](crates/playwright/examples/) for usage examples.
-
-```bash
-# Run a single example
-cargo run --package playwright-rs --example basic
-
-# Run all examples
-for example in crates/playwright/examples/*.rs; do
-    cargo run --package playwright-rs --example $(basename "$example" .rs) || exit 1
-done
-```
-
-## Contributing
-
-This project aims for **production-quality** Rust bindings matching Playwright's standards. Contributions should:
-
-- Follow Playwright API conventions
-- Include comprehensive tests
-- Maintain type safety
-- Document public APIs with examples
-- Pass CI checks (fmt, clippy, tests)
+The `crates/` directory contains two crates: `pw-core` (the library: Playwright client, protocol types, browser/context/page abstractions) and `pw-cli` (the command-line tool). The separation keeps dependencies minimal if you only need one or the other.
 
 ## License
 
-Apache-2.0 (same as Microsoft Playwright)
-
-## Acknowledgments
-
-- **Microsoft Playwright Team** - For the amazing browser automation framework
-- **playwright-python** - API design reference
-- **Folio Project** - Initial driver for development needs
+Apache-2.0, matching Microsoft Playwright.
