@@ -10,6 +10,10 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
+    /// Load authentication state from file (cookies, localStorage)
+    #[arg(long, global = true, value_name = "FILE")]
+    pub auth: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -63,6 +67,43 @@ pub enum Commands {
 
     /// Wait for condition (selector, timeout, or load state)
     Wait { url: String, condition: String },
+
+    /// Authentication and session management
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthAction {
+    /// Interactive login - opens browser for manual login, then saves session
+    Login {
+        /// URL to navigate to for login
+        url: String,
+        /// File to save authentication state to
+        #[arg(short, long, default_value = "auth.json")]
+        output: PathBuf,
+        /// Wait time in seconds for manual login (default: 60)
+        #[arg(short, long, default_value = "60")]
+        timeout: u64,
+    },
+
+    /// Show cookies for a URL (uses saved auth if --auth provided)
+    Cookies {
+        /// URL to get cookies for
+        url: String,
+        /// Output format: json or table
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
+
+    /// Show current storage state (cookies + localStorage)
+    Show {
+        /// Auth file to display
+        #[arg(default_value = "auth.json")]
+        file: PathBuf,
+    },
 }
 
 #[cfg(test)]

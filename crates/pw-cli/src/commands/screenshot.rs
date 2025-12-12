@@ -5,10 +5,10 @@ use crate::error::Result;
 use pw::{ScreenshotOptions, WaitUntil};
 use tracing::info;
 
-pub async fn execute(url: &str, output: &Path) -> Result<()> {
+pub async fn execute(url: &str, output: &Path, auth_file: Option<&Path>) -> Result<()> {
     info!(target = "pw", %url, path = %output.display(), "screenshot");
 
-    let session = BrowserSession::new(WaitUntil::NetworkIdle).await?;
+    let session = BrowserSession::with_auth(WaitUntil::NetworkIdle, auth_file).await?;
     session.goto(url).await?;
 
     if let Some(parent) = output.parent() {

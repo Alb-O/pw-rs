@@ -5,6 +5,7 @@
 // cache, and local storage.
 
 use crate::error::Result;
+use crate::protocol::cookie::{ClearCookiesOptions, Cookie, StorageState, StorageStateOptions};
 use crate::protocol::Page;
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
@@ -170,6 +171,182 @@ impl BrowserContext {
         self.channel()
             .send_no_result("close", serde_json::json!({}))
             .await
+    }
+
+    /// Adds cookies to the browser context.
+    ///
+    /// Cookies can be specified with either a domain or a URL. If URL is provided,
+    /// domain and path will be inferred from it.
+    ///
+    /// # Arguments
+    ///
+    /// * `cookies` - List of cookies to add
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pw_core::protocol::{Cookie, SameSite};
+    ///
+    /// // Add a session cookie
+    /// context.add_cookies(vec![
+    ///     Cookie::new("session", "abc123", ".example.com")
+    ///         .path("/")
+    ///         .http_only(true)
+    ///         .secure(true)
+    ///         .same_site(SameSite::Lax),
+    /// ]).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Context has been closed
+    /// - Cookie specification is invalid (missing both domain and url)
+    /// - Communication with browser process fails
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-add-cookies>
+    pub async fn add_cookies(&self, cookies: Vec<Cookie>) -> Result<()> {
+        self.channel()
+            .send_no_result("addCookies", serde_json::json!({ "cookies": cookies }))
+            .await
+    }
+
+    /// Returns all cookies in the browser context.
+    ///
+    /// If URLs are specified, only cookies affecting those URLs are returned.
+    /// If no URLs are specified, all cookies are returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `urls` - Optional list of URLs to filter cookies by
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Get all cookies
+    /// let all_cookies = context.cookies(None).await?;
+    ///
+    /// // Get cookies for specific URLs
+    /// let cookies = context.cookies(Some(vec!["https://example.com"])).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Context has been closed
+    /// - Communication with browser process fails
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-cookies>
+    pub async fn cookies(&self, urls: Option<Vec<&str>>) -> Result<Vec<Cookie>> {
+        #[derive(Deserialize)]
+        struct CookiesResponse {
+            cookies: Vec<Cookie>,
+        }
+
+        let params = match urls {
+            Some(url_list) => serde_json::json!({ "urls": url_list }),
+            None => serde_json::json!({ "urls": [] }),
+        };
+
+        let response: CookiesResponse = self.channel().send("cookies", params).await?;
+        Ok(response.cookies)
+    }
+
+    /// Clears cookies from the browser context.
+    ///
+    /// If options are provided, only cookies matching all specified criteria
+    /// will be cleared. If no options are provided, all cookies are cleared.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Optional filter criteria for which cookies to clear
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pw_core::protocol::ClearCookiesOptions;
+    ///
+    /// // Clear all cookies
+    /// context.clear_cookies(None).await?;
+    ///
+    /// // Clear only session cookies
+    /// context.clear_cookies(Some(
+    ///     ClearCookiesOptions::new().name("session")
+    /// )).await?;
+    ///
+    /// // Clear all cookies for a domain
+    /// context.clear_cookies(Some(
+    ///     ClearCookiesOptions::new().domain("example.com")
+    /// )).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Context has been closed
+    /// - Communication with browser process fails
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-clear-cookies>
+    pub async fn clear_cookies(&self, options: Option<ClearCookiesOptions>) -> Result<()> {
+        let params = match options {
+            Some(opts) => serde_json::to_value(opts).unwrap_or_default(),
+            None => serde_json::json!({}),
+        };
+
+        self.channel().send_no_result("clearCookies", params).await
+    }
+
+    /// Returns the storage state for the browser context.
+    ///
+    /// The storage state includes cookies and localStorage for all origins.
+    /// This can be saved to a file and later restored using the `storage_state`
+    /// option when creating a new context.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Optional path to save the storage state to
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pw_core::protocol::StorageStateOptions;
+    ///
+    /// // Get storage state
+    /// let state = context.storage_state(None).await?;
+    ///
+    /// // Save to file manually
+    /// std::fs::write("auth.json", serde_json::to_string_pretty(&state)?)?;
+    ///
+    /// // Or save directly via options
+    /// context.storage_state(Some(
+    ///     StorageStateOptions::new().path("auth.json")
+    /// )).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Context has been closed
+    /// - Communication with browser process fails
+    /// - File write fails (if path is specified)
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state>
+    pub async fn storage_state(&self, options: Option<StorageStateOptions>) -> Result<StorageState> {
+        let params = match &options {
+            Some(opts) => serde_json::to_value(opts).unwrap_or_default(),
+            None => serde_json::json!({}),
+        };
+
+        let state: StorageState = self.channel().send("storageState", params).await?;
+
+        // If path was specified, save to file
+        if let Some(opts) = options {
+            if let Some(path) = opts.path {
+                state.to_file(&path)?;
+            }
+        }
+
+        Ok(state)
     }
 }
 
@@ -390,6 +567,11 @@ pub struct BrowserContextOptions {
     /// Base URL for relative navigation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+
+    /// Storage state to initialize the context with (cookies and localStorage).
+    /// Can be loaded from a file saved by `context.storage_state()`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_state: Option<StorageState>,
 }
 
 impl BrowserContextOptions {
@@ -420,6 +602,7 @@ pub struct BrowserContextOptionsBuilder {
     device_scale_factor: Option<f64>,
     extra_http_headers: Option<HashMap<String, String>>,
     base_url: Option<String>,
+    storage_state: Option<StorageState>,
 }
 
 impl BrowserContextOptionsBuilder {
@@ -535,6 +718,26 @@ impl BrowserContextOptionsBuilder {
         self
     }
 
+    /// Sets the storage state (cookies and localStorage) to initialize the context with.
+    ///
+    /// Use this to restore a previously saved authentication state.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pw_core::protocol::{BrowserContextOptions, StorageState};
+    ///
+    /// // Load from file
+    /// let state = StorageState::from_file("auth.json")?;
+    /// let options = BrowserContextOptions::builder()
+    ///     .storage_state(state)
+    ///     .build();
+    /// ```
+    pub fn storage_state(mut self, storage_state: StorageState) -> Self {
+        self.storage_state = Some(storage_state);
+        self
+    }
+
     /// Builds the BrowserContextOptions
     pub fn build(self) -> BrowserContextOptions {
         BrowserContextOptions {
@@ -556,6 +759,7 @@ impl BrowserContextOptionsBuilder {
             device_scale_factor: self.device_scale_factor,
             extra_http_headers: self.extra_http_headers,
             base_url: self.base_url,
+            storage_state: self.storage_state,
         }
     }
 }

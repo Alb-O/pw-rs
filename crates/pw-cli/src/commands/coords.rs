@@ -1,12 +1,14 @@
+use std::path::Path;
+
 use crate::browser::{js, BrowserSession};
 use crate::error::Result;
 use crate::types::{ElementCoords, IndexedElementCoords};
 use pw::WaitUntil;
 use tracing::info;
 
-pub async fn execute_single(url: &str, selector: &str) -> Result<()> {
+pub async fn execute_single(url: &str, selector: &str, auth_file: Option<&Path>) -> Result<()> {
     info!(target = "pw", %url, %selector, "coords single");
-    let session = BrowserSession::new(WaitUntil::NetworkIdle).await?;
+    let session = BrowserSession::with_auth(WaitUntil::NetworkIdle, auth_file).await?;
     session.goto(url).await?;
 
     let result_json = session
@@ -24,9 +26,9 @@ pub async fn execute_single(url: &str, selector: &str) -> Result<()> {
     session.close().await
 }
 
-pub async fn execute_all(url: &str, selector: &str) -> Result<()> {
+pub async fn execute_all(url: &str, selector: &str, auth_file: Option<&Path>) -> Result<()> {
     info!(target = "pw", %url, %selector, "coords all");
-    let session = BrowserSession::new(WaitUntil::NetworkIdle).await?;
+    let session = BrowserSession::with_auth(WaitUntil::NetworkIdle, auth_file).await?;
     session.goto(url).await?;
 
     let results_json = session

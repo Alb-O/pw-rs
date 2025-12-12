@@ -17,6 +17,7 @@ pub mod browser;
 pub mod browser_context;
 pub mod browser_type;
 pub mod click;
+pub mod cookie;
 pub mod dialog;
 pub mod download;
 pub mod element_handle;
@@ -44,6 +45,10 @@ pub use browser_context::{
 };
 pub use browser_type::BrowserType;
 pub use click::{ClickOptions, KeyboardModifier, MouseButton, Position};
+pub use cookie::{
+    ClearCookiesOptions, Cookie, LocalStorageEntry, OriginState, SameSite, StorageState,
+    StorageStateOptions,
+};
 pub use dialog::Dialog;
 pub use download::Download;
 pub use element_handle::ElementHandle;
