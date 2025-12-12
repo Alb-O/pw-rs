@@ -50,13 +50,16 @@ pub enum Commands {
     /// Get coordinates and info for all matching elements
     CoordsAll { url: String, selector: String },
 
-    /// Take full-page screenshot
+    /// Take screenshot
     #[command(alias = "ss")]
     Screenshot {
         url: String,
         /// Output file path
-        #[arg(default_value = "screenshot.png")]
+        #[arg(short, long, default_value = "screenshot.png")]
         output: PathBuf,
+        /// Capture the full scrollable page instead of just the viewport
+        #[arg(long)]
+        full_page: bool,
     },
 
     /// Click element and show resulting URL
@@ -112,13 +115,14 @@ mod tests {
 
     #[test]
     fn parse_screenshot_command() {
-        let args = vec!["pw", "screenshot", "https://example.com", "/tmp/test.png"];
+        let args = vec!["pw", "screenshot", "https://example.com", "-o", "/tmp/test.png"];
         let cli = Cli::try_parse_from(args).unwrap();
 
         match cli.command {
-            Commands::Screenshot { url, output } => {
+            Commands::Screenshot { url, output, full_page } => {
                 assert_eq!(url, "https://example.com");
                 assert_eq!(output, PathBuf::from("/tmp/test.png"));
+                assert!(!full_page);
             }
             _ => panic!("Expected Screenshot command"),
         }
@@ -130,9 +134,10 @@ mod tests {
         let cli = Cli::try_parse_from(args).unwrap();
 
         match cli.command {
-            Commands::Screenshot { url, output } => {
+            Commands::Screenshot { url, output, full_page } => {
                 assert_eq!(url, "https://example.com");
                 assert_eq!(output, PathBuf::from("screenshot.png"));
+                assert!(!full_page);
             }
             _ => panic!("Expected Screenshot command"),
         }

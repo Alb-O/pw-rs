@@ -22,7 +22,7 @@ pub async fn dispatch(command: Commands, auth_file: Option<&Path>) -> Result<()>
         Commands::Html { url, selector } => html::execute(&url, &selector, auth_file).await,
         Commands::Coords { url, selector } => coords::execute_single(&url, &selector, auth_file).await,
         Commands::CoordsAll { url, selector } => coords::execute_all(&url, &selector, auth_file).await,
-        Commands::Screenshot { url, output } => screenshot::execute(&url, &output, auth_file).await,
+        Commands::Screenshot { url, output, full_page } => screenshot::execute(&url, &output, full_page, auth_file).await,
         Commands::Click { url, selector } => click::execute(&url, &selector, auth_file).await,
         Commands::Text { url, selector } => text::execute(&url, &selector, auth_file).await,
         Commands::Wait { url, condition } => wait::execute(&url, &condition, auth_file).await,

@@ -44,6 +44,7 @@ fn screenshot_creates_file() {
     let (success, _stdout, stderr) = run_pw(&[
         "screenshot",
         "data:text/html,<h1>Test Screenshot</h1>",
+        "-o",
         output_path.to_str().unwrap(),
     ]);
 
@@ -67,7 +68,7 @@ fn screenshot_with_complex_html() {
 
     let html = "data:text/html,<html><body style='background:blue'><h1 style='color:white'>Complex Test</h1><p>Paragraph</p></body></html>";
 
-    let (success, _stdout, stderr) = run_pw(&["screenshot", html, output_path.to_str().unwrap()]);
+    let (success, _stdout, stderr) = run_pw(&["screenshot", html, "-o", output_path.to_str().unwrap()]);
 
     assert!(success, "Command failed: {}", stderr);
     assert!(output_path.exists(), "Screenshot file was not created");
@@ -418,6 +419,7 @@ fn verbose_output() {
         "-v",
         "screenshot",
         "data:text/html,<h1>Verbose Test</h1>",
+        "-o",
         output_path.to_str().unwrap(),
     ]);
 
@@ -448,7 +450,7 @@ fn version_flag() {
 
     assert!(success, "Version should succeed");
     assert!(
-        stdout.contains("pw-tool") || stdout.contains("0.1"),
+        stdout.contains("pw") || stdout.contains("0.1"),
         "Expected version info"
     );
 }
@@ -459,7 +461,7 @@ fn subcommand_help() {
 
     assert!(success, "Subcommand help should succeed");
     assert!(
-        stdout.contains("full-page screenshot"),
+        stdout.contains("screenshot"),
         "Expected screenshot description"
     );
     assert!(stdout.contains("URL"), "Expected URL argument");

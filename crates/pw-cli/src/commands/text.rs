@@ -12,7 +12,7 @@ pub async fn execute(url: &str, selector: &str, auth_file: Option<&Path>) -> Res
     session.goto(url).await?;
 
     let locator = session.page().locator(selector).await;
-    let text = locator.text_content().await?.unwrap_or_default();
+    let text = locator.inner_text().await?;
 
     println!("{}", text.trim());
     session.close().await
