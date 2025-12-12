@@ -218,8 +218,7 @@ pub const PLAYWRIGHT_GITIGNORE: &str = r#"# Test outputs (regenerated on each ru
 *.zip
 
 # Auth state files (may contain sensitive data)
-/auth/*.json
-!auth/.gitkeep
+/auth/
 
 # Browser symlinks (created by setup-browsers.sh for Nix compatibility)
 /browsers/

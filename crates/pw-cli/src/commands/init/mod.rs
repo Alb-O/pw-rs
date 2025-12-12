@@ -179,21 +179,10 @@ fn scaffold_project(options: InitOptions) -> Result<InitResult> {
             }
         }
 
-        // Output directories (gitignored, but created for clarity)
-        // - results: test artifacts (screenshots, videos, traces per test)
-        // - reports: HTML/JSON/XML reports
-        // - screenshots: manual screenshots (e.g., from pw-cli)
-        // - auth: saved authentication state
+        // Output directories (gitignored, created empty for clarity)
         for subdir in &["results", "reports", "screenshots", "auth"] {
             let dir = playwright_dir.join(subdir);
             create_dir_if_missing(&dir, &mut directories_created)?;
-
-            // Add .gitkeep to empty directories
-            let gitkeep = dir.join(".gitkeep");
-            if !gitkeep.exists() {
-                fs::write(&gitkeep, "")?;
-                files_created.push(gitkeep);
-            }
         }
     }
 
@@ -327,7 +316,7 @@ mod tests {
 
         let result = scaffold_project(options).unwrap();
 
-        // Standard should create all directories
+        // Standard creates all directories
         assert!(result.project_root.join("playwright/tests").exists());
         assert!(result.project_root.join("playwright/scripts").exists());
         assert!(result.project_root.join("playwright/scripts/common.sh").exists());
@@ -335,6 +324,9 @@ mod tests {
         assert!(result.project_root.join("playwright/reports").exists());
         assert!(result.project_root.join("playwright/screenshots").exists());
         assert!(result.project_root.join("playwright/auth").exists());
+
+        // No .gitkeep files (directories are empty but gitignored)
+        assert!(!result.project_root.join("playwright/results/.gitkeep").exists());
     }
 
     #[test]
