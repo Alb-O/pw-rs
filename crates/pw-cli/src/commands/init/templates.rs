@@ -210,14 +210,23 @@ test.describe("Example tests", () => {
 pub const PLAYWRIGHT_GITIGNORE: &str = r#"# Test outputs (regenerated on each run)
 /results/
 /reports/
+
+# Manual screenshots (e.g., from pw-cli)
 /screenshots/
 
-# Trace files
+# Trace files (for playwright show-trace)
 *.zip
 
 # Auth state files (may contain sensitive data)
 /auth/*.json
 !auth/.gitkeep
+
+# Browser symlinks (created by setup-browsers.sh for Nix compatibility)
+/browsers/
+
+# MCP server outputs (if using playwright MCP)
+/mcp-output/
+/mcp-user-data/
 "#;
 
 /// Common shell utilities script
@@ -333,7 +342,8 @@ setup_playwright_browsers() {
   local project_root
   project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   
-  local browsers_compat="$project_root/.playwright-browsers"
+  # Keep browsers inside playwright/ directory for organization
+  local browsers_compat="$project_root/playwright/browsers"
   local browsers_base
   
   # Try to find Nix browsers

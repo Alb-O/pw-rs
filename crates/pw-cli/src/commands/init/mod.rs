@@ -149,6 +149,10 @@ fn scaffold_project(options: InitOptions) -> Result<InitResult> {
         }
 
         // Output directories (gitignored, but created for clarity)
+        // - results: test artifacts (screenshots, videos, traces per test)
+        // - reports: HTML/JSON/XML reports
+        // - screenshots: manual screenshots (e.g., from pw-cli)
+        // - auth: saved authentication state
         for subdir in &["results", "reports", "screenshots", "auth"] {
             let dir = playwright_dir.join(subdir);
             create_dir_if_missing(&dir, &mut directories_created)?;
