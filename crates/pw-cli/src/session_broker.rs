@@ -143,6 +143,11 @@ impl<'a> SessionBroker<'a> {
                         )
                         .await?;
                         return Ok(SessionHandle { session });
+                    } else {
+                        debug!(
+                            target = "pw.session",
+                            "descriptor lacks cdp endpoint; ignoring"
+                        );
                     }
                 }
             }
@@ -157,15 +162,20 @@ impl<'a> SessionBroker<'a> {
         )
         .await?;
 
-        if let Some(path) = &self.descriptor_path {
+        if let (Some(path), Some(endpoint)) = (&self.descriptor_path, request.cdp_endpoint) {
             let descriptor = SessionDescriptor {
                 pid: std::process::id(),
                 browser: request.browser,
                 headless: request.headless,
-                cdp_endpoint: request.cdp_endpoint.map(|c| c.to_string()),
+                cdp_endpoint: Some(endpoint.to_string()),
                 created_at: now_ts(),
             };
             let _ = descriptor.save(path);
+        } else if self.descriptor_path.is_some() {
+            debug!(
+                target = "pw.session",
+                "no cdp endpoint available; skipping descriptor save"
+            );
         }
 
         Ok(SessionHandle { session })
