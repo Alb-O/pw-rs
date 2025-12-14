@@ -31,3 +31,7 @@ Thumbs.db
 
 # Misc
 /tmp
+
+# Extension build outputs
+/extension/dist/
+/extension/background/pkg/

@@ -18,7 +18,9 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+          targets = ["wasm32-unknown-unknown"];
+        };
 
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rustToolchain;
@@ -43,6 +45,7 @@
             rustToolchain
             cargo-watch
             cargo-edit
+            wasm-pack
 
             # For playwright browser automation
             playwright-driver

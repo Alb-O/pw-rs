@@ -2,6 +2,11 @@
 members = [
     "crates/pw-core",
     "crates/pw-cli",
+    "extension/background",
+]
+default-members = [
+    "crates/pw-core",
+    "crates/pw-cli",
 ]
 resolver = "2"
 

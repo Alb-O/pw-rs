@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>pw-rs bridge</title>
+    <style>
+      body { font-family: sans-serif; margin: 12px; min-width: 220px; }
+      .status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: #999; }
+      .log { font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; background: #f6f6f6; border: 1px solid #ddd; padding: 8px; }
+      .addr { font-family: monospace; color: #333; }
+    </style>
+  </head>
+  <body>
+    <div class="status">
+      <div class="dot" id="dot"></div>
+      <div>
+        <div id="state">Connecting…</div>
+        <div class="addr" id="addr"></div>
+      </div>
+    </div>
+    <div class="log" id="log">Loading log…</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
