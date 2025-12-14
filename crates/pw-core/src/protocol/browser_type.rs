@@ -244,6 +244,8 @@ impl BrowserType {
         struct ConnectParams {
             #[serde(rename = "endpointURL")]
             endpoint_url: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            timeout: Option<u64>,
         }
 
         #[derive(Deserialize)]
@@ -255,6 +257,7 @@ impl BrowserType {
 
         let params = ConnectParams {
             endpoint_url: endpoint_url.into(),
+            timeout: Some(30000),
         };
 
         let params_json = serde_json::to_value(params).map_err(|e| {

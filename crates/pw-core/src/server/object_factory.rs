@@ -17,8 +17,9 @@ use crate::protocol::{
     artifact::Artifact, Browser, BrowserContext, BrowserType, Dialog, Frame, Page, Playwright,
     Request, ResponseObject, Route,
 };
-use crate::server::channel_owner::{ChannelOwner, ParentOrConnection};
+use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use serde_json::Value;
+use std::any::Any;
 use std::sync::Arc;
 
 /// Creates a protocol object from a `__create__` message.
@@ -261,16 +262,76 @@ pub async fn create_object(
         }
 
         _ => {
-            // Unknown type - log warning and return error
+            // Unknown type - log warning and return inert object to stay compatible
             tracing::warn!("Unknown protocol type: {}", type_name);
-            return Err(Error::ProtocolError(format!(
-                "Unknown protocol type: {}",
-                type_name
-            )));
+            Arc::new(UnknownObject::new(parent, type_name, guid, initializer))
         }
     };
 
     Ok(object)
+}
+
+struct UnknownObject {
+    base: ChannelOwnerImpl,
+}
+
+impl UnknownObject {
+    fn new(parent: ParentOrConnection, type_name: String, guid: Arc<str>, initializer: Value) -> Self {
+        let base = ChannelOwnerImpl::new(parent, type_name, guid, initializer);
+        Self { base }
+    }
+}
+
+impl ChannelOwner for UnknownObject {
+    fn guid(&self) -> &str {
+        self.base.guid()
+    }
+
+    fn type_name(&self) -> &str {
+        self.base.type_name()
+    }
+
+    fn parent(&self) -> Option<Arc<dyn ChannelOwner>> {
+        self.base.parent()
+    }
+
+    fn connection(&self) -> Arc<dyn crate::server::connection::ConnectionLike> {
+        self.base.connection()
+    }
+
+    fn initializer(&self) -> &Value {
+        self.base.initializer()
+    }
+
+    fn channel(&self) -> &crate::server::channel::Channel {
+        self.base.channel()
+    }
+
+    fn dispose(&self, reason: crate::server::channel_owner::DisposeReason) {
+        self.base.dispose(reason)
+    }
+
+    fn adopt(&self, child: Arc<dyn ChannelOwner>) {
+        self.base.adopt(child)
+    }
+
+    fn add_child(&self, guid: Arc<str>, child: Arc<dyn ChannelOwner>) {
+        self.base.add_child(guid, child)
+    }
+
+    fn remove_child(&self, guid: &str) {
+        self.base.remove_child(guid)
+    }
+
+    fn on_event(&self, _method: &str, _params: Value) {}
+
+    fn was_collected(&self) -> bool {
+        self.base.was_collected()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 // Note: Object factory testing is done via integration tests since it requires:
