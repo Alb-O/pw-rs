@@ -8,10 +8,11 @@ mod html;
 pub mod init;
 mod navigate;
 mod screenshot;
+mod session;
 mod text;
 mod wait;
 
-use crate::cli::{AuthAction, Cli, Commands};
+use crate::cli::{AuthAction, Cli, Commands, SessionAction};
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate};
 use crate::error::{PwError, Result};
@@ -241,6 +242,10 @@ async fn dispatch_command(
                 outcome
             }
             AuthAction::Show { file } => auth::show(&file).await,
+        },
+        Commands::Session { action } => match action {
+            SessionAction::Status => session::status(ctx_state).await,
+            SessionAction::Clear => session::clear(ctx_state).await,
         },
         Commands::Init {
             path,

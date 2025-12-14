@@ -144,6 +144,12 @@ pub enum Commands {
         action: AuthAction,
     },
 
+    /// Session lifecycle and inspection
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+
     /// Initialize a new playwright project structure
     Init {
         /// Project directory (defaults to current directory)
@@ -219,12 +225,19 @@ pub enum AuthAction {
         format: String,
     },
 
-    /// Show current storage state (cookies + localStorage)
+    /// Show contents of a saved auth file
     Show {
-        /// Auth file to display
-        #[arg(default_value = "auth.json")]
+        /// File to read authentication state from
         file: PathBuf,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SessionAction {
+    /// Show session descriptor status for the active context
+    Status,
+    /// Remove stored session descriptor for the active context
+    Clear,
 }
 
 #[cfg(test)]

@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionDescriptor {
-    pid: u32,
-    browser: BrowserKind,
-    headless: bool,
-    cdp_endpoint: Option<String>,
-    created_at: u64,
+pub(crate) struct SessionDescriptor {
+    pub(crate) pid: u32,
+    pub(crate) browser: BrowserKind,
+    pub(crate) headless: bool,
+    pub(crate) cdp_endpoint: Option<String>,
+    pub(crate) created_at: u64,
 }
 
 impl SessionDescriptor {
-    fn load(path: &Path) -> Result<Option<Self>> {
+    pub(crate) fn load(path: &Path) -> Result<Option<Self>> {
         let content = match fs::read_to_string(path) {
             Ok(c) => c,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -30,7 +30,7 @@ impl SessionDescriptor {
         Ok(Some(parsed))
     }
 
-    fn save(&self, path: &Path) -> Result<()> {
+    pub(crate) fn save(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -39,14 +39,14 @@ impl SessionDescriptor {
         Ok(())
     }
 
-    fn matches(&self, request: &SessionRequest<'_>) -> bool {
+    pub(crate) fn matches(&self, request: &SessionRequest<'_>) -> bool {
         self.browser == request.browser
             && self.headless == request.headless
             && self.cdp_endpoint.is_some()
             && self.cdp_endpoint.as_deref() == request.cdp_endpoint
     }
 
-    fn is_alive(&self) -> bool {
+    pub(crate) fn is_alive(&self) -> bool {
         // Best-effort: on Linux, check /proc; otherwise assume alive if pid matches current process
         let proc_path = PathBuf::from("/proc").join(self.pid.to_string());
         proc_path.exists()
@@ -201,4 +201,58 @@ impl SessionHandle {
 fn load_storage_state(path: &Path) -> Result<StorageState> {
     StorageState::from_file(path)
         .map_err(|e| PwError::BrowserLaunch(format!("Failed to load auth file: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn descriptor_round_trip_and_match() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("session.json");
+
+        let desc = SessionDescriptor {
+            pid: std::process::id(),
+            browser: BrowserKind::Chromium,
+            headless: true,
+            cdp_endpoint: Some("ws://localhost:1234".into()),
+            created_at: 123,
+        };
+
+        desc.save(&path).unwrap();
+        let loaded = SessionDescriptor::load(&path).unwrap().unwrap();
+        assert!(loaded.is_alive());
+
+        let req = SessionRequest {
+            wait_until: WaitUntil::NetworkIdle,
+            headless: true,
+            auth_file: None,
+            browser: BrowserKind::Chromium,
+            cdp_endpoint: Some("ws://localhost:1234"),
+        };
+        assert!(loaded.matches(&req));
+    }
+
+    #[test]
+    fn descriptor_mismatch_when_endpoint_differs() {
+        let desc = SessionDescriptor {
+            pid: std::process::id(),
+            browser: BrowserKind::Chromium,
+            headless: true,
+            cdp_endpoint: Some("ws://localhost:9999".into()),
+            created_at: 0,
+        };
+
+        let req = SessionRequest {
+            wait_until: WaitUntil::NetworkIdle,
+            headless: true,
+            auth_file: None,
+            browser: BrowserKind::Chromium,
+            cdp_endpoint: Some("ws://localhost:1234"),
+        };
+
+        assert!(!desc.matches(&req));
+    }
 }
