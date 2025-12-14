@@ -1,21 +1,23 @@
 use std::time::Duration;
 
-use crate::browser::{BrowserSession, js::console_capture_injection_js};
+use crate::browser::js::console_capture_injection_js;
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::session_broker::{SessionBroker, SessionRequest};
 use crate::types::ConsoleMessage;
 use pw::WaitUntil;
 use tracing::{info, warn};
 
-pub async fn execute(url: &str, timeout_ms: u64, ctx: &CommandContext) -> Result<()> {
+pub async fn execute(
+    url: &str,
+    timeout_ms: u64,
+    ctx: &CommandContext,
+    broker: &mut SessionBroker<'_>,
+) -> Result<()> {
     info!(target = "pw", %url, timeout_ms, browser = %ctx.browser, "capture console");
-    let session = BrowserSession::with_auth_and_browser(
-        WaitUntil::NetworkIdle,
-        ctx.auth_file(),
-        ctx.browser,
-        ctx.cdp_endpoint(),
-    )
-    .await?;
+    let session = broker
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .await?;
 
     if let Err(err) = session
         .page()

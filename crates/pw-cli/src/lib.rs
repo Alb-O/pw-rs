@@ -7,5 +7,6 @@ pub mod error;
 pub mod logging;
 pub mod project;
 pub mod relay;
+pub mod session_broker;
 pub mod styles;
 pub mod types;

@@ -1,19 +1,21 @@
-use crate::browser::{BrowserSession, js};
+use crate::browser::js;
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::session_broker::{SessionBroker, SessionRequest};
 use crate::types::{ElementCoords, IndexedElementCoords};
 use pw::WaitUntil;
 use tracing::info;
 
-pub async fn execute_single(url: &str, selector: &str, ctx: &CommandContext) -> Result<()> {
+pub async fn execute_single(
+    url: &str,
+    selector: &str,
+    ctx: &CommandContext,
+    broker: &mut SessionBroker<'_>,
+) -> Result<()> {
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "coords single");
-    let session = BrowserSession::with_auth_and_browser(
-        WaitUntil::NetworkIdle,
-        ctx.auth_file(),
-        ctx.browser,
-        ctx.cdp_endpoint(),
-    )
-    .await?;
+    let session = broker
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .await?;
     session.goto(url).await?;
 
     let result_json = session
@@ -31,15 +33,16 @@ pub async fn execute_single(url: &str, selector: &str, ctx: &CommandContext) -> 
     session.close().await
 }
 
-pub async fn execute_all(url: &str, selector: &str, ctx: &CommandContext) -> Result<()> {
+pub async fn execute_all(
+    url: &str,
+    selector: &str,
+    ctx: &CommandContext,
+    broker: &mut SessionBroker<'_>,
+) -> Result<()> {
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "coords all");
-    let session = BrowserSession::with_auth_and_browser(
-        WaitUntil::NetworkIdle,
-        ctx.auth_file(),
-        ctx.browser,
-        ctx.cdp_endpoint(),
-    )
-    .await?;
+    let session = broker
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .await?;
     session.goto(url).await?;
 
     let results_json = session

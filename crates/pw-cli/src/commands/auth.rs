@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use crate::browser::BrowserSession;
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::session_broker::{SessionBroker, SessionRequest};
 use pw::{StorageState, WaitUntil};
 use tracing::info;
 
@@ -12,6 +12,7 @@ pub async fn login(
     output: &Path,
     timeout_secs: u64,
     ctx: &CommandContext,
+    broker: &mut SessionBroker<'_>,
 ) -> Result<()> {
     // Resolve output path using project context (into auth/ directory)
     let output =
@@ -26,14 +27,13 @@ pub async fn login(
     info!(target = "pw", %url, path = %output.display(), browser = %ctx.browser, "starting interactive login");
 
     // Launch in headed mode (not headless) for manual login
-    let session = BrowserSession::with_options(
-        WaitUntil::Load,
-        None,
-        false,
-        ctx.browser,
-        ctx.cdp_endpoint(),
-    )
-    .await?;
+    let session = broker
+        .session(
+            SessionRequest::from_context(WaitUntil::Load, ctx)
+                .with_headless(false)
+                .with_auth_file(None),
+        )
+        .await?;
     session.goto(url).await?;
 
     println!("Browser opened at: {}", url);
@@ -87,16 +87,17 @@ pub async fn login(
 }
 
 /// Show cookies for a URL
-pub async fn cookies(url: &str, format: &str, ctx: &CommandContext) -> Result<()> {
+pub async fn cookies(
+    url: &str,
+    format: &str,
+    ctx: &CommandContext,
+    broker: &mut SessionBroker<'_>,
+) -> Result<()> {
     info!(target = "pw", %url, browser = %ctx.browser, "fetching cookies");
 
-    let session = BrowserSession::with_auth_and_browser(
-        WaitUntil::Load,
-        ctx.auth_file(),
-        ctx.browser,
-        ctx.cdp_endpoint(),
-    )
-    .await?;
+    let session = broker
+        .session(SessionRequest::from_context(WaitUntil::Load, ctx))
+        .await?;
 
     session.goto(url).await?;
 

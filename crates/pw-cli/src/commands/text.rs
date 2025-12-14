@@ -1,6 +1,6 @@
-use crate::browser::BrowserSession;
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::session_broker::{SessionBroker, SessionRequest};
 use pw::WaitUntil;
 use tracing::info;
 
@@ -78,16 +78,17 @@ fn filter_garbage(text: &str) -> String {
     result.join("\n")
 }
 
-pub async fn execute(url: &str, selector: &str, ctx: &CommandContext) -> Result<()> {
+pub async fn execute(
+    url: &str,
+    selector: &str,
+    ctx: &CommandContext,
+    broker: &mut SessionBroker<'_>,
+) -> Result<()> {
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "get text");
 
-    let session = BrowserSession::with_auth_and_browser(
-        WaitUntil::NetworkIdle,
-        ctx.auth_file(),
-        ctx.browser,
-        ctx.cdp_endpoint(),
-    )
-    .await?;
+    let session = broker
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .await?;
     session.goto(url).await?;
 
     let locator = session.page().locator(selector).await;
