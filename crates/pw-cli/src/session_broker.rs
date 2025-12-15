@@ -9,12 +9,16 @@ use pw::{StorageState, WaitUntil};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+const DRIVER_HASH: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SessionDescriptor {
     pub(crate) pid: u32,
     pub(crate) browser: BrowserKind,
     pub(crate) headless: bool,
     pub(crate) cdp_endpoint: Option<String>,
+    pub(crate) ws_endpoint: Option<String>,
+    pub(crate) driver_hash: Option<String>,
     pub(crate) created_at: u64,
 }
 
@@ -39,11 +43,24 @@ impl SessionDescriptor {
         Ok(())
     }
 
-    pub(crate) fn matches(&self, request: &SessionRequest<'_>) -> bool {
+    pub(crate) fn matches(&self, request: &SessionRequest<'_>, driver_hash: Option<&str>) -> bool {
+        let endpoint_match = if let Some(req_endpoint) = request.cdp_endpoint {
+            self.cdp_endpoint.as_deref() == Some(req_endpoint)
+                || self.ws_endpoint.as_deref() == Some(req_endpoint)
+        } else {
+            self.ws_endpoint.is_some()
+        };
+
+        let driver_match = match (driver_hash, self.driver_hash.as_deref()) {
+            (Some(expected), Some(actual)) => expected == actual,
+            (None, _) => true,
+            (_, None) => true,
+        };
+
         self.browser == request.browser
             && self.headless == request.headless
-            && self.cdp_endpoint.is_some()
-            && self.cdp_endpoint.as_deref() == request.cdp_endpoint
+            && endpoint_match
+            && driver_match
     }
 
     pub(crate) fn is_alive(&self) -> bool {
@@ -67,6 +84,7 @@ pub struct SessionRequest<'a> {
     pub auth_file: Option<&'a Path>,
     pub browser: BrowserKind,
     pub cdp_endpoint: Option<&'a str>,
+    pub launch_server: bool,
 }
 
 impl<'a> SessionRequest<'a> {
@@ -77,6 +95,7 @@ impl<'a> SessionRequest<'a> {
             auth_file: ctx.auth_file(),
             browser: ctx.browser,
             cdp_endpoint: ctx.cdp_endpoint(),
+            launch_server: ctx.launch_server(),
         }
     }
 
@@ -126,8 +145,12 @@ impl<'a> SessionBroker<'a> {
             if self.refresh {
                 let _ = fs::remove_file(path);
             } else if let Some(descriptor) = SessionDescriptor::load(path)? {
-                if descriptor.matches(&request) && descriptor.is_alive() {
-                    if let Some(endpoint) = descriptor.cdp_endpoint.as_deref() {
+                if descriptor.matches(&request, Some(DRIVER_HASH)) && descriptor.is_alive() {
+                    if let Some(endpoint) = descriptor
+                        .ws_endpoint
+                        .as_deref()
+                        .or_else(|| descriptor.cdp_endpoint.as_deref())
+                    {
                         debug!(
                             target = "pw.session",
                             %endpoint,
@@ -140,42 +163,59 @@ impl<'a> SessionBroker<'a> {
                             request.headless,
                             request.browser,
                             Some(endpoint),
+                            false,
                         )
                         .await?;
                         return Ok(SessionHandle { session });
                     } else {
-                        debug!(
-                            target = "pw.session",
-                            "descriptor lacks cdp endpoint; ignoring"
-                        );
+                        debug!(target = "pw.session", "descriptor lacks endpoint; ignoring");
                     }
                 }
             }
         }
 
-        let session = BrowserSession::with_options(
-            request.wait_until,
-            storage_state,
-            request.headless,
-            request.browser,
-            request.cdp_endpoint,
-        )
-        .await?;
+        let session = if request.launch_server {
+            BrowserSession::launch_server_session(
+                request.wait_until,
+                storage_state,
+                request.headless,
+                request.browser,
+            )
+            .await?
+        } else {
+            BrowserSession::with_options(
+                request.wait_until,
+                storage_state,
+                request.headless,
+                request.browser,
+                request.cdp_endpoint,
+                false,
+            )
+            .await?
+        };
 
-        if let (Some(path), Some(endpoint)) = (&self.descriptor_path, request.cdp_endpoint) {
-            let descriptor = SessionDescriptor {
-                pid: std::process::id(),
-                browser: request.browser,
-                headless: request.headless,
-                cdp_endpoint: Some(endpoint.to_string()),
-                created_at: now_ts(),
-            };
-            let _ = descriptor.save(path);
-        } else if self.descriptor_path.is_some() {
-            debug!(
-                target = "pw.session",
-                "no cdp endpoint available; skipping descriptor save"
-            );
+        if let Some(path) = &self.descriptor_path {
+            if let Some(endpoint) = session
+                .ws_endpoint()
+                .or(request.cdp_endpoint)
+                .map(|e| e.to_string())
+            {
+                let descriptor = SessionDescriptor {
+                    pid: std::process::id(),
+                    browser: request.browser,
+                    headless: request.headless,
+                    cdp_endpoint: request.cdp_endpoint.map(|e| e.to_string()),
+                    ws_endpoint: Some(endpoint),
+                    driver_hash: Some(DRIVER_HASH.to_string()),
+                    created_at: now_ts(),
+                };
+                let _ = descriptor.save(path);
+            } else {
+                debug!(
+                    target = "pw.session",
+                    "no endpoint available; skipping descriptor save"
+                );
+            }
         }
 
         Ok(SessionHandle { session })
@@ -203,8 +243,16 @@ impl SessionHandle {
         self.session.context()
     }
 
+    pub fn ws_endpoint(&self) -> Option<&str> {
+        self.session.ws_endpoint()
+    }
+
     pub async fn close(self) -> Result<()> {
         self.session.close().await
+    }
+
+    pub async fn shutdown_server(self) -> Result<()> {
+        self.session.shutdown_server().await
     }
 }
 
@@ -228,6 +276,8 @@ mod tests {
             browser: BrowserKind::Chromium,
             headless: true,
             cdp_endpoint: Some("ws://localhost:1234".into()),
+            ws_endpoint: Some("ws://localhost:1234".into()),
+            driver_hash: Some(DRIVER_HASH.to_string()),
             created_at: 123,
         };
 
@@ -241,8 +291,9 @@ mod tests {
             auth_file: None,
             browser: BrowserKind::Chromium,
             cdp_endpoint: Some("ws://localhost:1234"),
+            launch_server: true,
         };
-        assert!(loaded.matches(&req));
+        assert!(loaded.matches(&req, Some(DRIVER_HASH)));
     }
 
     #[test]
@@ -252,6 +303,8 @@ mod tests {
             browser: BrowserKind::Chromium,
             headless: true,
             cdp_endpoint: Some("ws://localhost:9999".into()),
+            ws_endpoint: Some("ws://localhost:9999".into()),
+            driver_hash: Some(DRIVER_HASH.to_string()),
             created_at: 0,
         };
 
@@ -261,8 +314,9 @@ mod tests {
             auth_file: None,
             browser: BrowserKind::Chromium,
             cdp_endpoint: Some("ws://localhost:1234"),
+            launch_server: true,
         };
 
-        assert!(!desc.matches(&req));
+        assert!(!desc.matches(&req, Some(DRIVER_HASH)));
     }
 }

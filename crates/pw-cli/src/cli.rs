@@ -26,6 +26,10 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "URL")]
     pub cdp_endpoint: Option<String>,
 
+    /// Launch a reusable local browser server and persist its endpoint
+    #[arg(long, global = true)]
+    pub launch_server: bool,
+
     /// Disable project detection (use current directory paths)
     #[arg(long, global = true)]
     pub no_project: bool,
@@ -238,6 +242,14 @@ pub enum SessionAction {
     Status,
     /// Remove stored session descriptor for the active context
     Clear,
+    /// Start a reusable local browser session and persist its endpoint
+    Start {
+        /// Run with a visible (headful) browser window
+        #[arg(long)]
+        headful: bool,
+    },
+    /// Stop the reusable local browser session and remove descriptor
+    Stop,
 }
 
 #[cfg(test)]

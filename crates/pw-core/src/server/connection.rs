@@ -55,7 +55,7 @@
 //! - .NET: `Microsoft.Playwright/Core/Connection.cs`
 
 use crate::error::{Error, Result};
-use crate::server::transport::{TransportParts, TransportReceiver, Transport};
+use crate::server::transport::{Transport, TransportParts, TransportReceiver};
 use parking_lot::Mutex as ParkingLotMutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -430,13 +430,7 @@ impl Connection {
         let request_value = serde_json::to_value(&request)?;
         tracing::debug!("Request JSON: {}", request_value);
 
-        match self
-            .transport_sender
-            .lock()
-            .await
-            .send(request_value)
-            .await
-        {
+        match self.transport_sender.lock().await.send(request_value).await {
             Ok(()) => tracing::debug!("Message sent successfully, awaiting response"),
             Err(e) => {
                 tracing::error!("Failed to send message: {:?}", e);
@@ -922,11 +916,7 @@ mod tests {
     use tokio::io::duplex;
 
     // Helper to create test connection with mock transport
-    fn create_test_connection() -> (
-        Connection,
-        tokio::io::DuplexStream,
-        tokio::io::DuplexStream,
-    ) {
+    fn create_test_connection() -> (Connection, tokio::io::DuplexStream, tokio::io::DuplexStream) {
         let (stdin_read, stdin_write) = duplex(1024);
         let (stdout_read, stdout_write) = duplex(1024);
 

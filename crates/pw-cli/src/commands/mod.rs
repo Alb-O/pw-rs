@@ -26,6 +26,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         auth,
         browser,
         cdp_endpoint,
+        launch_server,
         no_project,
         context,
         no_context,
@@ -40,7 +41,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
             .await
             .map_err(PwError::Anyhow),
         command => {
-            let ctx = CommandContext::new(browser, no_project, auth, cdp_endpoint);
+            let ctx = CommandContext::new(browser, no_project, auth, cdp_endpoint, launch_server);
             let project_root = ctx.project.as_ref().map(|p| p.paths.root.clone());
             let mut ctx_state = ContextState::new(
                 project_root,
@@ -246,6 +247,8 @@ async fn dispatch_command(
         Commands::Session { action } => match action {
             SessionAction::Status => session::status(ctx_state).await,
             SessionAction::Clear => session::clear(ctx_state).await,
+            SessionAction::Start { headful } => session::start(ctx_state, broker, headful).await,
+            SessionAction::Stop => session::stop(ctx_state, broker).await,
         },
         Commands::Init {
             path,

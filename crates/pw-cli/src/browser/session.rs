@@ -11,11 +11,14 @@ pub struct BrowserSession {
     context: pw::protocol::BrowserContext,
     page: pw::protocol::Page,
     wait_until: WaitUntil,
+    ws_endpoint: Option<String>,
+    launched_server: Option<pw::LaunchedServer>,
+    keep_server_running: bool,
 }
 
 impl BrowserSession {
     pub async fn new(wait_until: WaitUntil) -> Result<Self> {
-        Self::with_options(wait_until, None, true, BrowserKind::default(), None).await
+        Self::with_options(wait_until, None, true, BrowserKind::default(), None, false).await
     }
 
     /// Create a session with optional auth file (convenience for commands)
@@ -39,7 +42,9 @@ impl BrowserSession {
             Some(path) => {
                 Self::with_auth_file_and_browser(wait_until, path, browser_kind, cdp_endpoint).await
             }
-            None => Self::with_options(wait_until, None, true, browser_kind, cdp_endpoint).await,
+            None => {
+                Self::with_options(wait_until, None, true, browser_kind, cdp_endpoint, false).await
+            }
         }
     }
 
@@ -50,16 +55,22 @@ impl BrowserSession {
         headless: bool,
         browser_kind: BrowserKind,
         cdp_endpoint: Option<&str>,
+        launch_server: bool,
     ) -> Result<Self> {
         debug!(
             target = "pw",
             browser = %browser_kind,
             cdp = cdp_endpoint.is_some(),
+            launch_server,
             "starting Playwright..."
         );
-        let playwright = Playwright::launch()
+        let mut playwright = Playwright::launch()
             .await
             .map_err(|e| PwError::BrowserLaunch(e.to_string()))?;
+
+        let mut ws_endpoint = None;
+        let mut launched_server = None;
+        let mut keep_server_running = false;
 
         let (browser, context) = if let Some(endpoint) = cdp_endpoint {
             if browser_kind != BrowserKind::Chromium {
@@ -82,6 +93,47 @@ impl BrowserSession {
                 browser.new_context_with_options(options).await?
             } else if let Some(default_ctx) = connect_result.default_context {
                 default_ctx
+            } else {
+                browser.new_context().await?
+            };
+
+            (browser, context)
+        } else if launch_server {
+            playwright.keep_server_running();
+            keep_server_running = true;
+
+            let launch_options = pw::LaunchOptions {
+                headless: Some(headless),
+                ..Default::default()
+            };
+
+            let launched = match browser_kind {
+                BrowserKind::Chromium => playwright
+                    .chromium()
+                    .launch_server_with_options(launch_options)
+                    .await
+                    .map_err(|e| PwError::BrowserLaunch(e.to_string()))?,
+                BrowserKind::Firefox => playwright
+                    .firefox()
+                    .launch_server_with_options(launch_options)
+                    .await
+                    .map_err(|e| PwError::BrowserLaunch(e.to_string()))?,
+                BrowserKind::Webkit => playwright
+                    .webkit()
+                    .launch_server_with_options(launch_options)
+                    .await
+                    .map_err(|e| PwError::BrowserLaunch(e.to_string()))?,
+            };
+
+            ws_endpoint = Some(launched.ws_endpoint().to_string());
+            launched_server = Some(launched.clone());
+
+            let browser = launched.browser().clone();
+            let context = if let Some(state) = storage_state {
+                let options = BrowserContextOptions::builder()
+                    .storage_state(state)
+                    .build();
+                browser.new_context_with_options(options).await?
             } else {
                 browser.new_context().await?
             };
@@ -136,6 +188,9 @@ impl BrowserSession {
             context,
             page,
             wait_until,
+            ws_endpoint,
+            launched_server,
+            keep_server_running,
         })
     }
 
@@ -159,6 +214,24 @@ impl BrowserSession {
             true,
             browser_kind,
             cdp_endpoint,
+            false,
+        )
+        .await
+    }
+
+    pub async fn launch_server_session(
+        wait_until: WaitUntil,
+        storage_state: Option<StorageState>,
+        headless: bool,
+        browser_kind: BrowserKind,
+    ) -> Result<Self> {
+        Self::with_options(
+            wait_until,
+            storage_state,
+            headless,
+            browser_kind,
+            None,
+            true,
         )
         .await
     }
@@ -187,8 +260,30 @@ impl BrowserSession {
         &self.context
     }
 
+    pub fn ws_endpoint(&self) -> Option<&str> {
+        self.ws_endpoint.as_deref()
+    }
+
     pub async fn close(self) -> Result<()> {
+        if self.launched_server.is_some() {
+            // Close the context/page but keep the server running for reuse
+            let _ = self.context.close().await;
+            return Ok(());
+        }
+
         self.browser.close().await?;
+        Ok(())
+    }
+
+    pub async fn shutdown_server(mut self) -> Result<()> {
+        if let Some(server) = self.launched_server.take() {
+            server.close().await?;
+            self.keep_server_running = false;
+            self._playwright.enable_server_shutdown();
+        } else {
+            self.browser.close().await?;
+        }
+
         Ok(())
     }
 }

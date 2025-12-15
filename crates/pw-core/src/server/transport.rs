@@ -12,7 +12,9 @@ use std::pin::Pin;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
+};
 
 /// Send a JSON message using length-prefixed framing
 ///
@@ -59,10 +61,8 @@ where
 /// length-prefixed JSON messages.
 pub trait Transport: Send + Sync {
     /// Send a JSON message to the server
-    fn send(
-        &mut self,
-        message: JsonValue,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+    fn send(&mut self, message: JsonValue)
+    -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
 }
 
 pub trait TransportReceiver: Send {
@@ -150,7 +150,6 @@ impl<R> PipeTransportReceiver<R>
 where
     R: AsyncRead + Unpin + Send + Sync + 'static,
 {
-
     /// Run the message read loop
     ///
     /// This continuously reads messages from stdout and sends them
@@ -378,7 +377,6 @@ where
 
         Ok(())
     }
-
 }
 
 impl<W> PipeTransportSender<W>
@@ -460,10 +458,7 @@ impl WebSocketTransport {
         Ok((
             Self {
                 sender: WebSocketTransportSender { sink },
-                receiver: WebSocketTransportReceiver {
-                    stream,
-                    message_tx,
-                },
+                receiver: WebSocketTransportReceiver { stream, message_tx },
             },
             message_rx,
         ))
@@ -492,19 +487,16 @@ impl Transport for WebSocketTransportSender {
         message: JsonValue,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         Box::pin(async move {
-            let payload = serde_json::to_string(&message).map_err(|e| {
-                Error::TransportError(format!("Failed to serialize JSON: {}", e))
+            let payload = serde_json::to_string(&message)
+                .map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
+
+            self.sink.send(Message::Text(payload)).await.map_err(|e| {
+                Error::TransportError(format!("Failed to send websocket message: {}", e))
             })?;
 
-            self.sink
-                .send(Message::Text(payload))
-                .await
-                .map_err(|e| Error::TransportError(format!("Failed to send websocket message: {}", e)))?;
-
-            self.sink
-                .flush()
-                .await
-                .map_err(|e| Error::TransportError(format!("Failed to flush websocket sink: {}", e)))?;
+            self.sink.flush().await.map_err(|e| {
+                Error::TransportError(format!("Failed to flush websocket sink: {}", e))
+            })?;
 
             Ok(())
         })
@@ -524,12 +516,16 @@ impl TransportReceiver for WebSocketTransportReceiver {
                     .map_err(|e| Error::TransportError(format!("WebSocket read error: {}", e)))?;
 
                 let value = match frame {
-                    Message::Text(text) => serde_json::from_str::<JsonValue>(&text).map_err(|e| {
-                        Error::ProtocolError(format!("Failed to parse websocket text: {}", e))
-                    })?,
-                    Message::Binary(bin) => serde_json::from_slice::<JsonValue>(&bin).map_err(|e| {
-                        Error::ProtocolError(format!("Failed to parse websocket binary: {}", e))
-                    })?,
+                    Message::Text(text) => {
+                        serde_json::from_str::<JsonValue>(&text).map_err(|e| {
+                            Error::ProtocolError(format!("Failed to parse websocket text: {}", e))
+                        })?
+                    }
+                    Message::Binary(bin) => {
+                        serde_json::from_slice::<JsonValue>(&bin).map_err(|e| {
+                            Error::ProtocolError(format!("Failed to parse websocket binary: {}", e))
+                        })?
+                    }
                     Message::Close(_) => break,
                     Message::Ping(_) | Message::Pong(_) => {
                         continue;
@@ -538,7 +534,7 @@ impl TransportReceiver for WebSocketTransportReceiver {
                         return Err(Error::TransportError(format!(
                             "Unexpected websocket message: {:?}",
                             other
-                        )))
+                        )));
                     }
                 };
 

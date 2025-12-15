@@ -71,6 +71,8 @@ pub struct Playwright {
     /// - Taking ownership during shutdown (Option::take)
     /// - Interior mutability (Mutex)
     server: Arc<Mutex<Option<PlaywrightServer>>>,
+    /// Whether to keep the launched server running when Playwright is dropped
+    keep_server_running: bool,
 }
 
 impl Playwright {
@@ -142,6 +144,7 @@ impl Playwright {
             firefox: Arc::clone(&playwright.firefox),
             webkit: Arc::clone(&playwright.webkit),
             server: Arc::new(Mutex::new(Some(server))),
+            keep_server_running: false,
         })
     }
 
@@ -177,6 +180,7 @@ impl Playwright {
             firefox: Arc::clone(&playwright.firefox),
             webkit: Arc::clone(&playwright.webkit),
             server: Arc::new(Mutex::new(None)),
+            keep_server_running: false,
         })
     }
 
@@ -245,6 +249,7 @@ impl Playwright {
             firefox,
             webkit,
             server: Arc::new(Mutex::new(None)), // No server for protocol-created objects
+            keep_server_running: false,
         })
     }
 
@@ -271,6 +276,16 @@ impl Playwright {
             .as_any()
             .downcast_ref::<BrowserType>()
             .expect("webkit should be BrowserType")
+    }
+
+    /// Allow the launched Playwright server to keep running after this handle is dropped.
+    pub fn keep_server_running(&mut self) {
+        self.keep_server_running = true;
+    }
+
+    /// Re-enable automatic server shutdown on drop (default behavior).
+    pub fn enable_server_shutdown(&mut self) {
+        self.keep_server_running = false;
     }
 
     /// Shuts down the Playwright server gracefully.
@@ -361,6 +376,10 @@ impl Drop for Playwright {
     /// Note: For graceful shutdown, prefer calling `playwright.shutdown().await`
     /// explicitly before dropping.
     fn drop(&mut self) {
+        if self.keep_server_running {
+            return;
+        }
+
         if let Some(mut server) = self.server.lock().take() {
             tracing::debug!("Drop: Force-killing Playwright server");
 
