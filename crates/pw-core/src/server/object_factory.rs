@@ -262,8 +262,8 @@ pub async fn create_object(
         }
 
         _ => {
-            // Unknown type - log warning and return inert object to stay compatible
-            tracing::warn!("Unknown protocol type: {}", type_name);
+            // Unknown type - log at debug level and return inert object to stay forward-compatible
+            tracing::debug!("Unknown protocol type (forward-compatible): {}", type_name);
             Arc::new(UnknownObject::new(parent, type_name, guid, initializer))
         }
     };

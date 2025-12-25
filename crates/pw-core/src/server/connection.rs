@@ -680,8 +680,8 @@ impl Connection {
                                 Ok(())
                             }
                             None => {
-                                tracing::warn!(
-                                    "Event for unknown object: guid={}, method={}",
+                                tracing::debug!(
+                                    "Event for unknown object (ignored): guid={}, method={}",
                                     event.guid,
                                     event.method
                                 );
@@ -797,7 +797,7 @@ impl Connection {
 
             tracing::debug!("Disposed object: guid={}", event.guid);
         } else {
-            tracing::warn!("Dispose for unknown object: guid={}", event.guid);
+            tracing::debug!("Dispose for unknown object (ignored): guid={}", event.guid);
         }
 
         Ok(())
