@@ -196,9 +196,9 @@ async fn dispatch_command(
             }
             outcome
         }
-        Commands::Elements { url } => {
+        Commands::Elements { url, wait, timeout_ms } => {
             let final_url = ctx_state.resolve_url(url)?;
-            let outcome = elements::execute(&final_url, ctx, broker, format).await;
+            let outcome = elements::execute(&final_url, wait, timeout_ms, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),

@@ -180,11 +180,13 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
 
 pub async fn execute(
     url: &str,
+    wait: bool,
+    timeout_ms: u64,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
 ) -> Result<()> {
-    info!(target = "pw", %url, browser = %ctx.browser, "list elements");
+    info!(target = "pw", %url, %wait, %timeout_ms, browser = %ctx.browser, "list elements");
 
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
@@ -192,8 +194,32 @@ pub async fn execute(
     session.goto(url).await?;
 
     let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
-    let raw_result = session.page().evaluate_value(&js).await?;
-    let raw_elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
+
+    // If wait mode, poll until we find elements or timeout
+    let raw_elements: Vec<RawElement> = if wait {
+        let start = std::time::Instant::now();
+        let poll_interval = std::time::Duration::from_millis(500);
+        let timeout = std::time::Duration::from_millis(timeout_ms);
+
+        loop {
+            let raw_result = session.page().evaluate_value(&js).await?;
+            let elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
+
+            if !elements.is_empty() {
+                break elements;
+            }
+
+            if start.elapsed() >= timeout {
+                // Timeout reached, return empty (not an error)
+                break vec![];
+            }
+
+            tokio::time::sleep(poll_interval).await;
+        }
+    } else {
+        let raw_result = session.page().evaluate_value(&js).await?;
+        serde_json::from_str(&raw_result)?
+    };
 
     // Convert to output format
     let elements: Vec<InteractiveElement> = raw_elements

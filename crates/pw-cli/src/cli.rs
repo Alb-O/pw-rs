@@ -159,7 +159,15 @@ pub enum Commands {
 
     /// List interactive elements (buttons, links, inputs, selects)
     #[command(alias = "els")]
-    Elements { url: Option<String> },
+    Elements {
+        url: Option<String>,
+        /// Wait for elements with polling (useful for dynamic pages)
+        #[arg(long)]
+        wait: bool,
+        /// Timeout in milliseconds for --wait mode (default: 10000)
+        #[arg(long, default_value = "10000")]
+        timeout_ms: u64,
+    },
 
     /// Wait for condition (selector, timeout, or load state)
     Wait {
