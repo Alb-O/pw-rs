@@ -1,5 +1,10 @@
+use std::time::Instant;
+
 use crate::context::CommandContext;
-use crate::error::Result;
+use crate::error::{PwError, Result};
+use crate::output::{
+    CommandInputs, ErrorCode, OutputFormat, ResultBuilder, TextData, print_result,
+};
 use crate::session_broker::{SessionBroker, SessionRequest};
 use pw::WaitUntil;
 use tracing::info;
@@ -83,7 +88,9 @@ pub async fn execute(
     selector: &str,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
+    format: OutputFormat,
 ) -> Result<()> {
+    let _start = Instant::now();
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "get text");
 
     let session = broker
@@ -92,10 +99,51 @@ pub async fn execute(
     session.goto(url).await?;
 
     let locator = session.page().locator(selector).await;
+
+    // Check how many elements match
+    let count = locator.count().await?;
+
+    if count == 0 {
+        // No elements matched - this is an error condition
+        let result = ResultBuilder::<TextData>::new("text")
+            .inputs(CommandInputs {
+                url: Some(url.to_string()),
+                selector: Some(selector.to_string()),
+                ..Default::default()
+            })
+            .error(
+                ErrorCode::SelectorNotFound,
+                format!("No elements matched selector: {selector}"),
+            )
+            .build();
+
+        print_result(&result, format);
+        session.close().await?;
+
+        return Err(PwError::ElementNotFound {
+            selector: selector.to_string(),
+        });
+    }
+
+    // Get text from first matching element
     let text = locator.inner_text().await?;
     let filtered = filter_garbage(&text);
+    let trimmed = filtered.trim().to_string();
 
-    println!("{}", filtered.trim());
+    let result = ResultBuilder::new("text")
+        .inputs(CommandInputs {
+            url: Some(url.to_string()),
+            selector: Some(selector.to_string()),
+            ..Default::default()
+        })
+        .data(TextData {
+            text: trimmed,
+            selector: selector.to_string(),
+            match_count: count,
+        })
+        .build();
+
+    print_result(&result, format);
     session.close().await
 }
 

@@ -1,14 +1,37 @@
 use clap::Parser;
-use pw_cli::{cli::Cli, commands, logging};
-use tracing::error;
+use pw_cli::{
+    cli::Cli,
+    commands,
+    error::PwError,
+    logging,
+    output::{self, OutputFormat, ResultBuilder},
+};
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     logging::init_logging(cli.verbose);
 
-    if let Err(err) = commands::dispatch(cli).await {
-        error!(target = "pw", error = %err, "command failed");
+    let format: OutputFormat = cli.format.into();
+
+    if let Err(err) = commands::dispatch(cli, format).await {
+        handle_error(err, format);
         std::process::exit(1);
+    }
+}
+
+fn handle_error(err: PwError, format: OutputFormat) {
+    // Convert error to structured output
+    let cmd_error = err.to_command_error();
+
+    // Always print to stderr for humans
+    output::print_error_stderr(&cmd_error);
+
+    // Also emit JSON envelope to stdout with ok=false (for agents)
+    if format != OutputFormat::Text {
+        let result: output::CommandResult<()> = ResultBuilder::new("unknown")
+            .error(cmd_error.code, &cmd_error.message)
+            .build();
+        output::print_result(&result, format);
     }
 }

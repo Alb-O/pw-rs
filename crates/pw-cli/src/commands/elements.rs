@@ -1,16 +1,25 @@
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::output::{CommandInputs, ElementsData, InteractiveElement, OutputFormat, ResultBuilder, print_result};
 use crate::session_broker::{SessionBroker, SessionRequest};
 use pw::WaitUntil;
 use serde::Deserialize;
 use tracing::info;
 
 #[derive(Debug, Deserialize)]
-struct Element {
+struct RawElement {
     kind: String,
     label: String,
     selector: String,
     extra: Option<String>,
+    #[serde(default)]
+    x: i32,
+    #[serde(default)]
+    y: i32,
+    #[serde(default)]
+    width: i32,
+    #[serde(default)]
+    height: i32,
 }
 
 const EXTRACT_ELEMENTS_JS: &str = r#"
@@ -113,12 +122,17 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
         seen.add(key);
         
         const label = getLabel(el) || '(unlabeled)';
+        const rect = el.getBoundingClientRect();
         
         elements.push({
             kind: kind,
             label: label.substring(0, 60),
             selector: selector,
-            extra: extra || null
+            extra: extra || null,
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
         });
     }
     
@@ -168,6 +182,7 @@ pub async fn execute(
     url: &str,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
+    format: OutputFormat,
 ) -> Result<()> {
     info!(target = "pw", %url, browser = %ctx.browser, "list elements");
 
@@ -177,47 +192,40 @@ pub async fn execute(
     session.goto(url).await?;
 
     let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
-    let result = session.page().evaluate_value(&js).await?;
-    let elements: Vec<Element> = serde_json::from_str(&result)?;
+    let raw_result = session.page().evaluate_value(&js).await?;
+    let raw_elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
 
-    if elements.is_empty() {
-        println!("No interactive elements found");
-        return session.close().await;
-    }
+    // Convert to output format
+    let elements: Vec<InteractiveElement> = raw_elements
+        .into_iter()
+        .map(|e| InteractiveElement {
+            tag: e.kind,
+            selector: e.selector,
+            text: if e.label.is_empty() || e.label == "(unlabeled)" {
+                None
+            } else {
+                Some(e.label)
+            },
+            href: None, // TODO: extract for links
+            name: e.extra,
+            id: None,
+            x: e.x,
+            y: e.y,
+            width: e.width,
+            height: e.height,
+        })
+        .collect();
 
-    // Calculate column widths
-    let max_kind = elements.iter().map(|e| e.kind.len()).max().unwrap_or(6);
-    let max_label = elements
-        .iter()
-        .map(|e| e.label.len())
-        .max()
-        .unwrap_or(20)
-        .min(40);
+    let count = elements.len();
 
-    for el in &elements {
-        let kind = format!("[{}]", el.kind);
-        let label = if el.label.len() > 40 {
-            format!("{}...", &el.label[..37])
-        } else {
-            el.label.clone()
-        };
+    let result = ResultBuilder::new("elements")
+        .inputs(CommandInputs {
+            url: Some(url.to_string()),
+            ..Default::default()
+        })
+        .data(ElementsData { elements, count })
+        .build();
 
-        let extra = el
-            .extra
-            .as_ref()
-            .map(|e| format!(" ({})", e))
-            .unwrap_or_default();
-
-        println!(
-            "{:<width_k$} {:<width_l$}{} → {}",
-            kind,
-            label,
-            extra,
-            el.selector,
-            width_k = max_kind + 2,
-            width_l = max_label,
-        );
-    }
-
+    print_result(&result, format);
     session.close().await
 }

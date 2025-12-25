@@ -1,7 +1,12 @@
 use std::path::Path;
+use std::time::Instant;
 
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::output::{
+    Artifact, ArtifactType, CommandInputs, OutputFormat, ResultBuilder, ScreenshotData,
+    print_result,
+};
 use crate::session_broker::{SessionBroker, SessionRequest};
 use pw::{ScreenshotOptions, WaitUntil};
 use tracing::info;
@@ -12,7 +17,9 @@ pub async fn execute(
     full_page: bool,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
+    format: OutputFormat,
 ) -> Result<()> {
+    let _start = Instant::now();
     let output = output.to_path_buf();
 
     info!(target = "pw", %url, path = %output.display(), full_page, browser = %ctx.browser, "screenshot");
@@ -38,6 +45,29 @@ pub async fn execute(
         .screenshot_to_file(&output, Some(screenshot_opts))
         .await?;
 
-    info!(target = "pw", path = %output.display(), "screenshot saved");
+    // Get file size for artifact info
+    let size_bytes = std::fs::metadata(&output).ok().map(|m| m.len());
+
+    let result = ResultBuilder::new("screenshot")
+        .inputs(CommandInputs {
+            url: Some(url.to_string()),
+            output_path: Some(output.clone()),
+            ..Default::default()
+        })
+        .data(ScreenshotData {
+            path: output.clone(),
+            full_page,
+            width: None,  // TODO: Could extract from screenshot metadata
+            height: None,
+        })
+        .artifact(Artifact {
+            artifact_type: ArtifactType::Screenshot,
+            path: output,
+            size_bytes,
+        })
+        .build();
+
+    print_result(&result, format);
+
     session.close().await
 }

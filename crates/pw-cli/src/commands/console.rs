@@ -3,16 +3,28 @@ use std::time::Duration;
 use crate::browser::js::console_capture_injection_js;
 use crate::context::CommandContext;
 use crate::error::Result;
+use crate::output::{CommandInputs, OutputFormat, ResultBuilder, print_result};
 use crate::session_broker::{SessionBroker, SessionRequest};
 use crate::types::ConsoleMessage;
 use pw::WaitUntil;
+use serde::Serialize;
 use tracing::{info, warn};
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsoleData {
+    messages: Vec<ConsoleMessage>,
+    count: usize,
+    error_count: usize,
+    warning_count: usize,
+}
 
 pub async fn execute(
     url: &str,
     timeout_ms: u64,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
+    format: OutputFormat,
 ) -> Result<()> {
     info!(target = "pw", %url, timeout_ms, browser = %ctx.browser, "capture console");
     let session = broker
@@ -50,7 +62,25 @@ pub async fn execute(
         );
     }
 
-    println!("{}", serde_json::to_string_pretty(&messages)?);
+    let error_count = messages.iter().filter(|m| m.msg_type == "error").count();
+    let warning_count = messages.iter().filter(|m| m.msg_type == "warning").count();
+    let count = messages.len();
+
+    let result = ResultBuilder::new("console")
+        .inputs(CommandInputs {
+            url: Some(url.to_string()),
+            extra: Some(serde_json::json!({ "timeout_ms": timeout_ms })),
+            ..Default::default()
+        })
+        .data(ConsoleData {
+            messages,
+            count,
+            error_count,
+            warning_count,
+        })
+        .build();
+
+    print_result(&result, format);
 
     session.close().await
 }

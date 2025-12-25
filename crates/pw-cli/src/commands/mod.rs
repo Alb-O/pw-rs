@@ -16,13 +16,15 @@ use crate::cli::{AuthAction, Cli, Commands, SessionAction};
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate};
 use crate::error::{PwError, Result};
+use crate::output::OutputFormat;
 use crate::relay;
 use crate::session_broker::SessionBroker;
 use std::path::Path;
 
-pub async fn dispatch(cli: Cli) -> Result<()> {
+pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
     let Cli {
         verbose: _,
+        format: _cli_format,
         auth,
         browser,
         cdp_endpoint,
@@ -35,6 +37,8 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         base_url,
         command,
     } = cli;
+
+
 
     match command {
         Commands::Relay { host, port } => relay::run_relay_server(&host, port)
@@ -57,7 +61,7 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
                 ctx_state.session_descriptor_path(),
                 ctx_state.refresh_requested(),
             );
-            let result = dispatch_command(command, &ctx, &mut ctx_state, &mut broker).await;
+            let result = dispatch_command(command, &ctx, &mut ctx_state, &mut broker, format).await;
 
             if result.is_ok() {
                 ctx_state.persist()?;
@@ -73,11 +77,12 @@ async fn dispatch_command(
     ctx: &CommandContext,
     ctx_state: &mut ContextState,
     broker: &mut SessionBroker<'_>,
+    format: OutputFormat,
 ) -> Result<()> {
     match command {
         Commands::Navigate { url } => {
             let final_url = ctx_state.resolve_url(url)?;
-            let outcome = navigate::execute(&final_url, ctx, broker).await;
+            let outcome = navigate::execute(&final_url, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -88,7 +93,7 @@ async fn dispatch_command(
         }
         Commands::Console { url, timeout_ms } => {
             let final_url = ctx_state.resolve_url(url)?;
-            let outcome = console::execute(&final_url, timeout_ms, ctx, broker).await;
+            let outcome = console::execute(&final_url, timeout_ms, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -99,7 +104,7 @@ async fn dispatch_command(
         }
         Commands::Eval { expression, url } => {
             let final_url = ctx_state.resolve_url(url)?;
-            let outcome = eval::execute(&final_url, &expression, ctx, broker).await;
+            let outcome = eval::execute(&final_url, &expression, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -111,7 +116,7 @@ async fn dispatch_command(
         Commands::Html { url, selector } => {
             let final_url = ctx_state.resolve_url(url)?;
             let final_selector = ctx_state.resolve_selector(selector, Some("html"))?;
-            let outcome = html::execute(&final_url, &final_selector, ctx, broker).await;
+            let outcome = html::execute(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -124,7 +129,7 @@ async fn dispatch_command(
         Commands::Coords { url, selector } => {
             let final_url = ctx_state.resolve_url(url)?;
             let final_selector = ctx_state.resolve_selector(selector, None)?;
-            let outcome = coords::execute_single(&final_url, &final_selector, ctx, broker).await;
+            let outcome = coords::execute_single(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -137,7 +142,7 @@ async fn dispatch_command(
         Commands::CoordsAll { url, selector } => {
             let final_url = ctx_state.resolve_url(url)?;
             let final_selector = ctx_state.resolve_selector(selector, None)?;
-            let outcome = coords::execute_all(&final_url, &final_selector, ctx, broker).await;
+            let outcome = coords::execute_all(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -155,7 +160,7 @@ async fn dispatch_command(
             let final_url = ctx_state.resolve_url(url)?;
             let resolved_output = ctx_state.resolve_output(ctx, output);
             let outcome =
-                screenshot::execute(&final_url, &resolved_output, full_page, ctx, broker).await;
+                screenshot::execute(&final_url, &resolved_output, full_page, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -168,7 +173,7 @@ async fn dispatch_command(
         Commands::Click { url, selector } => {
             let final_url = ctx_state.resolve_url(url)?;
             let final_selector = ctx_state.resolve_selector(selector, None)?;
-            let outcome = click::execute(&final_url, &final_selector, ctx, broker).await;
+            let outcome = click::execute(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -181,7 +186,7 @@ async fn dispatch_command(
         Commands::Text { url, selector } => {
             let final_url = ctx_state.resolve_url(url)?;
             let final_selector = ctx_state.resolve_selector(selector, None)?;
-            let outcome = text::execute(&final_url, &final_selector, ctx, broker).await;
+            let outcome = text::execute(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -193,7 +198,7 @@ async fn dispatch_command(
         }
         Commands::Elements { url } => {
             let final_url = ctx_state.resolve_url(url)?;
-            let outcome = elements::execute(&final_url, ctx, broker).await;
+            let outcome = elements::execute(&final_url, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -204,7 +209,7 @@ async fn dispatch_command(
         }
         Commands::Wait { url, condition } => {
             let final_url = ctx_state.resolve_url(url)?;
-            let outcome = wait::execute(&final_url, &condition, ctx, broker).await;
+            let outcome = wait::execute(&final_url, &condition, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -245,10 +250,10 @@ async fn dispatch_command(
             AuthAction::Show { file } => auth::show(&file).await,
         },
         Commands::Session { action } => match action {
-            SessionAction::Status => session::status(ctx_state).await,
-            SessionAction::Clear => session::clear(ctx_state).await,
-            SessionAction::Start { headful } => session::start(ctx_state, broker, headful).await,
-            SessionAction::Stop => session::stop(ctx_state, broker).await,
+            SessionAction::Status => session::status(ctx_state, format).await,
+            SessionAction::Clear => session::clear(ctx_state, format).await,
+            SessionAction::Start { headful } => session::start(ctx_state, broker, headful, format).await,
+            SessionAction::Stop => session::stop(ctx_state, broker, format).await,
         },
         Commands::Init {
             path,

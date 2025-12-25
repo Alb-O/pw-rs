@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+use crate::output::OutputFormat;
 use crate::styles::cli_styles;
 use crate::types::BrowserKind;
 
@@ -13,6 +14,10 @@ pub struct Cli {
     /// Increase verbosity (-v info, -vv debug)
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
+
+    /// Output format: json (default), ndjson, or text
+    #[arg(short = 'f', long, global = true, value_enum, default_value = "json")]
+    pub format: CliOutputFormat,
 
     /// Load authentication state from file (cookies, localStorage)
     #[arg(long, global = true, value_name = "FILE")]
@@ -56,6 +61,28 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Commands,
+}
+
+/// CLI output format (clap-compatible enum)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum CliOutputFormat {
+    /// JSON output (default, best for agents)
+    #[default]
+    Json,
+    /// Newline-delimited JSON (streaming)
+    Ndjson,
+    /// Human-readable text
+    Text,
+}
+
+impl From<CliOutputFormat> for OutputFormat {
+    fn from(f: CliOutputFormat) -> Self {
+        match f {
+            CliOutputFormat::Json => OutputFormat::Json,
+            CliOutputFormat::Ndjson => OutputFormat::Ndjson,
+            CliOutputFormat::Text => OutputFormat::Text,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]

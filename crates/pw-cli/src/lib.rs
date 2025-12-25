@@ -5,6 +5,7 @@ pub mod context;
 pub mod context_store;
 pub mod error;
 pub mod logging;
+pub mod output;
 pub mod project;
 pub mod relay;
 pub mod session_broker;
