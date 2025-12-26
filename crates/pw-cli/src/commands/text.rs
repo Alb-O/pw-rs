@@ -109,11 +109,12 @@ pub async fn execute(
                 .await;
 
             if !artifacts.is_empty() {
+                // Print failure with artifacts and signal that output is complete
                 let failure = FailureWithArtifacts::new(e.to_command_error())
                     .with_artifacts(artifacts.artifacts);
                 print_failure_with_artifacts("text", &failure, format);
                 let _ = session.close().await;
-                return Err(PwError::Anyhow(anyhow::anyhow!("command failed (see output)")));
+                return Err(PwError::OutputAlreadyPrinted);
             }
 
             let _ = session.close().await;

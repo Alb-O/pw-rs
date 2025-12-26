@@ -8,6 +8,11 @@ pub type Result<T> = std::result::Result<T, PwError>;
 
 #[derive(Debug, Error)]
 pub enum PwError {
+    /// Command failed but output has already been printed (e.g., with artifacts).
+    /// Used to signal exit code 1 without additional output.
+    #[error("")]
+    OutputAlreadyPrinted,
+
     #[error("initialization failed: {0}")]
     Init(String),
 
@@ -54,9 +59,19 @@ pub enum PwError {
 }
 
 impl PwError {
+    /// Check if this error indicates output has already been printed.
+    /// When true, the caller should exit with code 1 without printing additional output.
+    pub fn is_output_already_printed(&self) -> bool {
+        matches!(self, PwError::OutputAlreadyPrinted)
+    }
+
     /// Convert this error to a CommandError for structured output
     pub fn to_command_error(&self) -> CommandError {
         let (code, message, details) = match self {
+            PwError::OutputAlreadyPrinted => {
+                // This should never be called - caller should check is_output_already_printed()
+                (ErrorCode::InternalError, String::new(), None)
+            }
             PwError::Init(msg) => (ErrorCode::BrowserLaunchFailed, msg.clone(), None),
             PwError::BrowserLaunch(msg) => (ErrorCode::BrowserLaunchFailed, msg.clone(), None),
             PwError::Navigation { url, source } => (

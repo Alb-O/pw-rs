@@ -101,8 +101,8 @@ async fn dispatch_command_inner(
     artifacts_dir: Option<&Path>,
 ) -> Result<()> {
     match command {
-        Commands::Navigate { url } => {
-            let final_url = ctx_state.resolve_url(url)?;
+        Commands::Navigate { url, url_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
             let outcome = navigate::execute(&final_url, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -112,8 +112,8 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Console { url, timeout_ms } => {
-            let final_url = ctx_state.resolve_url(url)?;
+        Commands::Console { url, timeout_ms, url_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
             let outcome = console::execute(&final_url, timeout_ms, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -123,9 +123,13 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Eval { expression, url } => {
-            let final_url = ctx_state.resolve_url(url)?;
-            let outcome = eval::execute(&final_url, &expression, ctx, broker, format).await;
+        Commands::Eval { expression, url, expression_flag, url_flag } => {
+            // Named flags take precedence over positional args
+            let final_expr = expression_flag.or(expression).ok_or_else(|| {
+                PwError::Context("expression is required (provide positionally or via --expr)".into())
+            })?;
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let outcome = eval::execute(&final_url, &final_expr, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
@@ -134,9 +138,9 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Html { url, selector } => {
-            let final_url = ctx_state.resolve_url(url)?;
-            let final_selector = ctx_state.resolve_selector(selector, Some("html"))?;
+        Commands::Html { url, selector, url_flag, selector_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), Some("html"))?;
             let outcome = html::execute(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -147,9 +151,9 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Coords { url, selector } => {
-            let final_url = ctx_state.resolve_url(url)?;
-            let final_selector = ctx_state.resolve_selector(selector, None)?;
+        Commands::Coords { url, selector, url_flag, selector_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let outcome = coords::execute_single(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -160,9 +164,9 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::CoordsAll { url, selector } => {
-            let final_url = ctx_state.resolve_url(url)?;
-            let final_selector = ctx_state.resolve_selector(selector, None)?;
+        Commands::CoordsAll { url, selector, url_flag, selector_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let outcome = coords::execute_all(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -177,8 +181,9 @@ async fn dispatch_command_inner(
             url,
             output,
             full_page,
+            url_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url)?;
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
             let resolved_output = ctx_state.resolve_output(ctx, output);
             let outcome =
                 screenshot::execute(&final_url, &resolved_output, full_page, ctx, broker, format).await;
@@ -191,9 +196,9 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Click { url, selector } => {
-            let final_url = ctx_state.resolve_url(url)?;
-            let final_selector = ctx_state.resolve_selector(selector, None)?;
+        Commands::Click { url, selector, url_flag, selector_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let outcome = click::execute(&final_url, &final_selector, ctx, broker, format, artifacts_dir).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -204,9 +209,9 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Text { url, selector } => {
-            let final_url = ctx_state.resolve_url(url)?;
-            let final_selector = ctx_state.resolve_selector(selector, None)?;
+        Commands::Text { url, selector, url_flag, selector_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let outcome = text::execute(&final_url, &final_selector, ctx, broker, format, artifacts_dir).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -217,8 +222,8 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Elements { url, wait, timeout_ms } => {
-            let final_url = ctx_state.resolve_url(url)?;
+        Commands::Elements { url, wait, timeout_ms, url_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
             let outcome = elements::execute(&final_url, wait, timeout_ms, ctx, broker, format, artifacts_dir).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -228,8 +233,8 @@ async fn dispatch_command_inner(
             }
             outcome
         }
-        Commands::Wait { url, condition } => {
-            let final_url = ctx_state.resolve_url(url)?;
+        Commands::Wait { url, condition, url_flag } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
             let outcome = wait::execute(&final_url, &condition, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {

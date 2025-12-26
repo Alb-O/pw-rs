@@ -15,7 +15,10 @@ async fn main() {
     let format: OutputFormat = cli.format.into();
 
     if let Err(err) = commands::dispatch(cli, format).await {
-        handle_error(err, format);
+        // If output was already printed (e.g., with artifacts), just exit
+        if !err.is_output_already_printed() {
+            handle_error(err, format);
+        }
         std::process::exit(1);
     }
 }

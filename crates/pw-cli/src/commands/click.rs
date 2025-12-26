@@ -35,14 +35,12 @@ pub async fn execute(
                 .await;
 
             if !artifacts.is_empty() {
-                // Print failure with artifacts and don't propagate error
-                // (the failure envelope is the output)
+                // Print failure with artifacts and signal that output is complete
                 let failure = FailureWithArtifacts::new(e.to_command_error())
                     .with_artifacts(artifacts.artifacts);
                 print_failure_with_artifacts("click", &failure, format);
                 let _ = session.close().await;
-                // Return a generic error to signal failure exit code
-                return Err(PwError::Anyhow(anyhow::anyhow!("command failed (see output)")));
+                return Err(PwError::OutputAlreadyPrinted);
             }
 
             // No artifacts collected, propagate original error

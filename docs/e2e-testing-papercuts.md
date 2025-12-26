@@ -101,9 +101,22 @@ Implemented for: `click`, `text`, `elements` commands.
 
 Investigation showed this was working correctly - Playwright handles compound selectors natively. The apparent failures were due to selector specificity or element visibility.
 
-#### 12. Argument order inconsistency - PENDING (P2)
+#### 12. Argument order inconsistency - FIXED
 
-Some commands take `URL SELECTOR`, others take `EXPRESSION URL`. Plan: add named flags (`--url`, `--selector`, `--expr`) everywhere while keeping positional for backward compatibility.
+All commands now support both positional arguments (for backward compatibility) and named flags (`--url/-u`, `--selector/-s`, `--expr/-e`). The named flags take precedence when both are provided.
+
+```bash
+# Traditional positional syntax still works
+pw click https://example.com button.submit
+pw eval "document.title" https://example.com
+
+# New named flag syntax (order-independent)
+pw click --url https://example.com --selector button.submit
+pw eval --expr "document.title" --url https://example.com
+pw text -u https://example.com -s h1
+```
+
+This addresses the inconsistency where `eval` takes `EXPRESSION URL` while others take `URL SELECTOR`.
 
 #### 13. Empty title for some sites
 

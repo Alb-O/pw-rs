@@ -94,52 +94,89 @@ pub enum Commands {
     /// Navigate to URL and check for console errors
     #[command(alias = "nav")]
     Navigate {
-        /// Target URL (uses context when omitted)
+        /// Target URL (positional, uses context when omitted)
         url: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
     },
 
     /// Capture console messages and errors
     #[command(alias = "con")]
     Console {
-        /// Target URL (uses context when omitted)
+        /// Target URL (positional, uses context when omitted)
         url: Option<String>,
         /// Time to wait for console messages (ms)
         #[arg(default_value = "3000")]
         timeout_ms: u64,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
     },
 
     /// Evaluate JavaScript and return result
+    ///
+    /// The expression can be provided positionally or via --expr/-e.
+    /// When using named flags, the order doesn't matter.
     Eval {
-        /// JavaScript expression to evaluate
-        expression: String,
-        /// Target URL (uses context when omitted)
+        /// JavaScript expression (positional). Required unless --expr is used.
+        expression: Option<String>,
+        /// Target URL (positional, uses context when omitted)
         url: Option<String>,
+        /// JavaScript expression (named alternative to positional)
+        #[arg(long = "expr", short = 'e', value_name = "EXPRESSION")]
+        expression_flag: Option<String>,
+        /// Target URL (named alternative to positional)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
     },
 
     /// Get HTML content (full page or specific selector)
     Html {
-        /// Target URL (uses context when omitted)
+        /// Target URL (positional, uses context when omitted)
         url: Option<String>,
-        /// CSS selector (uses last selector or defaults to html)
+        /// CSS selector (positional, uses last selector or defaults to html)
         selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
     },
 
     /// Get coordinates for first matching element
     Coords {
+        /// Target URL (positional)
         url: Option<String>,
+        /// CSS selector (positional)
         selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
     },
 
     /// Get coordinates and info for all matching elements
     CoordsAll {
+        /// Target URL (positional)
         url: Option<String>,
+        /// CSS selector (positional)
         selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
     },
 
     /// Take screenshot
     #[command(alias = "ss")]
     Screenshot {
-        /// Target URL (uses context when omitted)
+        /// Target URL (positional, uses context when omitted)
         url: Option<String>,
         /// Output file path (uses context or defaults when omitted)
         #[arg(short, long, value_name = "FILE")]
@@ -147,23 +184,43 @@ pub enum Commands {
         /// Capture the full scrollable page instead of just the viewport
         #[arg(long)]
         full_page: bool,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
     },
 
     /// Click element and show resulting URL
     Click {
+        /// Target URL (positional)
         url: Option<String>,
+        /// CSS selector (positional)
         selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
     },
 
     /// Get text content of element
     Text {
+        /// Target URL (positional)
         url: Option<String>,
+        /// CSS selector (positional)
         selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
     },
 
     /// List interactive elements (buttons, links, inputs, selects)
     #[command(alias = "els")]
     Elements {
+        /// Target URL (positional)
         url: Option<String>,
         /// Wait for elements with polling (useful for dynamic pages)
         #[arg(long)]
@@ -171,14 +228,21 @@ pub enum Commands {
         /// Timeout in milliseconds for --wait mode (default: 10000)
         #[arg(long, default_value = "10000")]
         timeout_ms: u64,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
     },
 
     /// Wait for condition (selector, timeout, or load state)
     Wait {
+        /// Target URL (positional)
         url: Option<String>,
         /// Condition to wait for (selector, timeout ms, or load state)
         #[arg(default_value = "networkidle")]
         condition: String,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
     },
 
     /// Authentication and session management
@@ -311,6 +375,7 @@ mod tests {
                 url,
                 output,
                 full_page,
+                ..
             } => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(output, Some(PathBuf::from("/tmp/test.png")));
@@ -330,6 +395,7 @@ mod tests {
                 url,
                 output,
                 full_page,
+                ..
             } => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(output, None);
@@ -345,7 +411,7 @@ mod tests {
         let cli = Cli::try_parse_from(args).unwrap();
 
         match cli.command {
-            Commands::Html { url, selector } => {
+            Commands::Html { url, selector, .. } => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(selector.as_deref(), Some("div.content"));
             }
@@ -359,7 +425,7 @@ mod tests {
         let cli = Cli::try_parse_from(args).unwrap();
 
         match cli.command {
-            Commands::Wait { url, condition } => {
+            Commands::Wait { url, condition, .. } => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(condition, "networkidle");
             }
@@ -415,5 +481,65 @@ mod tests {
     fn invalid_command_fails() {
         let args = vec!["pw", "unknown-command", "https://example.com"];
         assert!(Cli::try_parse_from(args).is_err());
+    }
+
+    #[test]
+    fn parse_click_with_named_flags() {
+        // Test using named flags instead of positional args
+        let args = vec![
+            "pw",
+            "click",
+            "--url",
+            "https://example.com",
+            "--selector",
+            "button.submit",
+        ];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        match cli.command {
+            Commands::Click {
+                url,
+                selector,
+                url_flag,
+                selector_flag,
+            } => {
+                // Positional args should be None
+                assert!(url.is_none());
+                assert!(selector.is_none());
+                // Named flags should have values
+                assert_eq!(url_flag.as_deref(), Some("https://example.com"));
+                assert_eq!(selector_flag.as_deref(), Some("button.submit"));
+            }
+            _ => panic!("Expected Click command"),
+        }
+    }
+
+    #[test]
+    fn parse_eval_with_named_flags() {
+        // Test eval with --expr and --url flags (order-independent)
+        let args = vec![
+            "pw",
+            "eval",
+            "--url",
+            "https://example.com",
+            "--expr",
+            "document.title",
+        ];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        match cli.command {
+            Commands::Eval {
+                expression,
+                url,
+                expression_flag,
+                url_flag,
+            } => {
+                assert!(expression.is_none());
+                assert!(url.is_none());
+                assert_eq!(expression_flag.as_deref(), Some("document.title"));
+                assert_eq!(url_flag.as_deref(), Some("https://example.com"));
+            }
+            _ => panic!("Expected Eval command"),
+        }
     }
 }
