@@ -41,6 +41,7 @@ struct ClutterPatterns {
     remove: RemovePatterns,
     preserve: PreservePatterns,
     scoring: ScoringPatterns,
+    junk_text: JunkTextPatterns,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +78,11 @@ struct ScoringPatterns {
     content_indicators: Vec<String>,
     navigation_indicators: Vec<String>,
     non_content_patterns: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JunkTextPatterns {
+    exact: Vec<String>,
 }
 
 /// Metadata extracted from the page
@@ -453,14 +459,27 @@ fn clean_whitespace(html: &str) -> String {
     result.trim().to_string()
 }
 
-/// Junk text patterns to filter out (placeholder text, timestamps, etc.)
-static JUNK_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^(NaN|NaN / NaN|0:00|0:00 / •|undefined|null|\[object Object\]|loading\.{0,3}|-|•|/|\\)$").unwrap()
-});
-
-/// Check if a line is junk text that should be filtered
+/// Check if a line is entirely junk text that should be filtered.
+/// Only filters if the line contains ONLY junk patterns (possibly with whitespace/punctuation).
 fn is_junk_line(line: &str) -> bool {
-    JUNK_LINE_RE.is_match(line)
+    // Remove all junk patterns from the line
+    let mut remaining = line.to_string();
+    for pattern in &CLUTTER.junk_text.exact {
+        // Case-insensitive replacement
+        let pattern_lower = pattern.to_lowercase();
+        let mut result = String::new();
+        let mut remaining_lower = remaining.to_lowercase();
+        while let Some(pos) = remaining_lower.find(&pattern_lower) {
+            result.push_str(&remaining[..pos]);
+            remaining = remaining[pos + pattern.len()..].to_string();
+            remaining_lower = remaining.to_lowercase();
+        }
+        result.push_str(&remaining);
+        remaining = result;
+    }
+    
+    // If only whitespace and common separators remain, it's a junk line
+    remaining.trim().chars().all(|c| c.is_whitespace() || "/-•·|:".contains(c))
 }
 
 /// Convert HTML to plain text
@@ -659,5 +678,25 @@ mod tests {
         assert!(!CLUTTER.content_selectors.selectors.is_empty());
         assert!(!CLUTTER.remove.exact_selectors.is_empty());
         assert!(!CLUTTER.scoring.non_content_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_junk_line_detection() {
+        // Pure junk lines should be filtered
+        assert!(is_junk_line("NaN"));
+        assert!(is_junk_line("NaN / NaN"));
+        assert!(is_junk_line("undefined"));
+        assert!(is_junk_line("[object Object]"));
+        
+        // Junk with only separators should be filtered
+        assert!(is_junk_line("NaN / NaN / NaN"));
+        assert!(is_junk_line("  NaN  "));
+        
+        // Real content should NOT be filtered (no false positives)
+        assert!(!is_junk_line("The value is NaN due to division"));
+        assert!(!is_junk_line("undefined behavior in C++"));
+        assert!(!is_junk_line("null pointer exception"));
+        assert!(!is_junk_line("Hello World"));
+        assert!(!is_junk_line("10:30 AM"));
     }
 }

@@ -992,5 +992,15 @@
       "trending",
       "widget"
     ]
+  },
+  "junk_text": {
+    "$comment": "Text patterns to filter out - these are JavaScript placeholder values and error states that leak into rendered content",
+    "exact": [
+      "NaN",
+      "NaN / NaN",
+      "undefined",
+      "null",
+      "[object Object]"
+    ]
   }
 }
