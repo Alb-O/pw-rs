@@ -32,6 +32,9 @@
         pkgs.pkg-config
       ];
 
+      cargoToml = builtins.fromTOML (builtins.readFile (rootSrc + "/Cargo.toml"));
+      workspaceVersion = cargoToml.workspace.package.version;
+
       commonEnv = {
         OPENSSL_DIR = "${pkgs.openssl.dev}";
         OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
@@ -41,7 +44,7 @@
     {
       default = rustPlatform.buildRustPackage {
         pname = "pw-cli";
-        version = "0.8.0";
+        version = workspaceVersion;
         src = rootSrc;
         cargoLock.lockFile = rootSrc + "/Cargo.lock";
         buildAndTestSubdir = "crates/pw-cli";
@@ -55,7 +58,7 @@
 
       pw-core = rustPlatform.buildRustPackage {
         pname = "pw-core";
-        version = "0.8.0";
+        version = workspaceVersion;
         src = rootSrc;
         cargoLock.lockFile = rootSrc + "/Cargo.lock";
         buildAndTestSubdir = "crates/pw-core";
