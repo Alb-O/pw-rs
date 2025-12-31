@@ -109,6 +109,25 @@ impl BrowserContext {
         self.base.channel()
     }
 
+    /// Returns all pages in this browser context.
+    ///
+    /// This returns all currently open pages (tabs) within this context.
+    /// Useful for reusing existing pages instead of creating new ones.
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-pages>
+    pub fn pages(&self) -> Vec<Page> {
+        self.base
+            .children()
+            .into_iter()
+            .filter_map(|child| {
+                child
+                    .as_any()
+                    .downcast_ref::<Page>()
+                    .cloned()
+            })
+            .collect()
+    }
+
     /// Creates a new page in this browser context.
     ///
     /// Pages are isolated tabs/windows within a context. Each page starts

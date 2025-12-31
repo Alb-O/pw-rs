@@ -366,6 +366,11 @@ impl ChannelOwnerImpl {
         self.children.lock().remove(&guid_arc);
     }
 
+    /// Returns all children of this object.
+    pub fn children(&self) -> Vec<Arc<dyn ChannelOwner>> {
+        self.children.lock().values().cloned().collect()
+    }
+
     /// Handles a protocol event (default implementation logs it).
     ///
     /// Subclasses should override this to handle specific events.

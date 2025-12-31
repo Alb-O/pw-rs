@@ -75,6 +75,9 @@ impl BrowserSession {
         let mut launched_server = None;
         let mut keep_server_running = false;
 
+        // Track whether we're connecting to existing browser (for page reuse)
+        let mut reuse_existing_page = false;
+
         let (browser, context) = if let Some(endpoint) = cdp_endpoint {
             // Store the CDP endpoint for later retrieval
             cdp_endpoint_stored = Some(endpoint.to_string());
@@ -97,6 +100,8 @@ impl BrowserSession {
                     .build();
                 browser.new_context_with_options(options).await?
             } else if let Some(default_ctx) = connect_result.default_context {
+                // Reuse existing pages when using default context from CDP
+                reuse_existing_page = true;
                 default_ctx
             } else {
                 browser.new_context().await?
@@ -185,7 +190,19 @@ impl BrowserSession {
             (browser, context)
         };
 
-        let page = context.new_page().await?;
+        // Reuse existing page if connecting to existing browser, otherwise create new
+        let page = if reuse_existing_page {
+            let existing_pages = context.pages();
+            if let Some(page) = existing_pages.into_iter().next() {
+                debug!(target = "pw", "reusing existing page");
+                page
+            } else {
+                debug!(target = "pw", "no existing pages, creating new");
+                context.new_page().await?
+            }
+        } else {
+            context.new_page().await?
+        };
 
         Ok(Self {
             _playwright: playwright,
