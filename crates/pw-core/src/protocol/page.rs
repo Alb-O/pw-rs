@@ -182,7 +182,6 @@ impl Page {
         guid: Arc<str>,
         initializer: Value,
     ) -> Result<Self> {
-        // Extract mainFrame GUID from initializer
         let main_frame_guid: Arc<str> =
             Arc::from(initializer["mainFrame"]["guid"].as_str().ok_or_else(|| {
                 crate::error::Error::ProtocolError(
@@ -197,13 +196,8 @@ impl Page {
             initializer,
         );
 
-        // Initialize URL to about:blank
         let url = Arc::new(RwLock::new("about:blank".to_string()));
-
-        // Initialize empty route handlers
         let route_handlers = Arc::new(Mutex::new(Vec::new()));
-
-        // Initialize empty event handlers
         let download_handlers = Arc::new(Mutex::new(Vec::new()));
         let dialog_handlers = Arc::new(Mutex::new(Vec::new()));
 
@@ -228,10 +222,8 @@ impl Page {
     ///
     /// The main frame is where navigation and DOM operations actually happen.
     pub(crate) async fn main_frame(&self) -> Result<crate::protocol::Frame> {
-        // Get the Frame object from the connection's object registry
         let frame_arc = self.connection().get_object(&self.main_frame_guid).await?;
 
-        // Downcast to Frame
         let frame = frame_arc
             .as_any()
             .downcast_ref::<crate::protocol::Frame>()
@@ -251,7 +243,6 @@ impl Page {
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-url>
     pub fn url(&self) -> String {
-        // Return a clone of the current URL
         self.url.read().unwrap().clone()
     }
 
@@ -268,7 +259,6 @@ impl Page {
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-close>
     pub async fn close(&self) -> Result<()> {
-        // Send close RPC to server
         self.channel()
             .send_no_result("close", serde_json::json!({}))
             .await
@@ -323,7 +313,6 @@ impl Page {
             other => other,
         })?;
 
-        // Update the page's URL if we got a response
         if let Some(ref resp) = response {
             if let Ok(mut page_url) = self.url.write() {
                 *page_url = resp.url().to_string();
@@ -337,7 +326,6 @@ impl Page {
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-title>
     pub async fn title(&self) -> Result<String> {
-        // Delegate to main frame
         let frame = self.main_frame().await?;
         frame.title().await
     }
@@ -353,7 +341,6 @@ impl Page {
     ///
     /// See: <https://playwright.dev/docs/api/class-page#page-locator>
     pub async fn locator(&self, selector: &str) -> crate::protocol::Locator {
-        // Get the main frame
         let frame = self.main_frame().await.expect("Main frame should exist");
 
         crate::protocol::Locator::new(Arc::new(frame), selector.to_string())
@@ -721,7 +708,6 @@ impl Page {
 
         let response: ScreenshotResponse = self.channel().send("screenshot", params).await?;
 
-        // Decode base64 to bytes
         let bytes = base64::prelude::BASE64_STANDARD
             .decode(&response.binary)
             .map_err(|e| {
@@ -739,10 +725,8 @@ impl Page {
         path: &std::path::Path,
         options: Option<crate::protocol::ScreenshotOptions>,
     ) -> Result<Vec<u8>> {
-        // Get the screenshot bytes
         let bytes = self.screenshot(options).await?;
 
-        // Write to file
         tokio::fs::write(path, &bytes).await.map_err(|e| {
             crate::error::Error::ProtocolError(format!("Failed to write screenshot file: {}", e))
         })?;
@@ -841,13 +825,10 @@ impl Page {
         let handlers = self.route_handlers.lock().unwrap().clone();
         let url = route.request().url().to_string();
 
-        // Find matching handler (last registered wins)
         for entry in handlers.iter().rev() {
-            // Use glob pattern matching
             if Self::matches_pattern(&entry.pattern, &url) {
                 let handler = entry.handler.clone();
-                // Execute handler and wait for completion
-                // This ensures fulfill/continue/abort completes before browser continues
+                // Ensure fulfill/continue/abort completes before browser continues
                 if let Err(e) = handler(route).await {
                     eprintln!("Route handler error: {}", e);
                 }
@@ -868,10 +849,7 @@ impl Page {
         // Try to compile the glob pattern
         match Pattern::new(pattern) {
             Ok(glob_pattern) => glob_pattern.matches(url),
-            Err(_) => {
-                // If pattern is invalid, fall back to exact string match
-                pattern == url
-            }
+            Err(_) => pattern == url, // Fall back to exact string match on invalid pattern
         }
     }
 
@@ -891,12 +869,10 @@ impl Page {
         F: Fn(Download) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        // Wrap handler with type erasure
         let handler = Arc::new(move |download: Download| -> DownloadHandlerFuture {
             Box::pin(handler(download))
         });
 
-        // Store handler
         self.download_handlers.lock().unwrap().push(handler);
 
         Ok(())
@@ -917,14 +893,10 @@ impl Page {
         F: Fn(Dialog) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        // Wrap handler with type erasure
         let handler =
             Arc::new(move |dialog: Dialog| -> DialogHandlerFuture { Box::pin(handler(dialog)) });
 
-        // Store handler
         self.dialog_handlers.lock().unwrap().push(handler);
-
-        // Dialog events are auto-emitted (no subscription needed)
 
         Ok(())
     }
@@ -1014,19 +986,16 @@ impl ChannelOwner for Page {
                 }
             }
             "route" => {
-                // Handle network routing event
                 if let Some(route_guid) = params
                     .get("route")
                     .and_then(|v| v.get("guid"))
                     .and_then(|v| v.as_str())
                 {
-                    // Get the Route object from connection's registry
                     let connection = self.connection();
                     let route_guid_owned = route_guid.to_string();
                     let self_clone = self.clone();
 
                     tokio::spawn(async move {
-                        // Wait for Route object to be created
                         let route_arc = match connection.get_object(&route_guid_owned).await {
                             Ok(obj) => obj,
                             Err(e) => {
@@ -1035,7 +1004,6 @@ impl ChannelOwner for Page {
                             }
                         };
 
-                        // Downcast to Route
                         let route = match route_arc.as_any().downcast_ref::<Route>() {
                             Some(r) => r.clone(),
                             None => {
@@ -1044,13 +1012,11 @@ impl ChannelOwner for Page {
                             }
                         };
 
-                        // Call the route handler and wait for completion
                         self_clone.on_route_event(route).await;
                     });
                 }
             }
             "download" => {
-                // Handle download event
                 // Event params: {url, suggestedFilename, artifact: {guid: "..."}}
                 let url = params
                     .get("url")
@@ -1074,7 +1040,6 @@ impl ChannelOwner for Page {
                     let self_clone = self.clone();
 
                     tokio::spawn(async move {
-                        // Wait for Artifact object to be created
                         let artifact_arc = match connection.get_object(&artifact_guid_owned).await {
                             Ok(obj) => obj,
                             Err(e) => {
@@ -1083,22 +1048,18 @@ impl ChannelOwner for Page {
                             }
                         };
 
-                        // Create Download wrapper from Artifact + event params
                         let download =
                             Download::from_artifact(artifact_arc, url, suggested_filename);
 
-                        // Call the download handlers
                         self_clone.on_download_event(download).await;
                     });
                 }
             }
             "dialog" => {
-                // Dialog events are handled by BrowserContext and forwarded to Page
-                // This case should not be reached, but keeping for completeness
+                // Handled by BrowserContext and forwarded to Page
             }
             _ => {
-                // Other events will be handled in future phases
-                // Events: load, domcontentloaded, close, crash, etc.
+                // TODO: Future events - load, domcontentloaded, close, crash, etc.
             }
         }
     }

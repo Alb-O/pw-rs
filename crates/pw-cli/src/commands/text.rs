@@ -132,12 +132,9 @@ async fn execute_inner(
     session.goto(url).await?;
 
     let locator = session.page().locator(selector).await;
-
-    // Check how many elements match
     let count = locator.count().await?;
 
     if count == 0 {
-        // No elements matched - this is an error condition
         let result = ResultBuilder::<TextData>::new("text")
             .inputs(CommandInputs {
                 url: Some(url.to_string()),
@@ -157,7 +154,6 @@ async fn execute_inner(
         });
     }
 
-    // Get text from first matching element
     let text = locator.inner_text().await?;
     let filtered = filter_garbage(&text);
     let trimmed = filtered.trim().to_string();

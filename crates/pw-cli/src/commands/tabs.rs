@@ -44,7 +44,6 @@ async fn sort_pages_by_url(pages: &[pw::protocol::Page]) -> Vec<(String, String,
         page_info.push((url, title, page));
     }
     
-    // Sort by URL for deterministic ordering
     page_info.sort_by(|a, b| a.0.cmp(&b.0));
     page_info
 }
@@ -61,7 +60,6 @@ pub async fn list(
     let context = session.context();
     let pages = context.pages();
 
-    // Get URLs for all pages first, then sort for stable ordering
     let sorted_pages = sort_pages_by_url(&pages).await;
 
     let mut tabs = Vec::new();
@@ -102,7 +100,6 @@ pub async fn switch(
 
     let (index, url, title, page) = find_page(&sorted, target, protected_patterns)?;
 
-    // Bring the page to front
     page.bring_to_front().await?;
 
     let result = ResultBuilder::new("tabs switch")
@@ -134,7 +131,6 @@ pub async fn close_tab(
 
     let (index, url, title, page) = find_page(&sorted, target, protected_patterns)?;
 
-    // Close the page
     page.close().await?;
 
     let result = ResultBuilder::new("tabs close")
@@ -159,11 +155,9 @@ pub async fn new_tab(
     let request = SessionRequest::from_context(WaitUntil::Load, ctx);
     let session = broker.session(request).await?;
     let context = session.context();
-    
-    // Create new page
+
     let page = context.new_page().await?;
 
-    // Navigate if URL provided
     if let Some(url) = url {
         page.goto(url, None).await?;
     }
@@ -172,7 +166,6 @@ pub async fn new_tab(
     let final_url = final_url.trim_matches('"').to_string();
     let title = page.title().await.unwrap_or_default();
 
-    // Get the new index
     let new_index = context.pages().len().saturating_sub(1);
 
     let result = ResultBuilder::new("tabs new")

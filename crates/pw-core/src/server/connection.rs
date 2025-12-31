@@ -407,21 +407,18 @@ impl Connection {
     ///
     /// See module-level documentation for usage examples.
     pub async fn send_message(&self, guid: &str, method: &str, params: Value) -> Result<Value> {
-        // Generate unique ID (atomic increment for thread safety)
-        let id = self.last_id.fetch_add(1, Ordering::SeqCst);
+         // Use atomic increment for thread-safe ID generation
+         let id = self.last_id.fetch_add(1, Ordering::SeqCst);
 
-        tracing::debug!(
-            "Sending message: id={}, guid='{}', method='{}'",
-            id,
-            guid,
-            method
-        );
+         tracing::debug!(
+             "Sending message: id={}, guid='{}', method='{}'",
+             id,
+             guid,
+             method
+         );
 
-        // Create oneshot channel for response
-        let (tx, rx) = oneshot::channel();
-
-        // Store callback
-        self.callbacks.lock().await.insert(id, tx);
+         let (tx, rx) = oneshot::channel();
+         self.callbacks.lock().await.insert(id, tx);
 
         // Build request with metadata
         let request = Request {
@@ -496,25 +493,22 @@ impl Connection {
         // Matches Python's behavior where RootChannelOwner auto-registers
         self.objects.lock().insert(Arc::from(""), root.clone());
 
-        tracing::debug!("Root object registered, sending initialize message");
+         tracing::debug!("Root object registered, sending initialize message");
 
-        // Downcast to Root type to call initialize()
-        let root_typed = root
-            .as_any()
-            .downcast_ref::<Root>()
-            .expect("Root object should be Root type");
+         let root_typed = root
+             .as_any()
+             .downcast_ref::<Root>()
+             .expect("Root object should be Root type");
 
-        // Send initialize message (blocks until server responds)
-        // Add timeout to prevent hanging forever
+         // Add timeout to prevent hanging forever on initialization
         let response = tokio::time::timeout(Duration::from_secs(30), root_typed.initialize())
             .await
             .map_err(|_| {
                 Error::Timeout("Playwright initialization timeout after 30 seconds".to_string())
             })??;
 
-        // Extract Playwright GUID from response
-        // Response format: { "playwright": { "guid": "playwright" } }
-        let playwright_guid = response["playwright"]["guid"].as_str().ok_or_else(|| {
+         // Extract Playwright GUID from response: { "playwright": { "guid": "playwright" } }
+         let playwright_guid = response["playwright"]["guid"].as_str().ok_or_else(|| {
             Error::ProtocolError("Initialize response missing 'playwright.guid' field".to_string())
         })?;
 
@@ -947,10 +941,9 @@ mod tests {
 
     #[test]
     fn test_request_id_increments() {
-        let (connection, _, _) = create_test_connection();
+         let (connection, _, _) = create_test_connection();
 
-        // Generate IDs by incrementing the counter directly
-        let id1 = connection.last_id.fetch_add(1, Ordering::SeqCst);
+         let id1 = connection.last_id.fetch_add(1, Ordering::SeqCst);
         let id2 = connection.last_id.fetch_add(1, Ordering::SeqCst);
         let id3 = connection.last_id.fetch_add(1, Ordering::SeqCst);
 
@@ -976,41 +969,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dispatch_response_success() {
-        let (connection, _, _) = create_test_connection();
+     async fn test_dispatch_response_success() {
+         let (connection, _, _) = create_test_connection();
 
-        // Generate ID
-        let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
+         let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
 
-        // Create oneshot channel and store callback
-        let (tx, rx) = oneshot::channel();
-        connection.callbacks.lock().await.insert(id, tx);
+         let (tx, rx) = oneshot::channel();
+         connection.callbacks.lock().await.insert(id, tx);
 
-        // Simulate response from server
-        let response = Message::Response(Response {
-            id,
-            result: Some(serde_json::json!({"status": "ok"})),
-            error: None,
-        });
+         let response = Message::Response(Response {
+             id,
+             result: Some(serde_json::json!({"status": "ok"})),
+             error: None,
+         });
 
-        // Dispatch response
-        Arc::new(connection).dispatch(response).await.unwrap();
+         Arc::new(connection).dispatch(response).await.unwrap();
 
-        // Verify result
-        let result = rx.await.unwrap().unwrap();
-        assert_eq!(result["status"], "ok");
-    }
+         let result = rx.await.unwrap().unwrap();
+         assert_eq!(result["status"], "ok");
+     }
 
     #[tokio::test]
-    async fn test_dispatch_response_error() {
-        let (connection, _, _) = create_test_connection();
+     async fn test_dispatch_response_error() {
+         let (connection, _, _) = create_test_connection();
 
-        // Generate ID
-        let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
+         let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
 
-        // Create oneshot channel and store callback
-        let (tx, rx) = oneshot::channel();
-        connection.callbacks.lock().await.insert(id, tx);
+         let (tx, rx) = oneshot::channel();
+         connection.callbacks.lock().await.insert(id, tx);
 
         // Simulate error response from server
         let response = Message::Response(Response {

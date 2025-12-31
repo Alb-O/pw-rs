@@ -81,29 +81,23 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
     }
     
     function getLabel(el) {
-        // Check for associated label
-        if (el.id) {
-            const label = document.querySelector('label[for="' + el.id + '"]');
-            if (label) return cleanText(label.textContent);
-        }
-        
-        // Check aria-label
-        const ariaLabel = el.getAttribute('aria-label');
-        if (ariaLabel) return ariaLabel.trim().substring(0, 40);
-        
-        // Check placeholder
-        if (el.placeholder) return el.placeholder.trim().substring(0, 40);
-        
-        // Check title
-        if (el.title) return el.title.trim().substring(0, 40);
-        
-        // Use value for submit buttons
-        if (el.value && (el.type === 'submit' || el.type === 'button')) {
-            return el.value.trim().substring(0, 40);
-        }
-        
-        // Use text content
-        return cleanText(el.textContent);
+         if (el.id) {
+             const label = document.querySelector('label[for="' + el.id + '"]');
+             if (label) return cleanText(label.textContent);
+         }
+         
+         const ariaLabel = el.getAttribute('aria-label');
+         if (ariaLabel) return ariaLabel.trim().substring(0, 40);
+         
+         if (el.placeholder) return el.placeholder.trim().substring(0, 40);
+         
+         if (el.title) return el.title.trim().substring(0, 40);
+         
+         if (el.value && (el.type === 'submit' || el.type === 'button')) {
+             return el.value.trim().substring(0, 40);
+         }
+         
+         return cleanText(el.textContent);
     }
     
     function cleanText(str) {
@@ -231,7 +225,6 @@ async fn execute_inner(
 
     let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
 
-    // If wait mode, poll until we find elements or timeout
     let raw_elements: Vec<RawElement> = if wait {
         let start = std::time::Instant::now();
         let poll_interval = std::time::Duration::from_millis(500);
@@ -246,7 +239,6 @@ async fn execute_inner(
             }
 
             if start.elapsed() >= timeout {
-                // Timeout reached, return empty (not an error)
                 break vec![];
             }
 
@@ -257,7 +249,6 @@ async fn execute_inner(
         serde_json::from_str(&raw_result)?
     };
 
-    // Convert to output format
     let elements: Vec<InteractiveElement> = raw_elements
         .into_iter()
         .map(|e| InteractiveElement {

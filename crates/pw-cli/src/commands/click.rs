@@ -58,10 +58,8 @@ async fn execute_inner(
 ) -> Result<()> {
     session.goto(url).await?;
 
-    // Record URL before click
     let before_url = session.page().url();
 
-    // Get the locator and click
     let locator = session.page().locator(selector).await;
     locator.click(None).await?;
 
@@ -69,7 +67,6 @@ async fn execute_inner(
     // TODO: Use proper wait_for_navigation when available in pw-core
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // Record URL after click
     let after_url = session.page().url();
     let navigated = before_url != after_url;
 

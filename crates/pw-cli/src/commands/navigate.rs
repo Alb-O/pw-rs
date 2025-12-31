@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::context::CommandContext;
 use crate::error::Result;
 use crate::output::{
@@ -15,21 +13,17 @@ pub async fn execute(
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
 ) -> Result<()> {
-    let start = Instant::now();
     info!(target = "pw", %url, browser = %ctx.browser, "navigate");
 
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
 
-    // Navigate and wait for load
     session.goto(url).await?;
 
-    // Get page info
     let title = session.page().title().await.unwrap_or_default();
     let final_url = session.page().url();
 
-    // Collect any JS errors from the page
     let errors_json = session
         .page()
         .evaluate_value("JSON.stringify(window.__playwrightErrors || [])")
@@ -46,7 +40,6 @@ pub async fn execute(
         );
     }
 
-    // Build result
     let mut builder = ResultBuilder::new("navigate")
         .inputs(CommandInputs {
             url: Some(url.to_string()),
@@ -59,15 +52,11 @@ pub async fn execute(
             warnings: vec![],
         });
 
-    // Add diagnostics for any errors found
     for error in &errors {
         builder = builder.diagnostic_with_source(DiagnosticLevel::Error, error, "browser");
     }
 
     let result = builder.build();
-
-    // Record timing
-    let _elapsed = start.elapsed();
 
     print_result(&result, format);
 
