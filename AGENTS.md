@@ -80,6 +80,30 @@ pw --auth auth.json navigate https://app.example.com/dashboard
 pw --auth auth.json text -s ".user-name"
 ```
 
+### Connect to existing browser
+
+Use `pw connect` to control a browser you've already opened (with your logged-in sessions, extensions, etc.):
+
+```bash
+# Launch Chrome with remote debugging enabled
+google-chrome-stable --remote-debugging-port=9222
+
+# Get the WebSocket URL
+curl -s http://127.0.0.1:9222/json/version | jq -r .webSocketDebuggerUrl
+
+# Set it once (stored in context)
+pw connect "ws://127.0.0.1:9222/devtools/browser/..."
+
+# All commands now use your existing browser
+pw text https://example.com -s "h1"
+pw screenshot -o page.png
+
+# Clear when done
+pw connect --clear
+```
+
+This is useful when you need access to existing login sessions or browser state that can't be captured with `pw auth`.
+
 ## Output Format
 
 All commands output JSON to stdout:

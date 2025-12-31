@@ -297,6 +297,24 @@ impl ContextState {
             .ok_or_else(|| PwError::Context("No selector available".into()))
     }
 
+    pub fn cdp_endpoint(&self) -> Option<&str> {
+        if self.no_context {
+            return None;
+        }
+        self.selected
+            .as_ref()
+            .and_then(|s| s.data.cdp_endpoint.as_deref())
+    }
+
+    pub fn set_cdp_endpoint(&mut self, endpoint: Option<String>) {
+        if self.no_save || self.no_context {
+            return;
+        }
+        if let Some(selected) = self.selected.as_mut() {
+            selected.data.cdp_endpoint = endpoint;
+        }
+    }
+
     pub fn resolve_output(&self, ctx: &CommandContext, provided: Option<PathBuf>) -> PathBuf {
         if let Some(output) = provided {
             return ctx.screenshot_path(&output);

@@ -307,6 +307,18 @@ pub enum Commands {
         #[arg(long, default_value_t = 19988)]
         port: u16,
     },
+
+    /// Set or show the CDP endpoint for connecting to a running browser
+    ///
+    /// Once set, all pw commands will use this endpoint instead of launching a new browser.
+    /// Use `pw connect --clear` to remove the saved endpoint.
+    Connect {
+        /// CDP WebSocket endpoint URL (e.g., ws://127.0.0.1:9222/devtools/browser/...)
+        endpoint: Option<String>,
+        /// Clear the saved CDP endpoint
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 /// Project template type for init command

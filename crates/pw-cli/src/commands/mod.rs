@@ -1,5 +1,6 @@
 mod auth;
 mod click;
+mod connect;
 mod console;
 mod coords;
 mod daemon;
@@ -46,23 +47,33 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
             .await
             .map_err(PwError::Anyhow),
         command => {
-            let ctx = CommandContext::new(
-                browser,
-                no_project,
-                auth,
-                cdp_endpoint,
-                launch_server,
-                no_daemon,
-            );
-            let project_root = ctx.project.as_ref().map(|p| p.paths.root.clone());
+            // Create context state first to check for stored CDP endpoint
+            let project = if no_project {
+                None
+            } else {
+                crate::project::Project::detect()
+            };
+            let project_root = project.as_ref().map(|p| p.paths.root.clone());
             let mut ctx_state = ContextState::new(
-                project_root,
+                project_root.clone(),
                 context,
                 base_url,
                 no_context,
                 no_save_context,
                 refresh_context,
             )?;
+
+            // Use CLI cdp_endpoint if provided, otherwise fall back to stored context
+            let resolved_cdp = cdp_endpoint.or_else(|| ctx_state.cdp_endpoint().map(String::from));
+
+            let ctx = CommandContext::new(
+                browser,
+                no_project,
+                auth,
+                resolved_cdp,
+                launch_server,
+                no_daemon,
+            );
 
             let mut broker = SessionBroker::new(
                 &ctx,
@@ -387,6 +398,7 @@ async fn dispatch_command_inner(
             nix,
         }),
         Commands::Relay { .. } => unreachable!("handled earlier"),
+        Commands::Connect { endpoint, clear } => connect::run(ctx_state, format, endpoint, clear),
     }
 }
 
