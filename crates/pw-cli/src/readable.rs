@@ -446,10 +446,10 @@ fn extract_body(html: &str) -> Option<String> {
 /// Clean up whitespace
 fn clean_whitespace(html: &str) -> String {
     static MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]+").unwrap());
-    static MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+    static MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{2,}").unwrap());
     
     let result = MULTI_SPACE.replace_all(html, " ");
-    let result = MULTI_NEWLINE.replace_all(&result, "\n\n");
+    let result = MULTI_NEWLINE.replace_all(&result, "\n");
     result.trim().to_string()
 }
 
@@ -457,7 +457,7 @@ fn clean_whitespace(html: &str) -> String {
 fn html_to_text(html: &str) -> String {
     static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
     static MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]+").unwrap());
-    static MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+    static MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{2,}").unwrap());
     
     // Add newlines before/after block elements
     let mut result = html.to_string();
@@ -474,16 +474,15 @@ fn html_to_text(html: &str) -> String {
     
     // Clean up whitespace
     let result = MULTI_SPACE.replace_all(&result, " ");
-    let result = MULTI_NEWLINE.replace_all(&result, "\n\n");
+    let result = MULTI_NEWLINE.replace_all(&result, "\n");
     
-    // Trim lines
+    // Trim lines and filter empty ones
     result
         .lines()
         .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
-        .trim()
-        .to_string()
 }
 
 /// Convert HTML to Markdown (basic conversion)
@@ -586,18 +585,20 @@ fn html_to_markdown(html: &str) -> String {
     
     // Clean up whitespace
     static MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]+").unwrap());
-    static MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+    static MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{2,}").unwrap());
+    // Remove empty markdown headers (# followed by only whitespace/newline)
+    static EMPTY_HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#{1,6}\s*$").unwrap());
     
     let result = MULTI_SPACE.replace_all(&result, " ");
-    let result = MULTI_NEWLINE.replace_all(&result, "\n\n");
+    let result = MULTI_NEWLINE.replace_all(&result, "\n");
     
+    // Trim lines, filter empty ones and empty headers
     result
         .lines()
         .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !EMPTY_HEADER.is_match(l))
         .collect::<Vec<_>>()
         .join("\n")
-        .trim()
-        .to_string()
 }
 
 #[cfg(test)]
