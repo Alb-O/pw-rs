@@ -24,6 +24,31 @@ fn is_protected(url: &str, protected_patterns: &[String]) -> bool {
         .any(|pattern| url_lower.contains(&pattern.to_lowercase()))
 }
 
+/// Get URL for a page (via JS evaluation for accuracy)
+async fn get_page_url(page: &pw::protocol::Page) -> String {
+    page.evaluate_value("window.location.href")
+        .await
+        .unwrap_or_else(|_| page.url())
+        .trim_matches('"')
+        .to_string()
+}
+
+/// Sort pages by URL for stable ordering across invocations.
+/// Returns Vec of (url, title, page_ref) sorted by URL.
+async fn sort_pages_by_url(pages: &[pw::protocol::Page]) -> Vec<(String, String, &pw::protocol::Page)> {
+    let mut page_info: Vec<(String, String, &pw::protocol::Page)> = Vec::with_capacity(pages.len());
+    
+    for page in pages {
+        let url = get_page_url(page).await;
+        let title = page.title().await.unwrap_or_default();
+        page_info.push((url, title, page));
+    }
+    
+    // Sort by URL for deterministic ordering
+    page_info.sort_by(|a, b| a.0.cmp(&b.0));
+    page_info
+}
+
 pub async fn list(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
@@ -36,21 +61,16 @@ pub async fn list(
     let context = session.context();
     let pages = context.pages();
 
+    // Get URLs for all pages first, then sort for stable ordering
+    let sorted_pages = sort_pages_by_url(&pages).await;
+
     let mut tabs = Vec::new();
-    for (i, page) in pages.iter().enumerate() {
-        // Get URL via JS evaluation since page.url() may not be updated for existing tabs
-        let url = page
-            .evaluate_value("window.location.href")
-            .await
-            .unwrap_or_else(|_| page.url());
-        // Strip quotes from JSON string result
-        let url = url.trim_matches('"').to_string();
-        let title = page.title().await.unwrap_or_default();
-        let protected = is_protected(&url, protected_patterns);
+    for (i, (url, title, _page)) in sorted_pages.iter().enumerate() {
+        let protected = is_protected(url, protected_patterns);
         tabs.push(TabInfo {
             index: i,
-            title,
-            url,
+            title: title.clone(),
+            url: url.clone(),
             protected,
         });
     }
@@ -78,18 +98,12 @@ pub async fn switch(
     let session = broker.session(request).await?;
     let context = session.context();
     let pages = context.pages();
+    let sorted = sort_pages_by_url(&pages).await;
 
-    let (index, page) = find_page(&pages, target, protected_patterns).await?;
+    let (index, url, title, page) = find_page(&sorted, target, protected_patterns)?;
 
     // Bring the page to front
     page.bring_to_front().await?;
-
-    let url = page
-        .evaluate_value("window.location.href")
-        .await
-        .unwrap_or_else(|_| page.url());
-    let url = url.trim_matches('"').to_string();
-    let title = page.title().await.unwrap_or_default();
 
     let result = ResultBuilder::new("tabs switch")
         .data(json!({
@@ -116,24 +130,9 @@ pub async fn close_tab(
     let session = broker.session(request).await?;
     let context = session.context();
     let pages = context.pages();
+    let sorted = sort_pages_by_url(&pages).await;
 
-    let (index, page) = find_page(&pages, target, protected_patterns).await?;
-
-    let url = page
-        .evaluate_value("window.location.href")
-        .await
-        .unwrap_or_else(|_| page.url());
-    let url = url.trim_matches('"').to_string();
-
-    // Check protection before closing
-    if is_protected(&url, protected_patterns) {
-        return Err(PwError::Context(format!(
-            "Cannot close protected tab '{}' (matches a protected URL pattern)",
-            url
-        )));
-    }
-
-    let title = page.title().await.unwrap_or_default();
+    let (index, url, title, page) = find_page(&sorted, target, protected_patterns)?;
 
     // Close the page
     page.close().await?;
@@ -189,27 +188,24 @@ pub async fn new_tab(
     session.close().await
 }
 
-async fn find_page<'a>(
-    pages: &'a [pw::protocol::Page],
+/// Find a page by index or URL/title pattern from sorted pages.
+/// Returns (index, url, title, page_ref).
+fn find_page<'a>(
+    sorted_pages: &'a [(String, String, &'a pw::protocol::Page)],
     target: &str,
     protected_patterns: &[String],
-) -> Result<(usize, &'a pw::protocol::Page)> {
+) -> Result<(usize, String, String, &'a pw::protocol::Page)> {
     // Try parsing as index first
     if let Ok(index) = target.parse::<usize>() {
-        let page = pages.get(index).ok_or_else(|| {
+        let (url, title, page) = sorted_pages.get(index).ok_or_else(|| {
             PwError::Context(format!(
                 "Tab index {} out of range (0-{})",
                 index,
-                pages.len().saturating_sub(1)
+                sorted_pages.len().saturating_sub(1)
             ))
         })?;
 
         // Check if the indexed tab is protected
-        let url = page
-            .evaluate_value("window.location.href")
-            .await
-            .unwrap_or_else(|_| page.url());
-        let url = url.trim_matches('"');
         if is_protected(url, protected_patterns) {
             return Err(PwError::Context(format!(
                 "Tab {} is protected (URL '{}' matches a protected pattern)",
@@ -217,20 +213,14 @@ async fn find_page<'a>(
             )));
         }
 
-        return Ok((index, page));
+        return Ok((index, url.clone(), title.clone(), page));
     }
 
     // Otherwise search by URL or title pattern (skip protected tabs)
     let target_lower = target.to_lowercase();
 
-    for (i, page) in pages.iter().enumerate() {
-        let url = page
-            .evaluate_value("window.location.href")
-            .await
-            .unwrap_or_else(|_| page.url());
-        let url = url.trim_matches('"');
+    for (i, (url, title, page)) in sorted_pages.iter().enumerate() {
         let url_lower = url.to_lowercase();
-        let title = page.title().await.unwrap_or_default();
         let title_lower = title.to_lowercase();
 
         if url_lower.contains(&target_lower) || title_lower.contains(&target_lower) {
@@ -238,7 +228,7 @@ async fn find_page<'a>(
             if is_protected(url, protected_patterns) {
                 continue;
             }
-            return Ok((i, page));
+            return Ok((i, url.clone(), title.clone(), page));
         }
     }
 
