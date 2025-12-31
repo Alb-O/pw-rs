@@ -65,6 +65,7 @@
           pkgs.nodejs_22
           pkgs.playwright-driver
           pkgs.rust-analyzer
+          pkgs.python3
           self'.formatter
         ];
 
