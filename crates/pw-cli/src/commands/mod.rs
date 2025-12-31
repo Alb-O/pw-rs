@@ -10,6 +10,7 @@ mod html;
 pub mod init;
 mod navigate;
 mod protect;
+mod read;
 mod screenshot;
 mod session;
 mod tabs;
@@ -295,6 +296,23 @@ async fn dispatch_command_inner(
                 ctx_state.record(ContextUpdate {
                     url: Some(&final_url),
                     selector: Some(&final_selector),
+                    ..Default::default()
+                });
+            }
+            outcome
+        }
+        Commands::Read {
+            url,
+            url_flag,
+            output_format,
+            metadata,
+        } => {
+            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let outcome =
+                read::execute(&final_url, output_format, metadata, ctx, broker, format).await;
+            if outcome.is_ok() {
+                ctx_state.record(ContextUpdate {
+                    url: Some(&final_url),
                     ..Default::default()
                 });
             }

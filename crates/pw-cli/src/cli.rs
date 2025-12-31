@@ -221,6 +221,24 @@ pub enum Commands {
         selector_flag: Option<String>,
     },
 
+    /// Extract readable content from a web page
+    ///
+    /// Removes clutter (ads, navigation, sidebars) and extracts the main article content.
+    /// Useful for reading articles, blog posts, and documentation.
+    Read {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// Output format: text (default), html, or markdown
+        #[arg(long, short = 'o', default_value = "text", value_enum)]
+        output_format: ReadOutputFormat,
+        /// Include metadata (title, author, etc.) in output
+        #[arg(long, short = 'm')]
+        metadata: bool,
+    },
+
     /// List interactive elements (buttons, links, inputs, selects)
     #[command(alias = "els")]
     Elements {
@@ -341,6 +359,18 @@ pub enum InitTemplate {
     Standard,
     /// Minimal structure: tests/ only
     Minimal,
+}
+
+/// Output format for the read command
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum ReadOutputFormat {
+    /// Plain text (default)
+    #[default]
+    Text,
+    /// Cleaned HTML
+    Html,
+    /// Markdown
+    Markdown,
 }
 
 #[derive(Subcommand, Debug)]
