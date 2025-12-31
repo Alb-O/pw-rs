@@ -80,6 +80,14 @@ pub struct LaunchOptions {
     /// Directory to save traces
     #[serde(skip_serializing_if = "Option::is_none")]
     pub traces_dir: Option<String>,
+
+    /// Remote debugging port for CDP connections (Chromium only)
+    ///
+    /// When set, adds `--remote-debugging-port=<port>` to browser args.
+    /// This enables reconnection to the browser via CDP after launch.
+    /// Not serialized - handled specially in normalize().
+    #[serde(skip)]
+    pub remote_debugging_port: Option<u16>,
 }
 
 /// Filter or disable default browser arguments
@@ -220,15 +228,27 @@ impl LaunchOptions {
         self
     }
 
+    /// Set remote debugging port for CDP connections (Chromium only)
+    ///
+    /// This enables persistent sessions by allowing reconnection via CDP.
+    pub fn remote_debugging_port(mut self, port: u16) -> Self {
+        self.remote_debugging_port = Some(port);
+        self
+    }
+
     /// Normalize options for protocol transmission
     ///
     /// This performs transformations required by the Playwright protocol:
     /// 1. Set default timeout if not specified (required in 1.56.1+)
     /// 2. Convert env HashMap to array of {name, value} objects
     /// 3. Convert bool ignoreDefaultArgs to ignoreAllDefaultArgs
+    /// 4. Inject --remote-debugging-port into args if set
     ///
     /// This matches the behavior of playwright-python's parameter normalization.
     pub(crate) fn normalize(self) -> Value {
+        // Capture remote_debugging_port before serialization (it's #[serde(skip)])
+        let remote_debugging_port = self.remote_debugging_port;
+
         let mut value = serde_json::to_value(&self).unwrap();
 
         // Set default timeout if not specified
@@ -255,6 +275,19 @@ impl LaunchOptions {
                     value["ignoreAllDefaultArgs"] = json!(true);
                 }
                 value.as_object_mut().unwrap().remove("ignoreDefaultArgs");
+            }
+        }
+
+        // Inject --remote-debugging-port into args if set
+        if let Some(port) = remote_debugging_port {
+            let port_arg = format!("--remote-debugging-port={}", port);
+            match value.get_mut("args") {
+                Some(args) if args.is_array() => {
+                    args.as_array_mut().unwrap().push(json!(port_arg));
+                }
+                _ => {
+                    value["args"] = json!([port_arg]);
+                }
             }
         }
 
@@ -364,5 +397,40 @@ mod tests {
         assert_eq!(opts.timeout, Some(60000.0));
         assert_eq!(opts.args.as_ref().unwrap().len(), 2);
         assert_eq!(opts.channel, Some("chrome".to_string()));
+    }
+
+    #[test]
+    fn test_remote_debugging_port_injected_into_args() {
+        let opts = LaunchOptions::default().remote_debugging_port(9222);
+        let normalized = opts.normalize();
+
+        let args = normalized["args"].as_array().unwrap();
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].as_str().unwrap(), "--remote-debugging-port=9222");
+    }
+
+    #[test]
+    fn test_remote_debugging_port_appended_to_existing_args() {
+        let opts = LaunchOptions::default()
+            .args(vec!["--no-sandbox".to_string()])
+            .remote_debugging_port(9333);
+        let normalized = opts.normalize();
+
+        let args = normalized["args"].as_array().unwrap();
+        assert_eq!(args.len(), 2);
+        assert!(args.iter().any(|a| a.as_str() == Some("--no-sandbox")));
+        assert!(args
+            .iter()
+            .any(|a| a.as_str() == Some("--remote-debugging-port=9333")));
+    }
+
+    #[test]
+    fn test_remote_debugging_port_not_serialized() {
+        // Verify the field doesn't appear in JSON (it's handled via args injection)
+        let opts = LaunchOptions::default().remote_debugging_port(9222);
+        let normalized = opts.normalize();
+
+        // Should not have a separate "remoteDebuggingPort" field
+        assert!(normalized.get("remoteDebuggingPort").is_none());
     }
 }

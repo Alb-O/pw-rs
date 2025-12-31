@@ -1,11 +1,23 @@
 use crate::context_store::ContextState;
-use crate::error::Result;
+use crate::error::{PwError, Result};
 use crate::output::{OutputFormat, ResultBuilder, SessionStartData, print_result};
 use crate::session_broker::{SessionBroker, SessionDescriptor, SessionRequest};
+use crate::types::BrowserKind;
 use pw::WaitUntil;
 use serde_json::json;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use tracing::{info, warn};
+
+/// Compute a deterministic CDP port for a context name.
+/// Uses port range 9222-10221 (1000 ports).
+fn compute_cdp_port(context_name: &str) -> u16 {
+    let mut hasher = DefaultHasher::new();
+    context_name.hash(&mut hasher);
+    let hash = hasher.finish();
+    9222 + (hash % 1000) as u16
+}
 
 pub async fn status(ctx_state: &ContextState, format: OutputFormat) -> Result<()> {
     let Some(path) = ctx_state.session_descriptor_path() else {
@@ -94,24 +106,42 @@ pub async fn clear(ctx_state: &ContextState, format: OutputFormat) -> Result<()>
 }
 
 pub async fn start(
-    _ctx_state: &ContextState,
+    ctx_state: &ContextState,
     broker: &mut SessionBroker<'_>,
     headful: bool,
     format: OutputFormat,
 ) -> Result<()> {
-    let mut request = SessionRequest::from_context(WaitUntil::NetworkIdle, broker.context());
+    let ctx = broker.context();
+
+    // Persistent sessions only support Chromium (CDP)
+    if ctx.browser != BrowserKind::Chromium {
+        return Err(PwError::BrowserLaunch(format!(
+            "Persistent sessions require Chromium, but {} was specified. \
+             Use --browser chromium or omit the flag.",
+            ctx.browser
+        )));
+    }
+
+    // Compute CDP port based on context name
+    let context_name = ctx_state.active_name().unwrap_or("default");
+    let port = compute_cdp_port(context_name);
+
+    let mut request = SessionRequest::from_context(WaitUntil::NetworkIdle, ctx);
     request.headless = !headful;
-    request.launch_server = true;
+    request.launch_server = false; // Don't use broken launch_server
+    request.remote_debugging_port = Some(port);
+    request.keep_browser_running = true;
 
     let session = broker.session(request).await?;
 
+    let cdp_endpoint = session.cdp_endpoint().map(|s| s.to_string());
     let ws_endpoint = session.ws_endpoint().map(|s| s.to_string());
-    let browser = broker.context().browser.to_string();
+    let browser = ctx.browser.to_string();
 
     let result = ResultBuilder::new("session start")
         .data(SessionStartData {
             ws_endpoint,
-            cdp_endpoint: None, // TODO: Add if available
+            cdp_endpoint,
             browser,
             headless: !headful,
         })
@@ -148,10 +178,11 @@ pub async fn stop(
         return Ok(());
     };
 
+    // Prefer CDP endpoint for persistent sessions
     let endpoint = descriptor
-        .ws_endpoint
+        .cdp_endpoint
         .as_deref()
-        .or_else(|| descriptor.cdp_endpoint.as_deref());
+        .or_else(|| descriptor.ws_endpoint.as_deref());
 
     let Some(endpoint) = endpoint else {
         fs::remove_file(&path)?;
@@ -173,7 +204,9 @@ pub async fn stop(
     request.launch_server = false;
 
     let session = broker.session(request).await?;
-    session.shutdown_server().await?;
+
+    // Close the browser - for CDP sessions this closes the browser process
+    session.browser().close().await?;
     fs::remove_file(&path)?;
 
     let result = ResultBuilder::<serde_json::Value>::new("session stop")

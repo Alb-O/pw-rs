@@ -8,14 +8,32 @@
 - **Project Detection**: Finds `playwright.config.{js,ts}`, stores context in `playwright/.pw-cli/`
 - **Named Contexts**: `--context <name>` for parallel isolated workflows
 - **Base URL Resolution**: `--base-url` + relative paths
+- **CDP Port Support**: LaunchOptions supports `remote_debugging_port`
 
-### Broken Components
+### Limitations
 
-- **`session start`**: Fails with `Protocol error: Unknown scheme for Params: BrowserType.launchServer`
-- **`--launch-server`**: Same failure
-- **Session Reuse**: Never occurs because `ws_endpoint` is only set in `launch_server` path
+- **`session start`**: Launches browser with CDP port, but browser exits when CLI exits
+- **`--launch-server`**: Fails (protocol limitation)
+- **True Session Persistence**: Requires daemon mode (Phase 4)
 
-### Root Cause
+### Why Browser Exits on CLI Exit
+
+The Playwright architecture uses stdio pipes between our Rust CLI and the Node.js driver:
+
+```
+CLI (Rust) --[stdio]--> Node.js Driver --[CDP/WS]--> Browser
+```
+
+When the CLI exits:
+1. Stdio pipes close
+2. Node.js driver sees EOF and exits
+3. Driver sends close command to browser
+4. Browser exits
+
+Even with `keep_server_running=true`, we only prevent explicit process kill - the driver
+still exits when its stdin closes.
+
+### Root Cause for launch_server
 
 Playwright's wire protocol (`protocol.yml`) only exposes:
 ```yaml
@@ -59,136 +77,28 @@ BrowserType:
 
 ## Roadmap
 
-### Phase 1: CDP-Based Session Reuse (Chromium-only)
+### Phase 1: CDP Infrastructure (Completed)
 
-Enable session persistence by exposing Chrome's remote debugging port.
+Added infrastructure for CDP-based session reuse, though true persistence requires Phase 4.
 
-#### Task 1.1: Add `--remote-debugging-port` to launch options
+#### Completed Tasks
 
-**File**: `crates/pw-core/src/api/launch_options.rs`
+1. **LaunchOptions.remote_debugging_port** - Added to pw-core, injects `--remote-debugging-port` into Chrome args
+2. **BrowserSession.launch_persistent()** - Launches with CDP port and disables signal handlers
+3. **SessionBroker** - Stores/loads CDP endpoint in session descriptor
+4. **SessionRequest** - Added `remote_debugging_port` and `keep_browser_running` fields
+5. **session start** - Uses CDP port (9222 + hash(context) % 1000)
+6. **session stop** - Closes browser via CDP connection
 
-```rust
-pub struct LaunchOptions {
-    // existing fields...
-    pub remote_debugging_port: Option<u16>,
-}
+#### Limitation: Browser Exits on CLI Exit
 
-impl LaunchOptions {
-    pub fn normalize(&self) -> serde_json::Value {
-        // Add to args: ["--remote-debugging-port=<port>"]
-    }
-}
-```
+The current implementation cannot keep the browser running after CLI exit because:
+1. Playwright driver communicates via stdio
+2. When CLI exits, stdio closes
+3. Driver exits on stdin EOF
+4. Driver closes browser on exit
 
-#### Task 1.2: Retrieve CDP endpoint after launch
-
-**File**: `crates/pw-core/src/protocol/browser.rs`
-
-The Browser object doesn't expose CDP endpoint. Options:
-
-1. **Parse from launch args**: If we set `--remote-debugging-port=9222`, endpoint is `http://localhost:9222`
-2. **Query via CDP**: After launch, call `Browser.getVersion` or similar to confirm connectivity
-3. **Use fixed port**: Default to a deterministic port per context (hash of context name)
-
-**Recommended**: Option 3 with port = `9222 + (hash(context_name) % 1000)`
-
-#### Task 1.3: Store CDP endpoint in session descriptor
-
-**File**: `crates/pw-cli/src/session_broker.rs`
-
-```rust
-// In SessionBroker::session(), after launching browser:
-let cdp_port = request.remote_debugging_port.unwrap_or_else(|| {
-    9222 + (hash(context_name) % 1000) as u16
-});
-let cdp_endpoint = format!("http://localhost:{}", cdp_port);
-
-let descriptor = SessionDescriptor {
-    pid: std::process::id(),
-    browser: request.browser,
-    headless: request.headless,
-    cdp_endpoint: Some(cdp_endpoint),
-    ws_endpoint: None,
-    driver_hash: Some(DRIVER_HASH.to_string()),
-    created_at: now_ts(),
-};
-descriptor.save(path)?;
-```
-
-#### Task 1.4: Reconnect via `connect_over_cdp`
-
-**File**: `crates/pw-cli/src/session_broker.rs`
-
-Current reuse logic at line 148-170 already handles CDP endpoints. Verify it works:
-
-```rust
-if descriptor.matches(&request, Some(DRIVER_HASH)) && descriptor.is_alive() {
-    if let Some(endpoint) = descriptor.cdp_endpoint.as_deref() {
-        let session = BrowserSession::with_options(
-            request.wait_until,
-            storage_state.clone(),
-            request.headless,
-            request.browser,
-            Some(endpoint),  // CDP endpoint
-            false,
-        ).await?;
-        return Ok(SessionHandle { session });
-    }
-}
-```
-
-#### Task 1.5: Keep browser alive after command
-
-**File**: `crates/pw-cli/src/browser/session.rs`
-
-Currently `close()` at line 267-275 closes browser if no `launched_server`. For CDP reuse, we need to keep browser running:
-
-```rust
-pub async fn close(self) -> Result<()> {
-    if self.keep_browser_running {
-        // Close context/page only, keep browser
-        let _ = self.context.close().await;
-        return Ok(());
-    }
-    self.browser.close().await?;
-    Ok(())
-}
-```
-
-Add `keep_browser_running: bool` field, set true when reusing for pseudo-interactive mode.
-
-#### Task 1.6: Update `session start` command
-
-**File**: `crates/pw-cli/src/commands/session.rs`
-
-```rust
-pub async fn start(...) -> Result<()> {
-    // Don't use launch_server, use regular launch with CDP port
-    let mut request = SessionRequest::from_context(WaitUntil::NetworkIdle, broker.context());
-    request.headless = !headful;
-    request.launch_server = false;  // Changed
-    request.keep_browser_running = true;  // New field
-    request.remote_debugging_port = Some(compute_port(context_name));
-
-    let session = broker.session(request).await?;
-    // Session descriptor saved by broker with cdp_endpoint
-    
-    // Don't close page/context, just detach
-    session.detach().await
-}
-```
-
-#### Task 1.7: Update `session stop` command
-
-**File**: `crates/pw-cli/src/commands/session.rs`
-
-Current implementation at line 124-188 should work. It connects via CDP and calls `shutdown_server()`. Update to use `browser.close()` instead:
-
-```rust
-let session = broker.session(request).await?;
-session.browser().close().await?;  // Close browser process
-fs::remove_file(&path)?;
-```
+**Workaround**: Use `pw session start` in a terminal you keep open, or proceed to Phase 4.
 
 ---
 

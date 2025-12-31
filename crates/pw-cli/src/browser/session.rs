@@ -12,8 +12,10 @@ pub struct BrowserSession {
     page: pw::protocol::Page,
     wait_until: WaitUntil,
     ws_endpoint: Option<String>,
+    cdp_endpoint: Option<String>,
     launched_server: Option<pw::LaunchedServer>,
     keep_server_running: bool,
+    keep_browser_running: bool,
 }
 
 impl BrowserSession {
@@ -189,8 +191,10 @@ impl BrowserSession {
             page,
             wait_until,
             ws_endpoint,
+            cdp_endpoint: None,
             launched_server,
             keep_server_running,
+            keep_browser_running: false,
         })
     }
 
@@ -236,6 +240,75 @@ impl BrowserSession {
         .await
     }
 
+    /// Launch a persistent browser session with CDP debugging port.
+    ///
+    /// This enables session reuse by exposing Chrome's remote debugging port.
+    /// The browser will stay alive after close() if keep_browser_running is true.
+    pub async fn launch_persistent(
+        wait_until: WaitUntil,
+        storage_state: Option<StorageState>,
+        headless: bool,
+        remote_debugging_port: u16,
+        keep_browser_running: bool,
+    ) -> Result<Self> {
+        debug!(
+            target = "pw",
+            browser = "chromium",
+            port = remote_debugging_port,
+            keep_browser_running,
+            "launching persistent session..."
+        );
+
+        let mut playwright = Playwright::launch()
+            .await
+            .map_err(|e| PwError::BrowserLaunch(e.to_string()))?;
+
+        // For persistent sessions, prevent the driver from killing the browser on exit
+        if keep_browser_running {
+            playwright.keep_server_running();
+        }
+
+        let launch_options = pw::LaunchOptions {
+            headless: Some(headless),
+            remote_debugging_port: Some(remote_debugging_port),
+            // Prevent browser from closing on signals (for persistent sessions)
+            handle_sighup: Some(!keep_browser_running),
+            handle_sigint: Some(!keep_browser_running),
+            handle_sigterm: Some(!keep_browser_running),
+            ..Default::default()
+        };
+
+        let browser = playwright
+            .chromium()
+            .launch_with_options(launch_options)
+            .await?;
+
+        let context = if let Some(state) = storage_state {
+            let options = BrowserContextOptions::builder()
+                .storage_state(state)
+                .build();
+            browser.new_context_with_options(options).await?
+        } else {
+            browser.new_context().await?
+        };
+
+        let page = context.new_page().await?;
+        let cdp_endpoint = format!("http://localhost:{}", remote_debugging_port);
+
+        Ok(Self {
+            _playwright: playwright,
+            browser,
+            context,
+            page,
+            wait_until,
+            ws_endpoint: None,
+            cdp_endpoint: Some(cdp_endpoint),
+            launched_server: None,
+            keep_server_running: keep_browser_running,
+            keep_browser_running,
+        })
+    }
+
     pub async fn goto(&self, url: &str) -> Result<()> {
         let goto_opts = GotoOptions {
             wait_until: Some(self.wait_until),
@@ -264,9 +337,22 @@ impl BrowserSession {
         self.ws_endpoint.as_deref()
     }
 
+    pub fn cdp_endpoint(&self) -> Option<&str> {
+        self.cdp_endpoint.as_deref()
+    }
+
+    pub fn browser(&self) -> &pw::protocol::Browser {
+        &self.browser
+    }
+
+    /// Set whether to keep the browser running after close()
+    pub fn set_keep_browser_running(&mut self, keep: bool) {
+        self.keep_browser_running = keep;
+    }
+
     pub async fn close(self) -> Result<()> {
-        if self.launched_server.is_some() {
-            // Close the context/page but keep the server running for reuse
+        if self.keep_browser_running || self.launched_server.is_some() {
+            // Close the context/page but keep the browser running for reuse
             let _ = self.context.close().await;
             return Ok(());
         }

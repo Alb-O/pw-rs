@@ -46,10 +46,12 @@ impl SessionDescriptor {
 
     pub(crate) fn matches(&self, request: &SessionRequest<'_>, driver_hash: Option<&str>) -> bool {
         let endpoint_match = if let Some(req_endpoint) = request.cdp_endpoint {
+            // Specific endpoint requested - must match
             self.cdp_endpoint.as_deref() == Some(req_endpoint)
                 || self.ws_endpoint.as_deref() == Some(req_endpoint)
         } else {
-            self.ws_endpoint.is_some()
+            // No specific endpoint requested - match if we have any endpoint
+            self.ws_endpoint.is_some() || self.cdp_endpoint.is_some()
         };
 
         let driver_match = match (driver_hash, self.driver_hash.as_deref()) {
@@ -86,6 +88,11 @@ pub struct SessionRequest<'a> {
     pub browser: BrowserKind,
     pub cdp_endpoint: Option<&'a str>,
     pub launch_server: bool,
+    /// Remote debugging port for persistent sessions (Chromium only).
+    /// When set, launches with --remote-debugging-port and enables CDP reconnection.
+    pub remote_debugging_port: Option<u16>,
+    /// Whether to keep the browser running after the session closes.
+    pub keep_browser_running: bool,
 }
 
 impl<'a> SessionRequest<'a> {
@@ -97,6 +104,8 @@ impl<'a> SessionRequest<'a> {
             browser: ctx.browser,
             cdp_endpoint: ctx.cdp_endpoint(),
             launch_server: ctx.launch_server(),
+            remote_debugging_port: None,
+            keep_browser_running: false,
         }
     }
 
@@ -117,6 +126,16 @@ impl<'a> SessionRequest<'a> {
 
     pub fn with_cdp_endpoint(mut self, endpoint: Option<&'a str>) -> Self {
         self.cdp_endpoint = endpoint;
+        self
+    }
+
+    pub fn with_remote_debugging_port(mut self, port: Option<u16>) -> Self {
+        self.remote_debugging_port = port;
+        self
+    }
+
+    pub fn with_keep_browser_running(mut self, keep: bool) -> Self {
+        self.keep_browser_running = keep;
         self
     }
 }
@@ -147,10 +166,11 @@ impl<'a> SessionBroker<'a> {
                 let _ = fs::remove_file(path);
             } else if let Some(descriptor) = SessionDescriptor::load(path)? {
                 if descriptor.matches(&request, Some(DRIVER_HASH)) && descriptor.is_alive() {
+                    // Prefer CDP endpoint (for persistent sessions) over ws_endpoint
                     if let Some(endpoint) = descriptor
-                        .ws_endpoint
+                        .cdp_endpoint
                         .as_deref()
-                        .or_else(|| descriptor.cdp_endpoint.as_deref())
+                        .or_else(|| descriptor.ws_endpoint.as_deref())
                     {
                         debug!(
                             target = "pw.session",
@@ -175,7 +195,22 @@ impl<'a> SessionBroker<'a> {
             }
         }
 
-        let session = if request.launch_server {
+        let session = if let Some(port) = request.remote_debugging_port {
+            // Persistent session with CDP debugging port (Chromium only)
+            if request.browser != BrowserKind::Chromium {
+                return Err(PwError::BrowserLaunch(
+                    "Persistent sessions with remote_debugging_port require Chromium".to_string(),
+                ));
+            }
+            BrowserSession::launch_persistent(
+                request.wait_until,
+                storage_state,
+                request.headless,
+                port,
+                request.keep_browser_running,
+            )
+            .await?
+        } else if request.launch_server {
             BrowserSession::launch_server_session(
                 request.wait_until,
                 storage_state,
@@ -195,22 +230,29 @@ impl<'a> SessionBroker<'a> {
             .await?
         };
 
+        // Save session descriptor if we have a path and an endpoint
         if let Some(path) = &self.descriptor_path {
-            if let Some(endpoint) = session
-                .ws_endpoint()
-                .or(request.cdp_endpoint)
-                .map(|e| e.to_string())
-            {
+            let cdp = session.cdp_endpoint().map(|e| e.to_string());
+            let ws = session.ws_endpoint().map(|e| e.to_string());
+
+            // Prefer CDP endpoint if available, otherwise use ws_endpoint
+            if cdp.is_some() || ws.is_some() {
                 let descriptor = SessionDescriptor {
                     pid: std::process::id(),
                     browser: request.browser,
                     headless: request.headless,
-                    cdp_endpoint: request.cdp_endpoint.map(|e| e.to_string()),
-                    ws_endpoint: Some(endpoint),
+                    cdp_endpoint: cdp,
+                    ws_endpoint: ws,
                     driver_hash: Some(DRIVER_HASH.to_string()),
                     created_at: now_ts(),
                 };
                 let _ = descriptor.save(path);
+                debug!(
+                    target = "pw.session",
+                    cdp = ?descriptor.cdp_endpoint,
+                    ws = ?descriptor.ws_endpoint,
+                    "saved session descriptor"
+                );
             } else {
                 debug!(
                     target = "pw.session",
@@ -246,6 +288,14 @@ impl SessionHandle {
 
     pub fn ws_endpoint(&self) -> Option<&str> {
         self.session.ws_endpoint()
+    }
+
+    pub fn cdp_endpoint(&self) -> Option<&str> {
+        self.session.cdp_endpoint()
+    }
+
+    pub fn browser(&self) -> &pw::protocol::Browser {
+        self.session.browser()
     }
 
     pub async fn close(self) -> Result<()> {
@@ -308,6 +358,8 @@ mod tests {
             browser: BrowserKind::Chromium,
             cdp_endpoint: Some("ws://localhost:1234"),
             launch_server: true,
+            remote_debugging_port: None,
+            keep_browser_running: false,
         };
         assert!(loaded.matches(&req, Some(DRIVER_HASH)));
     }
@@ -331,6 +383,8 @@ mod tests {
             browser: BrowserKind::Chromium,
             cdp_endpoint: Some("ws://localhost:1234"),
             launch_server: true,
+            remote_debugging_port: None,
+            keep_browser_running: false,
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));
@@ -355,6 +409,8 @@ mod tests {
             browser: BrowserKind::Chromium,
             cdp_endpoint: Some("ws://localhost:1234"),
             launch_server: true,
+            remote_debugging_port: None,
+            keep_browser_running: false,
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));
