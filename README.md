@@ -1,14 +1,17 @@
 # pw-rs
 
-Rust bindings for Microsoft Playwright. Communicates with the Playwright server over JSON-RPC, giving you the same browser automation capabilities as the official Python, Java, and .NET bindings.
+Rust bindings for Playwright. Spawns the Playwright Node.js server as a subprocess and communicates over JSON-RPC stdio.
 
-The library spawns a bundled Playwright server (Node.js) as a subprocess and exchanges messages over stdio. Your Rust code calls methods like `page.click(".button")`, which serializes to JSON-RPC, travels to the server, and the server drives Chromium, Firefox, or WebKit using their native debugging protocols. This architecture means pw-rs inherits Playwright's cross-browser abstractions, auto-waiting logic, and ongoing maintenance from Microsoft without reimplementing any of it.
+## Crates
+
+- `pw-core` - Library: Playwright client, protocol types, browser/context/page abstractions
+- `pw-cli` - CLI tool for browser automation without writing Rust
 
 ## Quick start
 
 ```toml
 [dependencies]
-pw-core = "0.7"
+pw-core = "0.10"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -17,120 +20,64 @@ use pw_core::Playwright;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let pw = Playwright::new().await?;
+    let pw = Playwright::launch().await?;
     let browser = pw.chromium().launch().await?;
-    let context = browser.new_context().await?;
-    let page = context.new_page().await?;
+    let page = browser.new_context().await?.new_page().await?;
 
     page.goto("https://example.com").await?;
-    let title = page.title().await?;
-    println!("Title: {title}");
+    println!("Title: {}", page.title().await?);
 
     browser.close().await?;
     Ok(())
 }
 ```
 
-The API mirrors Playwright's official bindings. If you know `playwright-python` or the JavaScript original, the method names and semantics are identical. Rust idioms apply throughout: `Result<T, Error>` for fallible operations, builders for complex option structs, async/await for all I/O.
-
-## Installing browsers
-
-`cargo build` downloads the Playwright driver (currently 1.56.1) to your workspace. If a `playwright/` directory exists (created by `pw init`), the driver goes to `playwright/drivers/`; otherwise it goes to `drivers/` at the workspace root. The driver bundles its own Node.js runtime. After building, install browsers using the driver's CLI:
-
-```bash
-cargo build
-# If you have a playwright/ directory (recommended):
-playwright/drivers/playwright-1.56.1-*/node playwright/drivers/playwright-1.56.1-*/package/cli.js install chromium
-# Otherwise:
-drivers/playwright-1.56.1-*/node drivers/playwright-1.56.1-*/package/cli.js install chromium
-```
-
-Replace the glob with your actual platform directory (`mac-arm64`, `mac`, `linux`, `win32_x64`). You can install `firefox` and `webkit` the same way. Playwright caches browsers in platform-specific locations (`~/.cache/ms-playwright/` on Linux, `~/Library/Caches/ms-playwright/` on macOS, `%USERPROFILE%\AppData\Local\ms-playwright\` on Windows).
-
-The driver version determines which browser builds are compatible. Version 1.56.1 expects chromium-1194, firefox-1495, and webkit-2215. Using mismatched versions produces cryptic protocol errors.
-
 ## CLI
 
-The `pw-cli` crate provides a command-line interface for browser automation tasks without writing Rust code.
-
 ```bash
-cargo install --path crates/pw-cli
+# Install
+nix profile install .#  # or: cargo install --path crates/pw-cli
 
-pw screenshot https://example.com -o page.png
-pw text https://example.com "h1"
-pw click https://example.com ".accept-cookies"
-pw eval https://example.com "document.title"
+# Basic usage
+pw nav https://example.com
+pw text h1
+pw click "button.submit"
+pw fill "input[name=email]" "user@example.com"
+pw screenshot -o page.png
+pw eval "document.title"
+
+# Connect to existing browser (Chrome with --remote-debugging-port=9222)
+pw connect ws://127.0.0.1:9222/devtools/browser/...
+
+# Session context persists between commands
+pw nav https://example.com    # opens browser, saves context
+pw text h1                    # reuses same page
+pw click ".next"              # still same session
 ```
 
-For authenticated sessions, the `auth` subcommand opens a headed browser where you log in manually, then saves cookies and localStorage to a JSON file:
+## Nushell integration
 
-```bash
-pw auth login https://app.example.com -o auth.json
+```nu
+use scripts/pw.nu
+use scripts/higgsfield.nu *
+
+pw nav "https://example.com"
+pw text "h1"
+pw fill "input[name=q]" "search query"
+
+# Site-specific workflows
+higgsfield create-image "A dragon in a cyberpunk city"
 ```
-
-Subsequent commands can load that session state:
-
-```bash
-pw --auth auth.json screenshot https://app.example.com/dashboard -o dash.png
-```
-
-### Daemon mode
-
-For persistent browser sessions across multiple commands, start the daemon:
-
-```bash
-pw daemon start                    # starts background daemon
-pw navigate https://example.com    # spawns browser via daemon
-pw text -s h1                      # reuses same browser
-pw screenshot -o page.png          # still reusing
-pw daemon status                   # shows running browsers
-pw daemon stop                     # shuts down daemon and browsers
-```
-
-The daemon keeps the Playwright driver running in the background, managing a pool of browser instances. Commands automatically connect to the daemon if it's running (disable with `--no-daemon`). This avoids the ~500ms startup cost per command and enables true session persistence.
-
-On Unix systems, the daemon listens on `/tmp/pw-daemon.sock`. Browser instances are assigned ports in the 9222-10221 range. The daemon handles cleanup when browsers crash or become unresponsive.
-
-## Session persistence
-
-`BrowserContext` exposes methods for cookie and storage management. `add_cookies()` injects cookies, `cookies()` retrieves them, `storage_state()` exports everything (cookies plus localStorage per origin) to a struct you can serialize to disk.
-
-```rust
-let state = context.storage_state(None).await?;
-state.to_file("auth.json")?;
-
-// Later, in a new context:
-let saved = StorageState::from_file("auth.json")?;
-let context = browser.new_context_with_options(
-    BrowserContextOptions::new().storage_state(saved)
-).await?;
-```
-
-This pattern avoids repeating login flows when scraping authenticated pages or running E2E tests.
 
 ## Development
 
-Requires Rust 1.70+ and the nix flake handles Node.js and other dependencies. Run `nix develop` to enter a shell with everything configured.
-
 ```bash
+nix develop              # Shell with all deps (Playwright, Node.js, browsers)
 cargo build --workspace
 cargo test --workspace
-cargo nextest run  # faster, install with: cargo install cargo-nextest
+nix build .#             # Wrapped binary with Playwright runtime
 ```
-
-Integration tests require browsers to be installed. The `crates/pw-core/tests/` directory contains tests for specific features; `crates/pw-core/examples/` demonstrates common patterns.
-
-## Nix & tooling
-
-- `nix develop` drops you into a Playwright-ready shell (Node.js, playwright-driver, browser compatibility symlinks, OpenSSL env vars) plus `rust-analyzer` and formatter wiring.
-- `nix fmt` runs the repo formatter (treefmt → cargo fmt, etc.).
-- `nix flake check` runs formatting plus the `pw-cli` package build (tests off for sandboxed browsers).
-- After changing `nix/outputs/**`, regenerate flake inputs with `nix run .#imp-flake`.
-
-## Project structure
-
-The `crates/` directory contains two crates: `pw-core` (the library: Playwright client, protocol types, browser/context/page abstractions) and `pw-cli` (the command-line tool). The separation keeps dependencies minimal if you only need one or the other.
 
 ## License
 
-Apache-2.0, matching Microsoft Playwright.
+Apache-2.0
