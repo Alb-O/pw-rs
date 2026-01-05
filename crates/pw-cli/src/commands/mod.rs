@@ -185,7 +185,6 @@ async fn dispatch_command_inner(
                 url.clone(),
                 url_flag,
                 selector_flag.or(selector),
-                ctx_state.has_context_url(),
             );
             let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
             let final_selector = ctx_state.resolve_selector(resolved.selector, Some("html"))?;
@@ -268,7 +267,6 @@ async fn dispatch_command_inner(
                 url.clone(),
                 url_flag,
                 selector_flag.or(selector),
-                ctx_state.has_context_url(),
             );
             let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
             let final_selector = ctx_state.resolve_selector(resolved.selector, None)?;
@@ -300,7 +298,6 @@ async fn dispatch_command_inner(
                 url.clone(),
                 url_flag,
                 selector_flag.or(selector),
-                ctx_state.has_context_url(),
             );
             let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
             let final_selector = ctx_state.resolve_selector(resolved.selector, None)?;

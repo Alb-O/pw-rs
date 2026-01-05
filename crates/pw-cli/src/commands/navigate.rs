@@ -23,14 +23,11 @@ pub async fn execute(
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
 
-    // Handle the "current page" sentinel - just stay on current page
     if !is_current_page_sentinel(url) {
         session.goto(url).await?;
     }
 
     let title = session.page().title().await.unwrap_or_default();
-
-    // Use JavaScript evaluation for actual URL (more reliable than page.url() for redirects)
     let actual_url = session
         .page()
         .evaluate_value("window.location.href")
@@ -42,7 +39,6 @@ pub async fn execute(
         .evaluate_value("JSON.stringify(window.__playwrightErrors || [])")
         .await
         .unwrap_or_else(|_| "[]".to_string());
-
     let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
 
     if !errors.is_empty() {
@@ -53,7 +49,6 @@ pub async fn execute(
         );
     }
 
-    // Include actual_url only if it differs from the input URL
     let actual_url_field = if actual_url != url {
         Some(actual_url.clone())
     } else {

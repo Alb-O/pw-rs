@@ -244,18 +244,15 @@ impl ContextState {
     }
 
     /// Returns true if context has a URL available (last_url or base_url).
-    /// Used by smart argument detection to decide if a positional arg is a selector.
     pub fn has_context_url(&self) -> bool {
         if self.no_context {
             return false;
         }
 
-        // Check base_url override
         if self.base_url_override.is_some() {
             return true;
         }
 
-        // Check selected context
         if let Some(selected) = &self.selected {
             if !self.refresh && selected.data.last_url.is_some() {
                 return true;
@@ -280,8 +277,7 @@ impl ContextState {
     /// Resolve URL with knowledge of whether a CDP endpoint is active.
     ///
     /// When `--no-context` is used with a CDP connection and no URL is provided,
-    /// this returns [`CURRENT_PAGE_SENTINEL`] instead of erroring, allowing
-    /// commands to operate on the current browser page.
+    /// returns [`CURRENT_PAGE_SENTINEL`] to operate on the current browser page.
     pub fn resolve_url_with_cdp(
         &self,
         provided: Option<String>,
@@ -292,7 +288,6 @@ impl ContextState {
         }
 
         if self.no_context {
-            // When connected via CDP with no context, allow operating on current page
             if has_cdp_endpoint {
                 return Ok(CURRENT_PAGE_SENTINEL.to_string());
             }

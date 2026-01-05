@@ -298,10 +298,6 @@ pub struct EffectiveConfig {
     pub endpoint: Option<String>,
 }
 
-// ============================================================================
-// Builder for creating command results
-// ============================================================================
-
 /// Builder for constructing command results
 pub struct ResultBuilder<T: Serialize> {
     command: String,
@@ -433,10 +429,6 @@ impl<T: Serialize> ResultBuilder<T> {
     }
 }
 
-// ============================================================================
-// Output functions
-// ============================================================================
-
 /// Print a command result to stdout in the specified format
 pub fn print_result<T: Serialize>(result: &CommandResult<T>, format: OutputFormat) {
     match format {
@@ -516,19 +508,11 @@ pub fn print_error_stderr(error: &CommandError) {
     eprintln!("Error [{}]: {}", error.code, error.message);
 }
 
-// ============================================================================
-// Convenience type aliases
-// ============================================================================
-
 /// A command result with no data (for commands that only produce side effects)
 pub type EmptyResult = CommandResult<()>;
 
 /// A command result with a simple string value
 pub type StringResult = CommandResult<String>;
-
-// ============================================================================
-// Failure result with artifacts (for commands that collect artifacts on error)
-// ============================================================================
 
 /// A command failure that includes collected artifacts.
 ///
@@ -580,10 +564,6 @@ pub fn print_failure_with_artifacts(
 
     print_result(&result_with_artifacts, format);
 }
-
-// ============================================================================
-// Command-specific data types
-// ============================================================================
 
 /// Result data for navigate command
 #[derive(Debug, Serialize, Deserialize)]

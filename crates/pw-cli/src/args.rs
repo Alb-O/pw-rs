@@ -10,31 +10,21 @@ const SELECTOR_CHARS: &[char] = &['.', '#', '>', '~', '+', ':', '[', ']', '*'];
 /// URL scheme prefixes that indicate the string is a URL.
 const URL_PREFIXES: &[&str] = &["http://", "https://", "ws://", "wss://", "file://", "data:"];
 
-/// Common HTML tag names that should be recognized as selectors.
-/// These are matched case-insensitively against the entire input string.
+/// Common HTML tag names recognized as selectors (matched case-insensitively).
 const HTML_TAGS: &[&str] = &[
-    // Document structure
     "html", "head", "body", "main", "header", "footer", "nav", "aside",
     "section", "article", "div", "span",
-    // Headings
     "h1", "h2", "h3", "h4", "h5", "h6",
-    // Text content
     "p", "a", "strong", "em", "b", "i", "u", "s", "small", "mark",
     "blockquote", "pre", "code", "kbd", "samp", "var", "cite", "q",
     "abbr", "time", "address", "sub", "sup",
-    // Lists
     "ul", "ol", "li", "dl", "dt", "dd", "menu",
-    // Tables
     "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
-    // Forms
     "form", "input", "button", "textarea", "select", "option", "optgroup",
     "label", "fieldset", "legend", "datalist", "output", "progress", "meter",
-    // Media
     "img", "picture", "source", "video", "audio", "track", "canvas", "svg",
     "figure", "figcaption", "iframe", "embed", "object", "param",
-    // Interactive
     "details", "summary", "dialog",
-    // Other common elements
     "br", "hr", "wbr", "template", "slot", "noscript", "script", "style", "link", "meta",
 ];
 
@@ -123,68 +113,17 @@ pub struct ResolvedArgs {
     pub selector: Option<String>,
 }
 
-/// Resolves URL and selector from a combination of positional arguments and explicit flags.
+/// Resolves URL and selector from positional arguments and explicit flags.
 ///
-/// This function implements smart detection to reduce the need for explicit `-s` flags:
-/// - If both `--url` and `--selector` flags are provided, they are used directly
-/// - If only a positional argument is provided and it looks like a CSS selector, treat it as a selector
-/// - If only a positional argument is provided and it's NOT a selector, treat it as a URL
-/// - If context has a URL and a selector-like positional is provided, the selector is returned
-///   (the caller should use the context URL)
-///
-/// # Arguments
-///
-/// * `positional` - The positional argument (could be URL or selector)
-/// * `url_flag` - Explicit `--url` flag value
-/// * `selector_flag` - Explicit `--selector` flag value  
-/// * `has_context_url` - Whether context has a URL available (for fallback)
-///
-/// # Returns
-///
-/// A `ResolvedArgs` struct containing the resolved URL and selector.
-///
-/// # Examples
-///
-/// ```
-/// use pw_cli::args::{resolve_url_and_selector, ResolvedArgs};
-///
-/// // Explicit flags take precedence
-/// let result = resolve_url_and_selector(
-///     None,
-///     Some("https://example.com".into()),
-///     Some(".class".into()),
-///     false,
-/// );
-/// assert_eq!(result.url, Some("https://example.com".into()));
-/// assert_eq!(result.selector, Some(".class".into()));
-///
-/// // Selector-like positional with context URL
-/// let result = resolve_url_and_selector(
-///     Some(".class".into()),
-///     None,
-///     None,
-///     true,
-/// );
-/// assert_eq!(result.url, None); // Caller uses context URL
-/// assert_eq!(result.selector, Some(".class".into()));
-///
-/// // URL-like positional
-/// let result = resolve_url_and_selector(
-///     Some("https://example.com".into()),
-///     None,
-///     None,
-///     false,
-/// );
-/// assert_eq!(result.url, Some("https://example.com".into()));
-/// assert_eq!(result.selector, None);
-/// ```
+/// Smart detection reduces the need for explicit `-s` flags:
+/// - Explicit `--url` and `--selector` flags take precedence
+/// - Positional arguments that look like CSS selectors are treated as selectors
+/// - Other positional arguments are treated as URLs
 pub fn resolve_url_and_selector(
     positional: Option<String>,
     url_flag: Option<String>,
     selector_flag: Option<String>,
-    has_context_url: bool,
 ) -> ResolvedArgs {
-    // If both explicit flags provided, use them directly
     if url_flag.is_some() || selector_flag.is_some() {
         return ResolvedArgs {
             url: url_flag.or(positional.clone().filter(|p| !looks_like_selector(p))),
@@ -192,7 +131,6 @@ pub fn resolve_url_and_selector(
         };
     }
 
-    // No explicit flags - analyze the positional argument
     let Some(pos) = positional else {
         return ResolvedArgs {
             url: None,
@@ -201,23 +139,11 @@ pub fn resolve_url_and_selector(
     };
 
     if looks_like_selector(&pos) {
-        // It looks like a selector
-        if has_context_url {
-            // Context has a URL, so treat positional as selector only
-            ResolvedArgs {
-                url: None,
-                selector: Some(pos),
-            }
-        } else {
-            // No context URL, but it still looks like a selector
-            // Return it as selector - caller will need to handle missing URL
-            ResolvedArgs {
-                url: None,
-                selector: Some(pos),
-            }
+        ResolvedArgs {
+            url: None,
+            selector: Some(pos),
         }
     } else {
-        // Doesn't look like a selector - treat as URL
         ResolvedArgs {
             url: Some(pos),
             selector: None,
@@ -407,217 +333,75 @@ mod tests {
         assert!(!looks_like_url("localhost"));
     }
 
-    // Tests for resolve_url_and_selector
-    use super::resolve_url_and_selector;
-
     #[test]
-    fn test_resolve_explicit_flags_both() {
-        let result = resolve_url_and_selector(
-            None,
-            Some("https://example.com".into()),
-            Some(".class".into()),
-            false,
-        );
-        assert_eq!(result.url, Some("https://example.com".into()));
-        assert_eq!(result.selector, Some(".class".into()));
+    fn test_resolve_explicit_flags() {
+        let r = resolve_url_and_selector(None, Some("https://x.com".into()), Some(".c".into()));
+        assert_eq!(r.url, Some("https://x.com".into()));
+        assert_eq!(r.selector, Some(".c".into()));
+
+        let r = resolve_url_and_selector(None, Some("https://x.com".into()), None);
+        assert_eq!(r.url, Some("https://x.com".into()));
+        assert_eq!(r.selector, None);
+
+        let r = resolve_url_and_selector(None, None, Some(".c".into()));
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, Some(".c".into()));
     }
 
     #[test]
-    fn test_resolve_explicit_url_flag_only() {
-        let result = resolve_url_and_selector(
-            None,
-            Some("https://example.com".into()),
-            None,
-            false,
-        );
-        assert_eq!(result.url, Some("https://example.com".into()));
-        assert_eq!(result.selector, None);
-    }
+    fn test_resolve_positional_detection() {
+        // URL detected
+        let r = resolve_url_and_selector(Some("https://x.com".into()), None, None);
+        assert_eq!(r.url, Some("https://x.com".into()));
+        assert_eq!(r.selector, None);
 
-    #[test]
-    fn test_resolve_explicit_selector_flag_only() {
-        let result = resolve_url_and_selector(
-            None,
-            None,
-            Some(".class".into()),
-            false,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some(".class".into()));
-    }
+        // Selector detected (class)
+        let r = resolve_url_and_selector(Some(".class".into()), None, None);
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, Some(".class".into()));
 
-    #[test]
-    fn test_resolve_positional_url() {
-        let result = resolve_url_and_selector(
-            Some("https://example.com".into()),
-            None,
-            None,
-            false,
-        );
-        assert_eq!(result.url, Some("https://example.com".into()));
-        assert_eq!(result.selector, None);
-    }
+        // Selector detected (id)
+        let r = resolve_url_and_selector(Some("#main".into()), None, None);
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, Some("#main".into()));
 
-    #[test]
-    fn test_resolve_positional_selector_with_context() {
-        let result = resolve_url_and_selector(
-            Some(".class".into()),
-            None,
-            None,
-            true, // has context URL
-        );
-        assert_eq!(result.url, None); // Caller uses context URL
-        assert_eq!(result.selector, Some(".class".into()));
-    }
+        // Selector detected (complex)
+        let r = resolve_url_and_selector(Some("div > span.title".into()), None, None);
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, Some("div > span.title".into()));
 
-    #[test]
-    fn test_resolve_positional_selector_without_context() {
-        let result = resolve_url_and_selector(
-            Some(".class".into()),
-            None,
-            None,
-            false, // no context URL
-        );
-        // Still recognized as selector even without context
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some(".class".into()));
-    }
+        // HTML tags are selectors
+        let r = resolve_url_and_selector(Some("body".into()), None, None);
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, Some("body".into()));
 
-    #[test]
-    fn test_resolve_positional_id_selector() {
-        let result = resolve_url_and_selector(
-            Some("#main".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some("#main".into()));
-    }
+        let r = resolve_url_and_selector(Some("h1".into()), None, None);
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, Some("h1".into()));
 
-    #[test]
-    fn test_resolve_positional_complex_selector() {
-        let result = resolve_url_and_selector(
-            Some("div > span.title".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some("div > span.title".into()));
+        // Unknown strings treated as URLs
+        let r = resolve_url_and_selector(Some("foobar".into()), None, None);
+        assert_eq!(r.url, Some("foobar".into()));
+        assert_eq!(r.selector, None);
     }
 
     #[test]
     fn test_resolve_no_arguments() {
-        let result = resolve_url_and_selector(None, None, None, false);
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, None);
+        let r = resolve_url_and_selector(None, None, None);
+        assert_eq!(r.url, None);
+        assert_eq!(r.selector, None);
     }
 
     #[test]
-    fn test_resolve_no_arguments_with_context() {
-        let result = resolve_url_and_selector(None, None, None, true);
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, None);
-    }
+    fn test_resolve_flag_with_positional() {
+        // URL flag + selector-like positional
+        let r = resolve_url_and_selector(Some(".c".into()), Some("https://x.com".into()), None);
+        assert_eq!(r.url, Some("https://x.com".into()));
+        assert_eq!(r.selector, Some(".c".into()));
 
-    #[test]
-    fn test_resolve_url_flag_with_positional_selector() {
-        // URL flag + positional that looks like selector
-        let result = resolve_url_and_selector(
-            Some(".class".into()),
-            Some("https://example.com".into()),
-            None,
-            false,
-        );
-        assert_eq!(result.url, Some("https://example.com".into()));
-        assert_eq!(result.selector, Some(".class".into()));
-    }
-
-    #[test]
-    fn test_resolve_selector_flag_with_positional_url() {
-        // Selector flag + positional that looks like URL
-        let result = resolve_url_and_selector(
-            Some("https://example.com".into()),
-            None,
-            Some(".class".into()),
-            false,
-        );
-        assert_eq!(result.url, Some("https://example.com".into()));
-        assert_eq!(result.selector, Some(".class".into()));
-    }
-
-    #[test]
-    fn test_resolve_plain_tag_as_selector() {
-        // HTML tag names are now recognized as selectors
-        let result = resolve_url_and_selector(
-            Some("body".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some("body".into()));
-    }
-
-    #[test]
-    fn test_resolve_h1_as_selector() {
-        let result = resolve_url_and_selector(
-            Some("h1".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some("h1".into()));
-    }
-
-    #[test]
-    fn test_resolve_unknown_string_as_url() {
-        // Unknown strings (not tags, not CSS selectors) are treated as URLs
-        let result = resolve_url_and_selector(
-            Some("foobar".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, Some("foobar".into()));
-        assert_eq!(result.selector, None);
-    }
-
-    #[test]
-    fn test_resolve_attribute_selector() {
-        let result = resolve_url_and_selector(
-            Some("[data-testid='submit']".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some("[data-testid='submit']".into()));
-    }
-
-    #[test]
-    fn test_resolve_pseudo_selector() {
-        let result = resolve_url_and_selector(
-            Some("button:first-child".into()),
-            None,
-            None,
-            true,
-        );
-        assert_eq!(result.url, None);
-        assert_eq!(result.selector, Some("button:first-child".into()));
-    }
-
-    #[test]
-    fn test_resolve_websocket_url() {
-        let result = resolve_url_and_selector(
-            Some("ws://localhost:9222/devtools".into()),
-            None,
-            None,
-            false,
-        );
-        assert_eq!(result.url, Some("ws://localhost:9222/devtools".into()));
-        assert_eq!(result.selector, None);
+        // Selector flag + URL-like positional
+        let r = resolve_url_and_selector(Some("https://x.com".into()), None, Some(".c".into()));
+        assert_eq!(r.url, Some("https://x.com".into()));
+        assert_eq!(r.selector, Some(".c".into()));
     }
 }

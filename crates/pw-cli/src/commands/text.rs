@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Instant;
 
 use crate::context::CommandContext;
 use crate::error::{PwError, Result};
@@ -93,7 +92,6 @@ pub async fn execute(
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
 ) -> Result<()> {
-    let _start = Instant::now();
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "get text");
 
     let session = broker

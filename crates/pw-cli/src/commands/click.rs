@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::context::CommandContext;
 use crate::error::{PwError, Result};
@@ -23,7 +23,6 @@ pub async fn execute(
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
 ) -> Result<String> {
-    let _start = Instant::now();
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "click element");
 
     let session = broker
@@ -64,10 +63,8 @@ async fn execute_inner(
     wait_ms: u64,
     format: OutputFormat,
 ) -> Result<String> {
-    // Skip navigation if already on the target URL or using current page sentinel
     session.goto_unless_current(url).await?;
 
-    // Use JavaScript evaluation for accurate URL detection (more reliable than page.url())
     let before_url = session
         .page()
         .evaluate_value("window.location.href")
@@ -77,12 +74,10 @@ async fn execute_inner(
     let locator = session.page().locator(selector).await;
     locator.click(None).await?;
 
-    // Wait for potential navigation after click (configurable via --wait-ms)
     if wait_ms > 0 {
         tokio::time::sleep(Duration::from_millis(wait_ms)).await;
     }
 
-    // Use JavaScript evaluation for accurate URL detection after click
     let after_url = session
         .page()
         .evaluate_value("window.location.href")

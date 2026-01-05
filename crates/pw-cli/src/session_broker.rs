@@ -343,16 +343,12 @@ impl SessionHandle {
     /// Navigate to URL only if not already on that page.
     ///
     /// Returns `true` if navigation was performed, `false` if already on the page.
-    /// This avoids unnecessary page reloads that reset page state.
     pub async fn goto_if_needed(&self, url: &str) -> Result<bool> {
-        // Get current URL via JavaScript (more reliable than page.url())
         let current_url = self
             .page()
             .evaluate_value("window.location.href")
             .await
             .unwrap_or_else(|_| self.page().url());
-
-        // Normalize URLs for comparison (trim quotes from JS result)
         let current = current_url.trim_matches('"');
 
         if urls_match(current, url) {
