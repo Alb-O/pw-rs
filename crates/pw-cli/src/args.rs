@@ -10,10 +10,39 @@ const SELECTOR_CHARS: &[char] = &['.', '#', '>', '~', '+', ':', '[', ']', '*'];
 /// URL scheme prefixes that indicate the string is a URL.
 const URL_PREFIXES: &[&str] = &["http://", "https://", "ws://", "wss://", "file://", "data:"];
 
+/// Common HTML tag names that should be recognized as selectors.
+/// These are matched case-insensitively against the entire input string.
+const HTML_TAGS: &[&str] = &[
+    // Document structure
+    "html", "head", "body", "main", "header", "footer", "nav", "aside",
+    "section", "article", "div", "span",
+    // Headings
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    // Text content
+    "p", "a", "strong", "em", "b", "i", "u", "s", "small", "mark",
+    "blockquote", "pre", "code", "kbd", "samp", "var", "cite", "q",
+    "abbr", "time", "address", "sub", "sup",
+    // Lists
+    "ul", "ol", "li", "dl", "dt", "dd", "menu",
+    // Tables
+    "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
+    // Forms
+    "form", "input", "button", "textarea", "select", "option", "optgroup",
+    "label", "fieldset", "legend", "datalist", "output", "progress", "meter",
+    // Media
+    "img", "picture", "source", "video", "audio", "track", "canvas", "svg",
+    "figure", "figcaption", "iframe", "embed", "object", "param",
+    // Interactive
+    "details", "summary", "dialog",
+    // Other common elements
+    "br", "hr", "wbr", "template", "slot", "noscript", "script", "style", "link", "meta",
+];
+
 /// Returns true if the string looks like a CSS selector rather than a URL.
 ///
 /// A string is considered a selector if:
 /// - It contains CSS selector characters (`.`, `#`, `>`, `~`, `+`, `:`, `[`, `]`, `*`)
+/// - OR it exactly matches a common HTML tag name (case-insensitive)
 /// - AND it does not look like a URL (no `://`, doesn't start with known URL schemes)
 ///
 /// # Examples
@@ -28,6 +57,11 @@ const URL_PREFIXES: &[&str] = &["http://", "https://", "ws://", "wss://", "file:
 /// assert!(looks_like_selector("[data-id]"));
 /// assert!(looks_like_selector("button:hover"));
 /// assert!(looks_like_selector("*"));
+///
+/// // HTML tags are selectors
+/// assert!(looks_like_selector("h1"));
+/// assert!(looks_like_selector("div"));
+/// assert!(looks_like_selector("body"));
 ///
 /// // URLs (not selectors)
 /// assert!(!looks_like_selector("https://example.com"));
@@ -52,7 +86,13 @@ pub fn looks_like_selector(s: &str) -> bool {
     }
 
     // Check for CSS selector characters
-    s.chars().any(|c| SELECTOR_CHARS.contains(&c))
+    if s.chars().any(|c| SELECTOR_CHARS.contains(&c)) {
+        return true;
+    }
+
+    // Check if it's a bare HTML tag name
+    let lower = s.to_lowercase();
+    HTML_TAGS.contains(&lower.as_str())
 }
 
 /// Returns true if the string looks like a URL.
@@ -289,12 +329,35 @@ mod tests {
     }
 
     #[test]
-    fn test_plain_strings_not_selectors() {
-        // Plain tag names without selector characters
-        assert!(!looks_like_selector("div"));
-        assert!(!looks_like_selector("span"));
-        assert!(!looks_like_selector("body"));
-        assert!(!looks_like_selector("html"));
+    fn test_html_tags_are_selectors() {
+        // Common HTML tag names are recognized as selectors
+        assert!(looks_like_selector("div"));
+        assert!(looks_like_selector("span"));
+        assert!(looks_like_selector("body"));
+        assert!(looks_like_selector("html"));
+        assert!(looks_like_selector("h1"));
+        assert!(looks_like_selector("h2"));
+        assert!(looks_like_selector("p"));
+        assert!(looks_like_selector("a"));
+        assert!(looks_like_selector("button"));
+        assert!(looks_like_selector("input"));
+        assert!(looks_like_selector("table"));
+        assert!(looks_like_selector("form"));
+        assert!(looks_like_selector("img"));
+        assert!(looks_like_selector("nav"));
+        assert!(looks_like_selector("article"));
+        // Case insensitive
+        assert!(looks_like_selector("DIV"));
+        assert!(looks_like_selector("H1"));
+        assert!(looks_like_selector("Body"));
+    }
+
+    #[test]
+    fn test_unknown_strings_not_selectors() {
+        // Random strings that aren't tags or CSS selectors
+        assert!(!looks_like_selector("foobar"));
+        assert!(!looks_like_selector("localhost"));
+        assert!(!looks_like_selector("mycomponent"));
     }
 
     #[test]
@@ -485,15 +548,40 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_plain_tag_as_url() {
-        // Plain tag names without selector chars are treated as URLs (not selectors)
+    fn test_resolve_plain_tag_as_selector() {
+        // HTML tag names are now recognized as selectors
         let result = resolve_url_and_selector(
             Some("body".into()),
             None,
             None,
             true,
         );
-        assert_eq!(result.url, Some("body".into()));
+        assert_eq!(result.url, None);
+        assert_eq!(result.selector, Some("body".into()));
+    }
+
+    #[test]
+    fn test_resolve_h1_as_selector() {
+        let result = resolve_url_and_selector(
+            Some("h1".into()),
+            None,
+            None,
+            true,
+        );
+        assert_eq!(result.url, None);
+        assert_eq!(result.selector, Some("h1".into()));
+    }
+
+    #[test]
+    fn test_resolve_unknown_string_as_url() {
+        // Unknown strings (not tags, not CSS selectors) are treated as URLs
+        let result = resolve_url_and_selector(
+            Some("foobar".into()),
+            None,
+            None,
+            true,
+        );
+        assert_eq!(result.url, Some("foobar".into()));
         assert_eq!(result.selector, None);
     }
 
