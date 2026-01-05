@@ -17,6 +17,7 @@ mod tabs;
 mod text;
 mod wait;
 
+use crate::args;
 use crate::cli::{
     AuthAction, Cli, Commands, DaemonAction, ProtectAction, SessionAction, TabsAction,
 };
@@ -123,24 +124,26 @@ async fn dispatch_command_inner(
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
 ) -> Result<()> {
+    // Whether we have a CDP endpoint (enables --no-context mode to operate on current page)
+    let has_cdp = ctx.cdp_endpoint().is_some();
+
     match command {
         Commands::Navigate { url, url_flag } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
-            let outcome = navigate::execute(&final_url, ctx, broker, format).await;
-            if outcome.is_ok() {
-                ctx_state.record(ContextUpdate {
-                    url: Some(&final_url),
-                    ..Default::default()
-                });
-            }
-            outcome
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
+            let actual_url = navigate::execute(&final_url, ctx, broker, format).await?;
+            // Record the actual browser URL (may differ from input due to redirects)
+            ctx_state.record(ContextUpdate {
+                url: Some(&actual_url),
+                ..Default::default()
+            });
+            Ok(())
         }
         Commands::Console {
             url,
             timeout_ms,
             url_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let outcome = console::execute(&final_url, timeout_ms, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -162,7 +165,7 @@ async fn dispatch_command_inner(
                     "expression is required (provide positionally or via --expr)".into(),
                 )
             })?;
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let outcome = eval::execute(&final_url, &final_expr, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -178,9 +181,14 @@ async fn dispatch_command_inner(
             url_flag,
             selector_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
-            let final_selector =
-                ctx_state.resolve_selector(selector_flag.or(selector), Some("html"))?;
+            let resolved = args::resolve_url_and_selector(
+                url.clone(),
+                url_flag,
+                selector_flag.or(selector),
+                ctx_state.has_context_url(),
+            );
+            let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
+            let final_selector = ctx_state.resolve_selector(resolved.selector, Some("html"))?;
             let outcome = html::execute(&final_url, &final_selector, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -197,7 +205,7 @@ async fn dispatch_command_inner(
             url_flag,
             selector_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let outcome =
                 coords::execute_single(&final_url, &final_selector, ctx, broker, format).await;
@@ -216,7 +224,7 @@ async fn dispatch_command_inner(
             url_flag,
             selector_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let outcome =
                 coords::execute_all(&final_url, &final_selector, ctx, broker, format).await;
@@ -235,7 +243,7 @@ async fn dispatch_command_inner(
             full_page,
             url_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let resolved_output = ctx_state.resolve_output(ctx, output);
             let outcome =
                 screenshot::execute(&final_url, &resolved_output, full_page, ctx, broker, format)
@@ -254,26 +262,33 @@ async fn dispatch_command_inner(
             selector,
             url_flag,
             selector_flag,
+            wait_ms,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
-            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
-            let outcome = click::execute(
+            let resolved = args::resolve_url_and_selector(
+                url.clone(),
+                url_flag,
+                selector_flag.or(selector),
+                ctx_state.has_context_url(),
+            );
+            let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
+            let final_selector = ctx_state.resolve_selector(resolved.selector, None)?;
+            let after_url = click::execute(
                 &final_url,
                 &final_selector,
+                wait_ms,
                 ctx,
                 broker,
                 format,
                 artifacts_dir,
             )
-            .await;
-            if outcome.is_ok() {
-                ctx_state.record(ContextUpdate {
-                    url: Some(&final_url),
-                    selector: Some(&final_selector),
-                    ..Default::default()
-                });
-            }
-            outcome
+            .await?;
+            // Record the actual browser URL after click (may differ if click caused navigation)
+            ctx_state.record(ContextUpdate {
+                url: Some(&after_url),
+                selector: Some(&final_selector),
+                ..Default::default()
+            });
+            Ok(())
         }
         Commands::Text {
             url,
@@ -281,8 +296,14 @@ async fn dispatch_command_inner(
             url_flag,
             selector_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
-            let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
+            let resolved = args::resolve_url_and_selector(
+                url.clone(),
+                url_flag,
+                selector_flag.or(selector),
+                ctx_state.has_context_url(),
+            );
+            let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
+            let final_selector = ctx_state.resolve_selector(resolved.selector, None)?;
             let outcome = text::execute(
                 &final_url,
                 &final_selector,
@@ -307,7 +328,7 @@ async fn dispatch_command_inner(
             output_format,
             metadata,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let outcome =
                 read::execute(&final_url, output_format, metadata, ctx, broker, format).await;
             if outcome.is_ok() {
@@ -324,7 +345,7 @@ async fn dispatch_command_inner(
             timeout_ms,
             url_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let outcome = elements::execute(
                 &final_url,
                 wait,
@@ -348,7 +369,7 @@ async fn dispatch_command_inner(
             condition,
             url_flag,
         } => {
-            let final_url = ctx_state.resolve_url(url_flag.or(url))?;
+            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let outcome = wait::execute(&final_url, &condition, ctx, broker, format).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
@@ -364,7 +385,7 @@ async fn dispatch_command_inner(
                 output,
                 timeout,
             } => {
-                let final_url = ctx_state.resolve_url(url)?;
+                let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
                 let resolved_output = resolve_auth_output(ctx, &output);
                 let outcome = auth::login(&final_url, &resolved_output, timeout, ctx, broker).await;
                 if outcome.is_ok() {
@@ -377,7 +398,7 @@ async fn dispatch_command_inner(
                 outcome
             }
             AuthAction::Cookies { url, format } => {
-                let final_url = ctx_state.resolve_url(url)?;
+                let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
                 let outcome = auth::cookies(&final_url, &format, ctx, broker).await;
                 if outcome.is_ok() {
                     ctx_state.record(ContextUpdate {

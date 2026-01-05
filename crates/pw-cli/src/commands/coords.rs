@@ -34,7 +34,7 @@ pub async fn execute_single(
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     let result_json = session
         .page()
@@ -90,7 +90,7 @@ pub async fn execute_all(
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     let results_json = session
         .page()

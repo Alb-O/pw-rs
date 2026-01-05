@@ -30,7 +30,7 @@ pub async fn execute(
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     if let Ok(ms) = condition.parse::<u64>() {
         tokio::time::sleep(Duration::from_millis(ms)).await;

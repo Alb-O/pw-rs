@@ -34,7 +34,7 @@ pub async fn login(
                 .with_auth_file(None),
         )
         .await?;
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     println!("Browser opened at: {}", url);
     println!();
@@ -99,7 +99,7 @@ pub async fn cookies(
         .session(SessionRequest::from_context(WaitUntil::Load, ctx))
         .await?;
 
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     let cookies = session.context().cookies(Some(vec![url])).await?;
 

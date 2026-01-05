@@ -208,6 +208,9 @@ pub enum Commands {
         /// CSS selector (named alternative)
         #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
         selector_flag: Option<String>,
+        /// Time to wait for navigation after click (milliseconds)
+        #[arg(long, default_value = "500")]
+        wait_ms: u64,
     },
 
     /// Get text content of element
@@ -619,6 +622,7 @@ mod tests {
                 selector,
                 url_flag,
                 selector_flag,
+                ..
             } => {
                 // Positional args should be None
                 assert!(url.is_none());

@@ -1,3 +1,4 @@
+pub mod args;
 pub mod artifact_collector;
 pub mod browser;
 pub mod cli;

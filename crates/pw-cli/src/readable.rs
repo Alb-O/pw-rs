@@ -367,9 +367,8 @@ fn try_extract_by_selector(html: &str, selector: &str) -> Option<String> {
     // Handle simple selectors: tag, .class, #id, [role="..."]
     // Note: regex_lite doesn't support backreferences, so we handle tags individually
     
-    if selector.starts_with('#') {
+    if let Some(id) = selector.strip_prefix('#') {
         // ID selector - try common tags
-        let id = &selector[1..];
         for tag in ["div", "article", "section", "main", "aside"] {
             let pattern = format!(
                 r#"(?is)<{tag}[^>]*id=["']{id}["'][^>]*>(.*?)</{tag}>"#,
@@ -384,10 +383,9 @@ fn try_extract_by_selector(html: &str, selector: &str) -> Option<String> {
                 }
             }
         }
-        return None;
-    } else if selector.starts_with('.') {
+        None
+    } else if let Some(class) = selector.strip_prefix('.') {
         // Class selector - try common tags
-        let class = &selector[1..];
         for tag in ["div", "article", "section", "main", "aside"] {
             let pattern = format!(
                 r#"(?is)<{tag}[^>]*class=["'][^"']*\b{class}\b[^"']*["'][^>]*>(.*?)</{tag}>"#,
@@ -402,7 +400,7 @@ fn try_extract_by_selector(html: &str, selector: &str) -> Option<String> {
                 }
             }
         }
-        return None;
+        None
     } else if selector.starts_with('[') && selector.contains("role=") {
         // Role attribute selector
         if let Some(role) = selector.strip_prefix("[role=\"").and_then(|s| s.strip_suffix("\"]")) {
@@ -421,7 +419,7 @@ fn try_extract_by_selector(html: &str, selector: &str) -> Option<String> {
                 }
             }
         }
-        return None;
+        None
     } else if selector.chars().all(|c| c.is_alphanumeric()) {
         // Tag selector
         let pattern = format!(r#"(?is)<{0}[^>]*>(.*?)</{0}>"#, selector);
@@ -432,9 +430,9 @@ fn try_extract_by_selector(html: &str, selector: &str) -> Option<String> {
                 }
             }
         }
-        return None;
+        None
     } else {
-        return None;
+        None
     }
 }
 

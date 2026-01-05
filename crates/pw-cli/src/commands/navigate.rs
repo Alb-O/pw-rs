@@ -1,4 +1,5 @@
 use crate::context::CommandContext;
+use crate::context_store::is_current_page_sentinel;
 use crate::error::Result;
 use crate::output::{
     CommandInputs, DiagnosticLevel, NavigateData, OutputFormat, ResultBuilder, print_result,
@@ -7,22 +8,34 @@ use crate::session_broker::{SessionBroker, SessionRequest};
 use pw::WaitUntil;
 use tracing::{info, warn};
 
+/// Execute navigation and return the actual browser URL after navigation.
+///
+/// The returned URL may differ from the input due to redirects.
 pub async fn execute(
     url: &str,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
-) -> Result<()> {
+) -> Result<String> {
     info!(target = "pw", %url, browser = %ctx.browser, "navigate");
 
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
 
-    session.goto(url).await?;
+    // Handle the "current page" sentinel - just stay on current page
+    if !is_current_page_sentinel(url) {
+        session.goto(url).await?;
+    }
 
     let title = session.page().title().await.unwrap_or_default();
-    let final_url = session.page().url();
+
+    // Use JavaScript evaluation for actual URL (more reliable than page.url() for redirects)
+    let actual_url = session
+        .page()
+        .evaluate_value("window.location.href")
+        .await
+        .unwrap_or_else(|_| session.page().url());
 
     let errors_json = session
         .page()
@@ -40,13 +53,21 @@ pub async fn execute(
         );
     }
 
+    // Include actual_url only if it differs from the input URL
+    let actual_url_field = if actual_url != url {
+        Some(actual_url.clone())
+    } else {
+        None
+    };
+
     let mut builder = ResultBuilder::new("navigate")
         .inputs(CommandInputs {
             url: Some(url.to_string()),
             ..Default::default()
         })
         .data(NavigateData {
-            url: final_url,
+            url: url.to_string(),
+            actual_url: actual_url_field,
             title,
             errors: errors.clone(),
             warnings: vec![],
@@ -60,5 +81,6 @@ pub async fn execute(
 
     print_result(&result, format);
 
-    session.close().await
+    session.close().await?;
+    Ok(actual_url)
 }

@@ -11,14 +11,18 @@ use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
 use pw::WaitUntil;
 use tracing::info;
 
+/// Execute click and return the actual browser URL after the click.
+///
+/// The returned URL is the page's location after the click (may differ if click triggered navigation).
 pub async fn execute(
     url: &str,
     selector: &str,
+    wait_ms: u64,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
-) -> Result<()> {
+) -> Result<String> {
     let _start = Instant::now();
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "click element");
 
@@ -26,8 +30,11 @@ pub async fn execute(
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
 
-    match execute_inner(&session, url, selector, format).await {
-        Ok(()) => session.close().await,
+    match execute_inner(&session, url, selector, wait_ms, format).await {
+        Ok(after_url) => {
+            session.close().await?;
+            Ok(after_url)
+        }
         Err(e) => {
             // Collect artifacts on failure if artifacts_dir is set
             let artifacts = session
@@ -54,20 +61,33 @@ async fn execute_inner(
     session: &SessionHandle,
     url: &str,
     selector: &str,
+    wait_ms: u64,
     format: OutputFormat,
-) -> Result<()> {
-    session.goto(url).await?;
+) -> Result<String> {
+    // Skip navigation if already on the target URL or using current page sentinel
+    session.goto_unless_current(url).await?;
 
-    let before_url = session.page().url();
+    // Use JavaScript evaluation for accurate URL detection (more reliable than page.url())
+    let before_url = session
+        .page()
+        .evaluate_value("window.location.href")
+        .await
+        .unwrap_or_else(|_| session.page().url());
 
     let locator = session.page().locator(selector).await;
     locator.click(None).await?;
 
-    // Wait briefly for potential navigation
-    // TODO: Use proper wait_for_navigation when available in pw-core
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for potential navigation after click (configurable via --wait-ms)
+    if wait_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+    }
 
-    let after_url = session.page().url();
+    // Use JavaScript evaluation for accurate URL detection after click
+    let after_url = session
+        .page()
+        .evaluate_value("window.location.href")
+        .await
+        .unwrap_or_else(|_| session.page().url());
     let navigated = before_url != after_url;
 
     let result = ResultBuilder::new("click")
@@ -78,12 +98,12 @@ async fn execute_inner(
         })
         .data(ClickData {
             before_url,
-            after_url,
+            after_url: after_url.clone(),
             navigated,
             selector: selector.to_string(),
         })
         .build();
 
     print_result(&result, format);
-    Ok(())
+    Ok(after_url)
 }

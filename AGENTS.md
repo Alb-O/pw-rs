@@ -199,3 +199,7 @@ The daemon spawns browsers on ports 9222-10221. Currently only Chromium is suppo
 1. **Parse JSON output**: All commands return structured JSON for reliable parsing
 1. **Handle errors gracefully**: Check `ok` field before accessing `data`
 1. **Stop daemon when done**: Run `pw daemon stop` to clean up browser processes
+
+# DEV NOTES
+
+- Use `nix develop -c ...` to run cargo and other commands that require nix packages.

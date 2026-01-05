@@ -221,7 +221,7 @@ async fn execute_inner(
     timeout_ms: u64,
     format: OutputFormat,
 ) -> Result<()> {
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
 

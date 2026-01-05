@@ -10,6 +10,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONTEXT_SCHEMA_VERSION: u32 = 1;
 
+/// Sentinel URL value indicating the command should operate on the current browser page
+/// without navigating. This is returned by `resolve_url()` when `--no-context` is used
+/// with a CDP connection and no explicit URL is provided.
+pub const CURRENT_PAGE_SENTINEL: &str = "__CURRENT_PAGE__";
+
+/// Returns true if the URL is the "current page" sentinel.
+///
+/// Commands should check this before navigating to avoid unnecessary page loads.
+pub fn is_current_page_sentinel(url: &str) -> bool {
+    url == CURRENT_PAGE_SENTINEL
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ContextScope {
@@ -231,19 +243,70 @@ impl ContextState {
         self.refresh
     }
 
+    /// Returns true if context has a URL available (last_url or base_url).
+    /// Used by smart argument detection to decide if a positional arg is a selector.
+    pub fn has_context_url(&self) -> bool {
+        if self.no_context {
+            return false;
+        }
+
+        // Check base_url override
+        if self.base_url_override.is_some() {
+            return true;
+        }
+
+        // Check selected context
+        if let Some(selected) = &self.selected {
+            if !self.refresh && selected.data.last_url.is_some() {
+                return true;
+            }
+            if selected.data.base_url.is_some() {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Resolve a URL from the provided value, context, or return a sentinel for CDP mode.
+    ///
+    /// When `has_cdp_endpoint` is true and no URL is available, returns
+    /// [`CURRENT_PAGE_SENTINEL`] to indicate the command should operate on the
+    /// current browser page without navigating.
     pub fn resolve_url(&self, provided: Option<String>) -> Result<String> {
+        self.resolve_url_with_cdp(provided, false)
+    }
+
+    /// Resolve URL with knowledge of whether a CDP endpoint is active.
+    ///
+    /// When `--no-context` is used with a CDP connection and no URL is provided,
+    /// this returns [`CURRENT_PAGE_SENTINEL`] instead of erroring, allowing
+    /// commands to operate on the current browser page.
+    pub fn resolve_url_with_cdp(
+        &self,
+        provided: Option<String>,
+        has_cdp_endpoint: bool,
+    ) -> Result<String> {
         if let Some(url) = provided {
             return Ok(apply_base_url(url, self.base_url()));
         }
 
         if self.no_context {
+            // When connected via CDP with no context, allow operating on current page
+            if has_cdp_endpoint {
+                return Ok(CURRENT_PAGE_SENTINEL.to_string());
+            }
             return Err(PwError::Context(
-                "URL is required when context usage is disabled".into(),
+                "URL is required when context usage is disabled. \
+                 Use `pw --url <url>` to specify a URL, or remove `--no-context` to use cached context."
+                    .into(),
             ));
         }
 
         let Some(selected) = &self.selected else {
-            return Err(PwError::Context("No active context available".into()));
+            return Err(PwError::Context(
+                "No active context available. Use `pw navigate <url>` first to set up context.".into(),
+            ));
         };
 
         let source_url = if self.refresh {
@@ -261,7 +324,9 @@ impl ContextState {
         }
 
         Err(PwError::Context(
-            "No URL provided and context has no last_url; pass a URL or set base_url".into(),
+            "No URL provided and no URL in context. \
+             Use `pw navigate <url>` first to set context, or provide a URL explicitly."
+                .into(),
         ))
     }
 

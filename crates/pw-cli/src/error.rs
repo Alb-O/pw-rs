@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::args::looks_like_selector;
 use crate::output::{CommandError, ErrorCode};
 
 pub type Result<T> = std::result::Result<T, PwError>;
@@ -74,11 +75,21 @@ impl PwError {
             }
             PwError::Init(msg) => (ErrorCode::BrowserLaunchFailed, msg.clone(), None),
             PwError::BrowserLaunch(msg) => (ErrorCode::BrowserLaunchFailed, msg.clone(), None),
-            PwError::Navigation { url, source } => (
-                ErrorCode::NavigationFailed,
-                format!("Navigation to {url} failed: {source}"),
-                Some(serde_json::json!({ "url": url })),
-            ),
+            PwError::Navigation { url, source } => {
+                let mut msg = format!("Navigation to {url} failed: {source}");
+                // If the URL looks like a CSS selector, add a helpful hint
+                if looks_like_selector(url) {
+                    msg.push_str(&format!(
+                        ". Did you mean to use `-s {}` for a CSS selector?",
+                        url
+                    ));
+                }
+                (
+                    ErrorCode::NavigationFailed,
+                    msg,
+                    Some(serde_json::json!({ "url": url })),
+                )
+            }
             PwError::ElementNotFound { selector } => (
                 ErrorCode::SelectorNotFound,
                 format!("No elements matched selector: {selector}"),

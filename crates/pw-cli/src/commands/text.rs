@@ -129,7 +129,7 @@ async fn execute_inner(
     selector: &str,
     format: OutputFormat,
 ) -> Result<()> {
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     let locator = session.page().locator(selector).await;
     let count = locator.count().await?;

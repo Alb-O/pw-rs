@@ -589,7 +589,11 @@ pub fn print_failure_with_artifacts(
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NavigateData {
+    /// The input URL that was requested
     pub url: String,
+    /// The actual browser URL after navigation (may differ due to redirects)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_url: Option<String>,
     pub title: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
@@ -687,6 +691,7 @@ mod tests {
             })
             .data(NavigateData {
                 url: "https://example.com".into(),
+                actual_url: None,
                 title: "Example".into(),
                 errors: vec![],
                 warnings: vec![],
@@ -775,6 +780,7 @@ mod tests {
         let result: CommandResult<NavigateData> = ResultBuilder::new("navigate")
             .data(NavigateData {
                 url: "https://example.com".into(),
+                actual_url: None,
                 title: "Example".into(),
                 errors: vec![],
                 warnings: vec![],

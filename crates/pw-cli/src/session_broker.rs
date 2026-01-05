@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
 use crate::browser::BrowserSession;
 use crate::context::CommandContext;
+use crate::context_store::is_current_page_sentinel;
 use crate::daemon;
 use crate::error::{PwError, Result};
 use crate::types::BrowserKind;
@@ -339,6 +340,43 @@ impl SessionHandle {
         self.session.goto(url).await
     }
 
+    /// Navigate to URL only if not already on that page.
+    ///
+    /// Returns `true` if navigation was performed, `false` if already on the page.
+    /// This avoids unnecessary page reloads that reset page state.
+    pub async fn goto_if_needed(&self, url: &str) -> Result<bool> {
+        // Get current URL via JavaScript (more reliable than page.url())
+        let current_url = self
+            .page()
+            .evaluate_value("window.location.href")
+            .await
+            .unwrap_or_else(|_| self.page().url());
+
+        // Normalize URLs for comparison (trim quotes from JS result)
+        let current = current_url.trim_matches('"');
+
+        if urls_match(current, url) {
+            Ok(false)
+        } else {
+            self.session.goto(url).await?;
+            Ok(true)
+        }
+    }
+
+    /// Navigate to URL unless it's the "current page" sentinel.
+    ///
+    /// When the URL is `__CURRENT_PAGE__` (the sentinel returned by `resolve_url_with_cdp`
+    /// when `--no-context` is used with a CDP connection), this method does nothing,
+    /// allowing commands to operate on whatever page is currently active in the browser.
+    ///
+    /// Returns `true` if navigation was performed, `false` if skipped (sentinel or same URL).
+    pub async fn goto_unless_current(&self, url: &str) -> Result<bool> {
+        if is_current_page_sentinel(url) {
+            return Ok(false);
+        }
+        self.goto_if_needed(url).await
+    }
+
     pub fn page(&self) -> &pw::protocol::Page {
         self.session.page()
     }
@@ -386,6 +424,22 @@ impl SessionHandle {
 fn load_storage_state(path: &Path) -> Result<StorageState> {
     StorageState::from_file(path)
         .map_err(|e| PwError::BrowserLaunch(format!("Failed to load auth file: {}", e)))
+}
+
+/// Check if two URLs match for navigation purposes.
+///
+/// Handles common variations like trailing slashes.
+fn urls_match(current: &str, target: &str) -> bool {
+    // Exact match
+    if current == target {
+        return true;
+    }
+
+    // Normalize trailing slashes for comparison
+    let current_normalized = current.trim_end_matches('/');
+    let target_normalized = target.trim_end_matches('/');
+
+    current_normalized == target_normalized
 }
 
 #[cfg(test)]
@@ -478,5 +532,21 @@ mod tests {
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));
+    }
+
+    #[test]
+    fn test_urls_match() {
+        // Exact match
+        assert!(urls_match("https://example.com", "https://example.com"));
+
+        // Trailing slash normalization
+        assert!(urls_match("https://example.com/", "https://example.com"));
+        assert!(urls_match("https://example.com", "https://example.com/"));
+        assert!(urls_match("https://example.com/path/", "https://example.com/path"));
+
+        // Different URLs should not match
+        assert!(!urls_match("https://example.com", "https://other.com"));
+        assert!(!urls_match("https://example.com/a", "https://example.com/b"));
+        assert!(!urls_match("https://example.com", "http://example.com"));
     }
 }

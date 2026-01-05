@@ -89,7 +89,7 @@ pub async fn execute(
     let session = broker
         .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
         .await?;
-    session.goto(url).await?;
+    session.goto_unless_current(url).await?;
 
     // Get the full page HTML
     let locator = session.page().locator("html").await;
