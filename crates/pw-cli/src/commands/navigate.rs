@@ -16,13 +16,14 @@ pub async fn execute(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
+    preferred_url: Option<&str>,
 ) -> Result<String> {
     info!(target = "pw", %url, browser = %ctx.browser, "navigate");
 
     // Use WaitUntil::Load instead of NetworkIdle - SPAs with analytics/websockets
     // often never reach "network idle", causing false timeout errors.
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::Load, ctx))
+        .session(SessionRequest::from_context(WaitUntil::Load, ctx).with_preferred_url(preferred_url))
         .await?;
 
     // Skip navigation if already on the target URL (avoids page refresh)

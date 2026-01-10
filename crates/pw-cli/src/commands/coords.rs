@@ -29,10 +29,11 @@ pub async fn execute_single(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "coords single");
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
         .await?;
     session.goto_unless_current(url).await?;
 
@@ -85,10 +86,11 @@ pub async fn execute_all(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "coords all");
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
         .await?;
     session.goto_unless_current(url).await?;
 

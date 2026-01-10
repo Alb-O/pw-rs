@@ -15,13 +15,14 @@ pub async fn execute(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     let _start = Instant::now();
     info!(target = "pw", %url, browser = %ctx.browser, "eval js");
     debug!(target = "pw", %expression, "expression");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
         .await?;
     session.goto_unless_current(url).await?;
 

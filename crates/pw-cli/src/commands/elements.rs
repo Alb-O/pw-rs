@@ -185,11 +185,12 @@ pub async fn execute(
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     info!(target = "pw", %url, %wait, %timeout_ms, browser = %ctx.browser, "list elements");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
         .await?;
 
     match execute_inner(&session, url, wait, timeout_ms, format).await {

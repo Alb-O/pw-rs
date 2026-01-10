@@ -13,6 +13,7 @@ pub async fn login(
     timeout_secs: u64,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     // Resolve output path using project context (into auth/ directory)
     let output =
@@ -31,7 +32,8 @@ pub async fn login(
         .session(
             SessionRequest::from_context(WaitUntil::Load, ctx)
                 .with_headless(false)
-                .with_auth_file(None),
+                .with_auth_file(None)
+                .with_preferred_url(preferred_url),
         )
         .await?;
     session.goto_unless_current(url).await?;
@@ -92,11 +94,12 @@ pub async fn cookies(
     format: &str,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     info!(target = "pw", %url, browser = %ctx.browser, "fetching cookies");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::Load, ctx))
+        .session(SessionRequest::from_context(WaitUntil::Load, ctx).with_preferred_url(preferred_url))
         .await?;
 
     session.goto_unless_current(url).await?;

@@ -2,6 +2,7 @@ use pw::{BrowserContextOptions, GotoOptions, Playwright, StorageState, WaitUntil
 use std::path::Path;
 use tracing::debug;
 
+use crate::context_store::is_current_page_sentinel;
 use crate::error::{PwError, Result};
 use crate::types::BrowserKind;
 
@@ -28,6 +29,7 @@ impl BrowserSession {
             None,
             false,
             &[],
+            None,
         )
         .await
     }
@@ -62,6 +64,7 @@ impl BrowserSession {
                     cdp_endpoint,
                     false,
                     &[],
+                    None,
                 )
                 .await
             }
@@ -77,6 +80,7 @@ impl BrowserSession {
         cdp_endpoint: Option<&str>,
         launch_server: bool,
         protected_urls: &[String],
+        preferred_url: Option<&str>,
     ) -> Result<Self> {
         debug!(
             target = "pw",
@@ -212,29 +216,46 @@ impl BrowserSession {
         // Reuse existing page if connecting to existing browser, otherwise create new
         let page = if reuse_existing_page {
             let existing_pages = context.pages();
-            // Find first non-protected page
-            let mut selected_page = None;
+            // Use page.url() (cached) instead of evaluate_value to avoid JS execution on each page
+            // First, try to find a page matching preferred_url
+            let mut preferred_page = None;
+            let mut fallback_page = None;
+
             for page in existing_pages {
-                let url = page
-                    .evaluate_value("window.location.href")
-                    .await
-                    .unwrap_or_else(|_| page.url());
-                let url = url.trim_matches('"');
+                let url = page.url();
                 let is_protected = protected_urls
                     .iter()
                     .any(|pattern| url.to_lowercase().contains(&pattern.to_lowercase()));
-                if !is_protected {
-                    debug!(target = "pw", url = %url, "reusing existing page");
-                    selected_page = Some(page);
-                    break;
-                } else {
+
+                if is_protected {
                     debug!(target = "pw", url = %url, "skipping protected page");
+                    continue;
+                }
+
+                // Check if this page matches the preferred URL (skip if sentinel)
+                if let Some(pref) = preferred_url {
+                    if !is_current_page_sentinel(pref)
+                        && (url.starts_with(pref) || pref.starts_with(&url) || urls_match_loosely(&url, pref))
+                    {
+                        debug!(target = "pw", url = %url, preferred = %pref, "found preferred page");
+                        preferred_page = Some(page);
+                        break;
+                    }
+                }
+
+                // Keep first non-protected page as fallback
+                if fallback_page.is_none() {
+                    fallback_page = Some(page);
                 }
             }
-            match selected_page {
-                Some(page) => page,
+
+            match preferred_page.or(fallback_page) {
+                Some(page) => {
+                    debug!(target = "pw", url = %page.url(), "reusing existing page");
+                    page
+                }
                 None => {
-                    debug!(target = "pw", "no non-protected pages found, creating new");
+                    debug!(target = "pw", "no suitable pages found, creating new");
                     context.new_page().await?
                 }
             }
@@ -278,6 +299,7 @@ impl BrowserSession {
             cdp_endpoint,
             false,
             &[],
+            None,
         )
         .await
     }
@@ -296,6 +318,7 @@ impl BrowserSession {
             None,
             true,
             &[],
+            None,
         )
         .await
     }
@@ -431,5 +454,19 @@ impl BrowserSession {
         }
 
         Ok(())
+    }
+}
+
+/// Check if two URLs match loosely (same origin/host).
+fn urls_match_loosely(a: &str, b: &str) -> bool {
+    // Extract host from URLs
+    fn get_host(url: &str) -> Option<&str> {
+        let url = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+        url.split('/').next()
+    }
+
+    match (get_host(a), get_host(b)) {
+        (Some(ha), Some(hb)) => ha == hb,
+        _ => false,
     }
 }

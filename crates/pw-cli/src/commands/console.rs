@@ -25,10 +25,11 @@ pub async fn execute(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     info!(target = "pw", %url, timeout_ms, browser = %ctx.browser, "capture console");
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx))
+        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
         .await?;
 
     if let Err(err) = session

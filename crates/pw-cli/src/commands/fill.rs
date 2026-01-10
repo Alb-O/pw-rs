@@ -12,11 +12,12 @@ pub async fn execute(
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
+    preferred_url: Option<&str>,
 ) -> Result<()> {
     info!(target = "pw", %url, %selector, "fill");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::Load, ctx))
+        .session(SessionRequest::from_context(WaitUntil::Load, ctx).with_preferred_url(preferred_url))
         .await?;
 
     session.goto_unless_current(url).await?;

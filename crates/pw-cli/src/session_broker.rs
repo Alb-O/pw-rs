@@ -97,6 +97,9 @@ pub struct SessionRequest<'a> {
     pub keep_browser_running: bool,
     /// URL patterns to exclude when selecting which existing page to reuse.
     pub protected_urls: &'a [String],
+    /// Preferred URL to match when selecting which page to reuse.
+    /// When set, pages matching this URL are preferred over other non-protected pages.
+    pub preferred_url: Option<&'a str>,
 }
 
 impl<'a> SessionRequest<'a> {
@@ -111,6 +114,7 @@ impl<'a> SessionRequest<'a> {
             remote_debugging_port: None,
             keep_browser_running: false,
             protected_urls: &[],
+            preferred_url: None,
         }
     }
 
@@ -146,6 +150,11 @@ impl<'a> SessionRequest<'a> {
 
     pub fn with_keep_browser_running(mut self, keep: bool) -> Self {
         self.keep_browser_running = keep;
+        self
+    }
+
+    pub fn with_preferred_url(mut self, url: Option<&'a str>) -> Self {
+        self.preferred_url = url;
         self
     }
 }
@@ -196,6 +205,7 @@ impl<'a> SessionBroker<'a> {
                             Some(endpoint),
                             false,
                             request.protected_urls,
+                            request.preferred_url,
                         )
                         .await?;
                         return Ok(SessionHandle { session });
@@ -251,6 +261,7 @@ impl<'a> SessionBroker<'a> {
                 Some(endpoint),
                 false,
                 request.protected_urls,
+                request.preferred_url,
             )
             .await?;
             // Daemon manages the browser lifecycle - don't close it on session close
@@ -288,6 +299,7 @@ impl<'a> SessionBroker<'a> {
                 request.cdp_endpoint,
                 false,
                 request.protected_urls,
+                request.preferred_url,
             )
             .await?
         };

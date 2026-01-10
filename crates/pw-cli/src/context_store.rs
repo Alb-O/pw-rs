@@ -382,6 +382,16 @@ impl ContextState {
             .and_then(|s| s.data.cdp_endpoint.as_deref())
     }
 
+    /// Get the last URL from the context (for page selection preference).
+    pub fn last_url(&self) -> Option<&str> {
+        if self.no_context {
+            return None;
+        }
+        self.selected
+            .as_ref()
+            .and_then(|s| s.data.last_url.as_deref())
+    }
+
     pub fn set_cdp_endpoint(&mut self, endpoint: Option<String>) {
         if self.no_save || self.no_context {
             return;
