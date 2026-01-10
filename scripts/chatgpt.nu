@@ -11,6 +11,28 @@ use pw.nu
 const BASE_URL = "https://chatgpt.com"
 const DEFAULT_MODEL = "thinking"  # Default to GPT-5.2 Thinking
 
+# Ensure we're on THE ChatGPT tab (close extras, switch to remaining one)
+def ensure-tab []: nothing -> nothing {
+    # List all tabs
+    let tabs = (pw tabs).data.tabs
+    let chatgpt_tabs = ($tabs | where { $in.url | str contains "chatgpt.com" })
+
+    if ($chatgpt_tabs | length) == 0 {
+        return
+    }
+
+    # If multiple ChatGPT tabs, close all but the first one
+    if ($chatgpt_tabs | length) > 1 {
+        # Close extras (keep the first one)
+        for tab in ($chatgpt_tabs | skip 1) {
+            pw tabs close ($tab.index | into string) | ignore
+        }
+    }
+
+    # Switch to the ChatGPT tab
+    pw tabs switch "chatgpt.com" | ignore
+}
+
 # Get current model from selector aria-label
 def get-current-model []: nothing -> string {
     let js = "(() => {
@@ -27,6 +49,7 @@ def get-current-model []: nothing -> string {
 export def "chatgpt set-model" [
     mode: string  # "auto", "instant", or "thinking"
 ]: nothing -> record {
+    ensure-tab
     let mode_lower = ($mode | str downcase)
     let search_text = match $mode_lower {
         "auto" => "Decides how long"
@@ -77,27 +100,45 @@ def has-thinking-pill []: nothing -> bool {
 
 # Refresh page (use when ChatGPT UI gets stuck)
 export def "chatgpt refresh" []: nothing -> record {
+    ensure-tab
     pw eval "location.reload()"
     sleep 3sec
     { refreshed: true }
 }
 
+# Start a new temporary chat
+export def "chatgpt new" [
+    --model (-m): string  # Model to set (auto, instant, thinking). Defaults to thinking.
+]: nothing -> record {
+    ensure-tab
+    # Navigate to base URL first, then to temporary chat to force fresh state
+    pw nav $BASE_URL | ignore
+    sleep 500ms
+    pw nav $"($BASE_URL)/?temporary-chat=true" | ignore
+    pw wait-for "#prompt-textarea"
+    sleep 500ms
+    let mode = if ($model | is-empty) { $DEFAULT_MODEL } else { $model }
+    chatgpt set-model $mode
+    { new_chat: true, model: (get-current-model) }
+}
+
 # Insert text into composer (bypasses attachment conversion for large text)
 # Use execCommand which handles newlines and doesn't trigger file attachment
-def insert-text [text: string]: nothing -> record {
+def insert-text [text: string, --clear (-c)]: nothing -> record {
     # Write text to temp file to avoid shell escaping issues
     let tmp = (mktemp)
     $text | save -f $tmp
 
     # Read and insert via JS
     let js_text = (open $tmp | to json)
+    let do_clear = if $clear { "true" } else { "false" }
     rm $tmp
 
     let js = "(function() {
         const el = document.querySelector('#prompt-textarea');
         if (!el) return { error: 'textarea not found' };
         el.focus();
-        el.innerHTML = '';
+        if (" + $do_clear + ") el.innerHTML = '';
         document.execCommand('insertText', false, " + $js_text + ");
         el.dispatchEvent(new InputEvent('input', { bubbles: true }));
         return { inserted: el.textContent.length };
@@ -109,9 +150,11 @@ def insert-text [text: string]: nothing -> record {
 # Paste text from stdin into ChatGPT composer (inline, no attachment)
 export def "chatgpt paste" [
     --send (-s)  # Also send after pasting
+    --clear (-c) # Clear existing content first
 ]: string -> record {
+    ensure-tab
     let text = $in
-    let result = (insert-text $text)
+    let result = if $clear { insert-text $text --clear } else { insert-text $text }
 
     if ($result | get -o error | is-not-empty) {
         error make { msg: ($result.error) }
@@ -129,8 +172,10 @@ export def "chatgpt paste" [
 # Attach text as a document file (triggers ChatGPT's file attachment UI)
 export def "chatgpt attach" [
     --name (-n): string = "document.txt"  # Filename for attachment
+    --prompt (-p): string  # Optional prompt to add after attachment
     --send (-s)  # Also send after attaching
 ]: string -> record {
+    ensure-tab
     let text = $in
 
     # Write to temp file for JS to read
@@ -173,7 +218,25 @@ export def "chatgpt attach" [
     # Wait for attachment to process
     sleep 500ms
 
+    # Add prompt if provided (without clearing - preserves attachment)
+    if ($prompt | is-not-empty) {
+        insert-text $prompt
+    }
+
     if $send {
+        # Poll for send button to be enabled (attachment upload may take time)
+        mut ready = false
+        for _ in 1..60 {
+            let disabled = (pw eval "document.querySelector('[data-testid=\"send-button\"]')?.disabled").data.result
+            if $disabled == false {
+                $ready = true
+                break
+            }
+            sleep 500ms
+        }
+        if not $ready {
+            error make { msg: "send button did not enable (attachment still uploading?)" }
+        }
         pw eval "document.querySelector('[data-testid=\"send-button\"]')?.click()"
         { attached: true, sent: true, filename: $name, size: ($text | str length) }
     } else {
@@ -187,6 +250,9 @@ export def "chatgpt send" [
     --model (-m): string  # Set model before sending (auto, instant, thinking)
     --new (-n)            # Start new temporary chat
 ]: nothing -> record {
+    if not $new {
+        ensure-tab
+    }
     if $new {
         pw nav $"($BASE_URL)/?temporary-chat=true"
         pw wait-for "#prompt-textarea"
@@ -202,7 +268,8 @@ export def "chatgpt send" [
     }
 
     # Use insert-text helper (handles newlines, escaping, large text)
-    let result = (insert-text $message)
+    # Clear existing content for fresh message
+    let result = (insert-text $message --clear)
     if ($result | get -o error | is-not-empty) {
         error make { msg: ($result.error) }
     }
@@ -250,6 +317,7 @@ def message-count []: nothing -> int {
 export def "chatgpt wait" [
     --timeout (-t): int = 120000  # Timeout in ms
 ]: nothing -> record {
+    ensure-tab
     let start = (date now)
     let initial_count = (message-count)
     let timeout_dur = ($timeout | into duration --unit ms)
@@ -286,6 +354,7 @@ export def "chatgpt wait" [
 
 # Get the last response from ChatGPT
 export def "chatgpt get-response" []: nothing -> string {
+    ensure-tab
     let js = "(() => {
         const messages = document.querySelectorAll(\"[data-message-author-role='assistant']\");
         if (messages.length === 0) return null;

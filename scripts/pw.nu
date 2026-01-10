@@ -51,6 +51,10 @@ export def connect [endpoint?: string, --clear (-c)]: nothing -> record {
 
 export def tabs []: nothing -> record { pw-run tabs list }
 export def "tabs switch" [target: string]: nothing -> record { pw-run tabs switch $target }
+export def "tabs close" [target: string]: nothing -> record { pw-run tabs close $target }
+export def "tabs new" [url?: string]: nothing -> record {
+    if ($url | is-empty) { pw-run tabs new } else { pw-run tabs new $url }
+}
 export def elements [--wait (-w)]: nothing -> record {
     if $wait { pw-run elements --wait } else { pw-run elements }
 }
