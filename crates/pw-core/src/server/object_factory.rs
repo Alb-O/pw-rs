@@ -15,7 +15,7 @@
 use crate::error::{Error, Result};
 use crate::protocol::{
     Browser, BrowserContext, BrowserType, Dialog, Frame, Page, Playwright, Request, ResponseObject,
-    Route, artifact::Artifact,
+    Route, Tracing, artifact::Artifact,
 };
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use serde_json::Value;
@@ -258,6 +258,20 @@ pub async fn create_object(
             };
 
             Arc::new(Dialog::new(parent_owner, type_name, guid, initializer)?)
+        }
+
+        "Tracing" => {
+            // Tracing has BrowserContext as parent
+            let parent_owner = match parent {
+                ParentOrConnection::Parent(p) => p,
+                ParentOrConnection::Connection(_) => {
+                    return Err(Error::ProtocolError(
+                        "Tracing must have BrowserContext as parent".to_string(),
+                    ));
+                }
+            };
+
+            Arc::new(Tracing::new(parent_owner, type_name, guid, initializer)?)
         }
 
         _ => {

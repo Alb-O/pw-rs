@@ -2,7 +2,7 @@
 //
 // These tests verify that we can create browser contexts and manage them.
 
-use pw::protocol::Playwright;
+use pw::protocol::{Playwright, TracingStartOptions, TracingStopOptions};
 
 #[tokio::test]
 async fn test_new_context() {
@@ -54,5 +54,55 @@ async fn test_multiple_contexts() {
     // Cleanup
     context1.close().await.expect("Failed to close context 1");
     context2.close().await.expect("Failed to close context 2");
+    browser.close().await.expect("Failed to close browser");
+}
+
+#[tokio::test]
+async fn test_tracing_api() {
+    let playwright = Playwright::launch()
+        .await
+        .expect("Failed to launch Playwright");
+
+    let browser = playwright
+        .chromium()
+        .launch()
+        .await
+        .expect("Failed to launch browser");
+
+    let context = browser
+        .new_context()
+        .await
+        .expect("Failed to create context");
+
+    // Get the tracing handle
+    let tracing = context.tracing().expect("Tracing should be available");
+    println!("✓ Got Tracing handle: {:?}", tracing);
+
+    // Start tracing
+    tracing
+        .start(TracingStartOptions {
+            screenshots: Some(true),
+            snapshots: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("Failed to start tracing");
+    println!("✓ Started tracing");
+
+    // Create a page and do some actions
+    let page = context.new_page().await.expect("Failed to create page");
+    page.goto("data:text/html,<h1>Hello Tracing</h1>", None)
+        .await
+        .expect("Failed to navigate");
+
+    // Stop tracing (without saving to file for this test)
+    tracing
+        .stop(TracingStopOptions::default())
+        .await
+        .expect("Failed to stop tracing");
+    println!("✓ Stopped tracing");
+
+    // Cleanup
+    context.close().await.expect("Failed to close context");
     browser.close().await.expect("Failed to close browser");
 }

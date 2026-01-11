@@ -7,6 +7,7 @@
 use crate::error::Result;
 use crate::protocol::Page;
 use crate::protocol::cookie::{ClearCookiesOptions, Cookie, StorageState, StorageStateOptions};
+use crate::protocol::tracing::Tracing;
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use serde::{Deserialize, Serialize};
@@ -363,6 +364,48 @@ impl BrowserContext {
         }
 
         Ok(state)
+    }
+
+    /// Returns a handle for managing Playwright traces.
+    ///
+    /// Tracing captures a trace of browser operations that can be viewed in the
+    /// [Playwright Trace Viewer](https://playwright.dev/docs/trace-viewer).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pw::protocol::{TracingStartOptions, TracingStopOptions};
+    ///
+    /// // Start tracing
+    /// context.tracing().start(TracingStartOptions {
+    ///     screenshots: Some(true),
+    ///     snapshots: Some(true),
+    ///     ..Default::default()
+    /// }).await?;
+    ///
+    /// // Perform actions
+    /// page.goto("https://example.com", None).await?;
+    ///
+    /// // Stop and save
+    /// context.tracing().stop(TracingStopOptions::with_path("trace.zip")).await?;
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-tracing>
+    pub fn tracing(&self) -> Option<Tracing> {
+        // The Tracing object is created as a child of BrowserContext
+        // Its GUID is in the initializer: {"tracing": {"guid": "tracing@..."}}
+        let tracing_guid = self
+            .base
+            .initializer()
+            .get("tracing")
+            .and_then(|v| v.get("guid"))
+            .and_then(|v| v.as_str())?;
+
+        self.base
+            .children()
+            .into_iter()
+            .find(|child| child.guid() == tracing_guid)
+            .and_then(|child| child.downcast_ref::<Tracing>().cloned())
     }
 }
 
