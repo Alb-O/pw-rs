@@ -170,6 +170,7 @@ export def "chatgpt paste" [
 }
 
 # Attach text as a document file (triggers ChatGPT's file attachment UI)
+# Uses pw eval --file to handle large text (avoids shell argument limits)
 export def "chatgpt attach" [
     --name (-n): string = "document.txt"  # Filename for attachment
     --prompt (-p): string  # Optional prompt to add after attachment
@@ -178,28 +179,27 @@ export def "chatgpt attach" [
     ensure-tab
     let text = $in
 
-    # Write to temp file for JS to read
-    let tmp = (mktemp)
-    $text | save -f $tmp
-    let js_text = (open $tmp | to json)
+    # Build JS with embedded text using concatenation (avoids nushell interpolation issues)
+    let js_text = ($text | to json)
     let js_name = ($name | to json)
-    rm $tmp
 
-    let js = "(function() {
-        const el = document.querySelector('#prompt-textarea');
-        if (!el) return { error: 'textarea not found' };
+    let js_head = "(function() {
+        const el = document.querySelector(\"#prompt-textarea\");
+        if (!el) return { error: \"textarea not found\" };
         el.focus();
 
-        const text = " + $js_text + ";
-        const filename = " + $js_name + ";
+        const text = "
+    let js_mid = ";
+        const filename = "
+    let js_tail = ";
 
         // Create file and DataTransfer
         const dt = new DataTransfer();
-        const file = new File([text], filename, { type: 'text/plain' });
+        const file = new File([text], filename, { type: \"text/plain\" });
         dt.items.add(file);
 
         // Dispatch paste event with file
-        const pasteEvent = new ClipboardEvent('paste', {
+        const pasteEvent = new ClipboardEvent(\"paste\", {
             bubbles: true,
             cancelable: true,
             clipboardData: dt
@@ -209,7 +209,13 @@ export def "chatgpt attach" [
         return { attached: true, filename: filename, size: text.length };
     })()"
 
-    let result = (pw eval $js).data.result
+    let js = ($js_head + $js_text + $js_mid + $js_name + $js_tail)
+
+    # Write JS to temp file and execute via --file flag
+    let tmp_js = (mktemp --suffix .js)
+    $js | save -f $tmp_js
+    let result = (pw eval --file $tmp_js).data.result
+    rm $tmp_js
 
     if ($result | get -o error | is-not-empty) {
         error make { msg: ($result.error) }

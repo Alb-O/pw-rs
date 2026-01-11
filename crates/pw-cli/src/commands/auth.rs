@@ -99,7 +99,9 @@ pub async fn cookies(
     info!(target = "pw", %url, browser = %ctx.browser, "fetching cookies");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::Load, ctx).with_preferred_url(preferred_url))
+        .session(
+            SessionRequest::from_context(WaitUntil::Load, ctx).with_preferred_url(preferred_url),
+        )
         .await?;
 
     session.goto_unless_current(url).await?;

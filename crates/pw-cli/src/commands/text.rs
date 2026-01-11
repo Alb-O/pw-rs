@@ -96,7 +96,10 @@ pub async fn execute(
     info!(target = "pw", %url, %selector, browser = %ctx.browser, "get text");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
+        .session(
+            SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
+                .with_preferred_url(preferred_url),
+        )
         .await?;
 
     match execute_inner(&session, url, selector, format).await {

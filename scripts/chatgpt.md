@@ -10,20 +10,22 @@ pw --cdp-endpoint http://localhost:9222 <command>
 
 ## Key Selectors
 
-| Element | Selector |
-|---------|----------|
-| Model selector button | `button[aria-label^="Model selector"]` |
-| Model dropdown menu | `[role="menu"]` |
+| Element                | Selector                                                     |
+| ---------------------- | ------------------------------------------------------------ |
+| Model selector button  | `button[aria-label^="Model selector"]`                       |
+| Model dropdown menu    | `[role="menu"]`                                              |
 | Extended thinking pill | `.__composer-pill` or `button:has-text("Extended thinking")` |
-| Chat input | `#prompt-textarea` |
+| Chat input             | `#prompt-textarea`                                           |
 
 ## Model Selector
 
 The model selector shows current model in `aria-label`:
+
 - `Model selector, current model is 5.2`
 - `Model selector, current model is 5.2 Thinking`
 
 Menu options (when open):
+
 - **Auto** - Decides how long to think
 - **Instant** - Answers right away
 - **Thinking** - Thinks longer for better answers
@@ -65,36 +67,39 @@ ChatGPT uses Radix UI dropdowns that close between separate `pw` commands. Use a
 ## Thinking Mode
 
 When "Thinking" mode is selected:
+
 1. Header changes to "ChatGPT 5.2 Thinking"
-2. "Extended thinking" pill appears in the composer area
-3. The pill has class `__composer-pill` and `aria-haspopup="menu"`
+1. "Extended thinking" pill appears in the composer area
+1. The pill has class `__composer-pill` and `aria-haspopup="menu"`
 
 ## Detecting Streaming State
 
-| State | Indicator |
-|-------|-----------|
-| Thinking (5.2 Thinking) | `.result-thinking` class on message |
-| Streaming | `button[aria-label="Stop streaming"]` visible |
-| Complete | Neither indicator present AND message has content |
+| State                   | Indicator                                         |
+| ----------------------- | ------------------------------------------------- |
+| Thinking (5.2 Thinking) | `.result-thinking` class on message               |
+| Streaming               | `button[aria-label="Stop streaming"]` visible     |
+| Complete                | Neither indicator present AND message has content |
 
 ## Pasting Large Text
 
 Two approaches for inserting text:
 
-| Method | Command | Behavior |
-|--------|---------|----------|
-| Inline | `chatgpt paste` | Uses `execCommand('insertText')`, text stays in composer |
-| Attachment | `chatgpt attach` | Uses `ClipboardEvent` with `File`, creates document attachment |
+| Method     | Command          | Behavior                                                       | Size Limit                     |
+| ---------- | ---------------- | -------------------------------------------------------------- | ------------------------------ |
+| Inline     | `chatgpt paste`  | Uses `execCommand('insertText')`, text stays in composer       | ~50KB (UI freezes with larger) |
+| Attachment | `chatgpt attach` | Uses `ClipboardEvent` with `File`, creates document attachment | 250KB+ tested                  |
 
 ```bash
-# Inline paste (any size, no attachment)
-cat file.rs | chatgpt paste
+# Inline paste (small text, no attachment)
+cat small-file.rs | chatgpt paste
 
-# File attachment (appears as document)
-cat file.rs | chatgpt attach --name "file.rs"
+# File attachment (recommended for large files)
+cat large-codemap.md | chatgpt attach --name "codemap.md"
 ```
 
 The attachment method creates a `File` object in `DataTransfer` and dispatches a `paste` event, which triggers ChatGPT's file attachment handler.
+
+**Large file support**: The `chatgpt attach` command uses `pw eval --file` internally to bypass shell argument limits. This allows attaching files of 250KB+ without issues. The inline `chatgpt paste` method will freeze the ChatGPT UI for files larger than ~50KB due to `execCommand('insertText')` blocking the main thread.
 
 ## Gotchas
 

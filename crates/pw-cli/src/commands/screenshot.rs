@@ -26,7 +26,10 @@ pub async fn execute(
     info!(target = "pw", %url, path = %output.display(), full_page, browser = %ctx.browser, "screenshot");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
+        .session(
+            SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
+                .with_preferred_url(preferred_url),
+        )
         .await?;
     session.goto_unless_current(url).await?;
 

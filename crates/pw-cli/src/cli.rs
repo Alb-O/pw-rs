@@ -123,16 +123,19 @@ pub enum Commands {
 
     /// Evaluate JavaScript and return result
     ///
-    /// The expression can be provided positionally or via --expr/-e.
+    /// The expression can be provided positionally, via --expr/-e, or read from a file.
     /// When using named flags, the order doesn't matter.
     Eval {
-        /// JavaScript expression (positional). Required unless --expr is used.
+        /// JavaScript expression (positional). Required unless --expr or --file is used.
         expression: Option<String>,
         /// Target URL (positional, uses context when omitted)
         url: Option<String>,
         /// JavaScript expression (named alternative to positional)
         #[arg(long = "expr", short = 'e', value_name = "EXPRESSION")]
         expression_flag: Option<String>,
+        /// Read JavaScript expression from file (avoids shell argument limits for large scripts)
+        #[arg(long = "file", short = 'F', value_name = "FILE")]
+        file: Option<PathBuf>,
         /// Target URL (named alternative to positional)
         #[arg(long = "url", short = 'u', value_name = "URL")]
         url_flag: Option<String>,

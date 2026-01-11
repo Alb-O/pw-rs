@@ -23,7 +23,7 @@ use crate::cli::{
     AuthAction, Cli, Commands, DaemonAction, ProtectAction, SessionAction, TabsAction,
 };
 use crate::context::CommandContext;
-use crate::context_store::{is_current_page_sentinel, ContextState, ContextUpdate};
+use crate::context_store::{ContextState, ContextUpdate, is_current_page_sentinel};
 use crate::error::{PwError, Result};
 use crate::output::OutputFormat;
 use crate::relay;
@@ -142,7 +142,8 @@ async fn dispatch_command_inner(
         Commands::Navigate { url, url_flag } => {
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let actual_url = navigate::execute(&final_url, ctx, broker, format, preferred_url).await?;
+            let actual_url =
+                navigate::execute(&final_url, ctx, broker, format, preferred_url).await?;
             // Record the actual browser URL (may differ from input due to redirects)
             ctx_state.record(ContextUpdate {
                 url: Some(&actual_url),
@@ -157,10 +158,15 @@ async fn dispatch_command_inner(
         } => {
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome = console::execute(&final_url, timeout_ms, ctx, broker, format, preferred_url).await;
+            let outcome =
+                console::execute(&final_url, timeout_ms, ctx, broker, format, preferred_url).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     ..Default::default()
                 });
             }
@@ -170,20 +176,37 @@ async fn dispatch_command_inner(
             expression,
             url,
             expression_flag,
+            file,
             url_flag,
         } => {
-            // Named flags take precedence over positional args
-            let final_expr = expression_flag.or(expression).ok_or_else(|| {
-                PwError::Context(
-                    "expression is required (provide positionally or via --expr)".into(),
-                )
-            })?;
+            // Priority: --file > --expr > positional
+            let final_expr = if let Some(path) = file {
+                std::fs::read_to_string(&path).map_err(|e| {
+                    PwError::Context(format!(
+                        "failed to read expression from {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?
+            } else {
+                expression_flag.or(expression).ok_or_else(|| {
+                    PwError::Context(
+                        "expression is required (provide positionally, via --expr, or via --file)"
+                            .into(),
+                    )
+                })?
+            };
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome = eval::execute(&final_url, &final_expr, ctx, broker, format, preferred_url).await;
+            let outcome =
+                eval::execute(&final_url, &final_expr, ctx, broker, format, preferred_url).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     ..Default::default()
                 });
             }
@@ -200,10 +223,22 @@ async fn dispatch_command_inner(
             let final_url = ctx_state.resolve_url_with_cdp(resolved.url, has_cdp)?;
             let final_selector = ctx_state.resolve_selector(resolved.selector, Some("html"))?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome = html::execute(&final_url, &final_selector, ctx, broker, format, preferred_url).await;
+            let outcome = html::execute(
+                &final_url,
+                &final_selector,
+                ctx,
+                broker,
+                format,
+                preferred_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     selector: Some(&final_selector),
                     ..Default::default()
                 });
@@ -219,11 +254,22 @@ async fn dispatch_command_inner(
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome =
-                coords::execute_single(&final_url, &final_selector, ctx, broker, format, preferred_url).await;
+            let outcome = coords::execute_single(
+                &final_url,
+                &final_selector,
+                ctx,
+                broker,
+                format,
+                preferred_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     selector: Some(&final_selector),
                     ..Default::default()
                 });
@@ -239,11 +285,22 @@ async fn dispatch_command_inner(
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let final_selector = ctx_state.resolve_selector(selector_flag.or(selector), None)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome =
-                coords::execute_all(&final_url, &final_selector, ctx, broker, format, preferred_url).await;
+            let outcome = coords::execute_all(
+                &final_url,
+                &final_selector,
+                ctx,
+                broker,
+                format,
+                preferred_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     selector: Some(&final_selector),
                     ..Default::default()
                 });
@@ -259,12 +316,23 @@ async fn dispatch_command_inner(
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let resolved_output = ctx_state.resolve_output(ctx, output);
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome =
-                screenshot::execute(&final_url, &resolved_output, full_page, ctx, broker, format, preferred_url)
-                    .await;
+            let outcome = screenshot::execute(
+                &final_url,
+                &resolved_output,
+                full_page,
+                ctx,
+                broker,
+                format,
+                preferred_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     output: Some(&resolved_output),
                     ..Default::default()
                 });
@@ -325,7 +393,11 @@ async fn dispatch_command_inner(
             .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     selector: Some(&final_selector),
                     ..Default::default()
                 });
@@ -340,11 +412,23 @@ async fn dispatch_command_inner(
             let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
             let final_selector = ctx_state.resolve_selector(selector, None)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome =
-                fill::execute(&final_url, &final_selector, &text, ctx, broker, format, preferred_url).await;
+            let outcome = fill::execute(
+                &final_url,
+                &final_selector,
+                &text,
+                ctx,
+                broker,
+                format,
+                preferred_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     selector: Some(&final_selector),
                     ..Default::default()
                 });
@@ -359,11 +443,23 @@ async fn dispatch_command_inner(
         } => {
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome =
-                read::execute(&final_url, output_format, metadata, ctx, broker, format, preferred_url).await;
+            let outcome = read::execute(
+                &final_url,
+                output_format,
+                metadata,
+                ctx,
+                broker,
+                format,
+                preferred_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     ..Default::default()
                 });
             }
@@ -390,7 +486,11 @@ async fn dispatch_command_inner(
             .await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     ..Default::default()
                 });
             }
@@ -403,10 +503,15 @@ async fn dispatch_command_inner(
         } => {
             let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
             let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome = wait::execute(&final_url, &condition, ctx, broker, format, preferred_url).await;
+            let outcome =
+                wait::execute(&final_url, &condition, ctx, broker, format, preferred_url).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                    url: if is_current_page_sentinel(&final_url) {
+                        None
+                    } else {
+                        Some(&final_url)
+                    },
                     ..Default::default()
                 });
             }
@@ -421,23 +526,43 @@ async fn dispatch_command_inner(
                 let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
                 let resolved_output = resolve_auth_output(ctx, &output);
                 let preferred_url = compute_preferred_url(&final_url, ctx_state);
-                let outcome = auth::login(&final_url, &resolved_output, timeout, ctx, broker, preferred_url).await;
+                let outcome = auth::login(
+                    &final_url,
+                    &resolved_output,
+                    timeout,
+                    ctx,
+                    broker,
+                    preferred_url,
+                )
+                .await;
                 if outcome.is_ok() {
                     ctx_state.record(ContextUpdate {
-                        url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                        url: if is_current_page_sentinel(&final_url) {
+                            None
+                        } else {
+                            Some(&final_url)
+                        },
                         output: Some(&resolved_output),
                         ..Default::default()
                     });
                 }
                 outcome
             }
-            AuthAction::Cookies { url, format: cookie_format } => {
+            AuthAction::Cookies {
+                url,
+                format: cookie_format,
+            } => {
                 let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
                 let preferred_url = compute_preferred_url(&final_url, ctx_state);
-                let outcome = auth::cookies(&final_url, &cookie_format, ctx, broker, preferred_url).await;
+                let outcome =
+                    auth::cookies(&final_url, &cookie_format, ctx, broker, preferred_url).await;
                 if outcome.is_ok() {
                     ctx_state.record(ContextUpdate {
-                        url: if is_current_page_sentinel(&final_url) { None } else { Some(&final_url) },
+                        url: if is_current_page_sentinel(&final_url) {
+                            None
+                        } else {
+                            Some(&final_url)
+                        },
                         ..Default::default()
                     });
                 }

@@ -235,7 +235,9 @@ impl BrowserSession {
                 // Check if this page matches the preferred URL (skip if sentinel)
                 if let Some(pref) = preferred_url {
                     if !is_current_page_sentinel(pref)
-                        && (url.starts_with(pref) || pref.starts_with(&url) || urls_match_loosely(&url, pref))
+                        && (url.starts_with(pref)
+                            || pref.starts_with(&url)
+                            || urls_match_loosely(&url, pref))
                     {
                         debug!(target = "pw", url = %url, preferred = %pref, "found preferred page");
                         preferred_page = Some(page);
@@ -461,7 +463,9 @@ impl BrowserSession {
 fn urls_match_loosely(a: &str, b: &str) -> bool {
     // Extract host from URLs
     fn get_host(url: &str) -> Option<&str> {
-        let url = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+        let url = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
         url.split('/').next()
     }
 

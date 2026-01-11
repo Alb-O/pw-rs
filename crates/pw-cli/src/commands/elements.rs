@@ -190,7 +190,10 @@ pub async fn execute(
     info!(target = "pw", %url, %wait, %timeout_ms, browser = %ctx.browser, "list elements");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
+        .session(
+            SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
+                .with_preferred_url(preferred_url),
+        )
         .await?;
 
     match execute_inner(&session, url, wait, timeout_ms, format).await {

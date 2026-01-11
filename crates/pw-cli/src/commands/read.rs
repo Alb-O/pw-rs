@@ -95,7 +95,10 @@ pub async fn execute(
     info!(target = "pw", %url, ?output_format, browser = %ctx.browser, "extract readable content");
 
     let session = broker
-        .session(SessionRequest::from_context(WaitUntil::NetworkIdle, ctx).with_preferred_url(preferred_url))
+        .session(
+            SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
+                .with_preferred_url(preferred_url),
+        )
         .await?;
     session.goto_unless_current(url).await?;
 

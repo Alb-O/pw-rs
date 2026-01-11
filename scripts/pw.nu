@@ -28,7 +28,18 @@ export def click [selector: string]: nothing -> record { pw-run click -s $select
 export def fill [selector: string, value: string]: nothing -> record { pw-run fill $value -s $selector }
 
 # Utilities
-export def eval [expr: string]: nothing -> record { pw-run eval $expr }
+export def eval [
+    expr?: string           # JavaScript expression (optional if --file used)
+    --file (-F): string     # Read expression from file (for large scripts)
+]: nothing -> record {
+    if $file != null {
+        pw-run eval --file $file
+    } else if $expr != null {
+        pw-run eval $expr
+    } else {
+        error make { msg: "eval requires either an expression or --file" }
+    }
+}
 export def screenshot [--output (-o): string = "screenshot.png", --full-page (-f)]: nothing -> record {
     if $full_page { pw-run screenshot -o $output --full-page } else { pw-run screenshot -o $output }
 }
