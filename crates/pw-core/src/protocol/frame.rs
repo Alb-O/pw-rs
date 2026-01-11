@@ -101,38 +101,18 @@ impl Frame {
 
         let goto_result: GotoResponse = self.channel().send("goto", params).await?;
 
-        // If navigation returned a response, get the Response object from the connection
         if let Some(response_ref) = goto_result.response {
-            // The server returns a Response GUID, but the __create__ message might not have
-            // arrived yet. Retry a few times to wait for the object to be created.
-            // TODO(Phase 4+): Implement proper GUID replacement like Python's _replace_guids_with_channels
-            //   - Eliminates retry loop for better performance
-            //   - See: playwright-python's _replace_guids_with_channels method
-            let response_arc = {
-                let mut attempts = 0;
-                let max_attempts = 20; // 20 * 50ms = 1 second max wait
-                loop {
-                    match self.connection().get_object(&response_ref.guid).await {
-                        Ok(obj) => break obj,
-                        Err(_) if attempts < max_attempts => {
-                            attempts += 1;
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-            };
+            // Wait for Response object - __create__ may arrive after the response
+            let response_arc = self
+                .connection()
+                .wait_for_object(&response_ref.guid, std::time::Duration::from_secs(1))
+                .await?;
 
-            // Note: ResponseObject protocol object exists (crates/playwright-core/src/protocol/response.rs)
-            // We extract Response data from its initializer rather than wrapping the protocol object
             let initializer = response_arc.initializer();
-
-            // Extract response data from initializer
             let status = initializer["status"].as_u64().ok_or_else(|| {
                 crate::error::Error::ProtocolError("Response missing status".to_string())
             })? as u16;
 
-            // Convert headers from array format to HashMap
             let headers = initializer["headers"]
                 .as_array()
                 .ok_or_else(|| {

@@ -308,6 +308,9 @@ impl ChannelOwnerImpl {
 
     /// Disposes this object and all children recursively.
     ///
+    /// This method is fully synchronous - it does not spawn any async tasks.
+    /// The object registry uses `parking_lot::Mutex` which allows sync access.
+    ///
     /// # Arguments
     /// * `reason` - Why the object is being disposed
     pub fn dispose(&self, reason: DisposeReason) {
@@ -321,12 +324,8 @@ impl ChannelOwnerImpl {
             parent.remove_child(&self.guid);
         }
 
-        // Remove from connection (spawn to avoid blocking in sync context)
-        let connection = self.connection.clone();
-        let guid = Arc::clone(&self.guid);
-        tokio::spawn(async move {
-            connection.unregister_object(&guid).await;
-        });
+        // Remove from connection registry (synchronous)
+        self.connection.unregister_object(&self.guid);
 
         // Dispose all children (snapshot to avoid holding lock)
         let children: Vec<_> = {

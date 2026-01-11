@@ -62,8 +62,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -88,11 +89,27 @@ pub trait ConnectionLike: Send + Sync {
         object: Arc<dyn ChannelOwner>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 
-    /// Unregister an object from the connection's registry
-    fn unregister_object(&self, guid: &str) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+    /// Unregister an object from the connection's registry (synchronous)
+    ///
+    /// This is intentionally synchronous to allow calling from Drop impls
+    /// and dispose() without needing a runtime or spawning tasks.
+    fn unregister_object(&self, guid: &str);
 
     /// Get an object by GUID
     fn get_object(&self, guid: &str) -> AsyncChannelOwnerResult<'_>;
+
+    /// Wait for an object to be registered, with timeout
+    ///
+    /// This is useful when a response contains a GUID reference to an object
+    /// that might not have been created yet (the `__create__` event may arrive
+    /// after the response).
+    ///
+    /// Uses notification-based waiting rather than polling for efficiency.
+    fn wait_for_object(
+        &self,
+        guid: &str,
+        timeout: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<Arc<dyn ChannelOwner>>> + Send + '_>>;
 }
 
 // Type alias for complex async return type
@@ -327,19 +344,27 @@ type ObjectRegistry = HashMap<Arc<str>, Arc<dyn ChannelOwner>>;
 /// - `AtomicU32` for thread-safe ID generation
 /// - `Arc<Mutex<HashMap>>` for callback storage
 /// - `tokio::sync::oneshot` for request/response correlation
+/// - `mpsc` channel for outbound messages (avoids holding mutex across .await)
 pub struct Connection {
     /// Sequential request ID counter (atomic for thread safety)
     last_id: AtomicU32,
     /// Pending request callbacks keyed by request ID
     callbacks: Arc<TokioMutex<HashMap<u32, oneshot::Sender<Result<Value>>>>>,
-    /// Transport used for sending messages (mutex-wrapped for concurrent sends)
-    transport_sender: Arc<TokioMutex<Box<dyn Transport>>>,
+    /// Channel for sending outbound messages to the writer task
+    outbound_tx: mpsc::UnboundedSender<Value>,
+    /// Transport sender (taken by run() to start writer task)
+    transport_sender: Arc<TokioMutex<Option<Box<dyn Transport>>>>,
     /// Receiver for incoming messages from transport
     message_rx: Arc<TokioMutex<Option<mpsc::UnboundedReceiver<Value>>>>,
     /// Receiver half of transport (owned by run loop, only needed once)
     transport_receiver: Arc<TokioMutex<Option<Box<dyn TransportReceiver>>>>,
+    /// Receiver for outbound messages (taken by run() to start writer task)
+    outbound_rx: Arc<TokioMutex<Option<mpsc::UnboundedReceiver<Value>>>>,
     /// Registry of all protocol objects by GUID (parking_lot for sync+async access)
     objects: Arc<ParkingLotMutex<ObjectRegistry>>,
+    /// Notification broadcast when any object is registered
+    /// Used by wait_for_object() to avoid polling
+    object_registered: Arc<Notify>,
 }
 
 impl Connection {
@@ -373,13 +398,20 @@ impl Connection {
             message_rx,
         } = parts;
 
+        // Create channel for outbound messages
+        // This allows send_message() to queue messages without holding a mutex across .await
+        let (outbound_tx, outbound_rx) = mpsc::unbounded_channel();
+
         Self {
             last_id: AtomicU32::new(0),
             callbacks: Arc::new(TokioMutex::new(HashMap::new())),
-            transport_sender: Arc::new(TokioMutex::new(sender)),
+            outbound_tx,
+            transport_sender: Arc::new(TokioMutex::new(Some(sender))),
             message_rx: Arc::new(TokioMutex::new(Some(message_rx))),
             transport_receiver: Arc::new(TokioMutex::new(Some(receiver))),
+            outbound_rx: Arc::new(TokioMutex::new(Some(outbound_rx))),
             objects: Arc::new(ParkingLotMutex::new(HashMap::new())),
+            object_registered: Arc::new(Notify::new()),
         }
     }
 
@@ -429,20 +461,17 @@ impl Connection {
             metadata: Metadata::now(),
         };
 
-        // Send via transport
+        // Serialize and queue to outbound channel
+        // This does NOT hold any mutex across .await - the writer task handles the actual send
         let request_value = serde_json::to_value(&request)?;
         tracing::debug!("Request JSON: {}", request_value);
 
-        match self.transport_sender.lock().await.send(request_value).await {
-            Ok(()) => tracing::debug!("Message sent successfully, awaiting response"),
-            Err(e) => {
-                tracing::error!("Failed to send message: {:?}", e);
-                return Err(e);
-            }
+        if self.outbound_tx.send(request_value).is_err() {
+            tracing::error!("Failed to queue message: outbound channel closed");
+            return Err(Error::ChannelClosed);
         }
 
-        // Await response
-        tracing::debug!("Waiting for response to ID {}", id);
+        tracing::debug!("Awaiting response for ID {}", id);
         rx.await
             .map_err(|_| Error::ChannelClosed)
             .and_then(|result| result)
@@ -580,11 +609,33 @@ impl Connection {
             .take()
             .expect("run() can only be called once - transport receiver already taken");
 
-        // Spawn transport read loop WITHOUT any locks
-        // This prevents deadlock: the receiver owns stdout and runs independently
-        let transport_handle = tokio::spawn(async move {
+        // Take the transport sender and outbound channel receiver
+        let mut transport_sender = self
+            .transport_sender
+            .lock()
+            .await
+            .take()
+            .expect("run() can only be called once - transport sender already taken");
+
+        let mut outbound_rx = self
+            .outbound_rx
+            .lock()
+            .await
+            .take()
+            .expect("run() can only be called once - outbound receiver already taken");
+
+        let reader_handle = tokio::spawn(async move {
             if let Err(e) = transport_receiver.run().await {
-                tracing::error!("Transport error: {}", e);
+                tracing::error!("Transport read error: {}", e);
+            }
+        });
+
+        let writer_handle = tokio::spawn(async move {
+            while let Some(message) = outbound_rx.recv().await {
+                if let Err(e) = transport_sender.send(message).await {
+                    tracing::error!("Transport write error: {}", e);
+                    break;
+                }
             }
         });
 
@@ -597,7 +648,6 @@ impl Connection {
             .expect("run() can only be called once - message receiver already taken");
 
         while let Some(message_value) = message_rx.recv().await {
-            // Parse message as Response, Event, or Unknown
             match serde_json::from_value::<Message>(message_value) {
                 Ok(message) => {
                     if let Err(e) = self.dispatch_internal(message).await {
@@ -605,16 +655,13 @@ impl Connection {
                     }
                 }
                 Err(e) => {
-                    // This should rarely happen since Message::Unknown catches everything
                     tracing::error!("Failed to parse message: {}", e);
                 }
             }
         }
 
-        tracing::debug!("Message loop ended (transport closed)");
-
-        // Wait for transport task to finish
-        let _ = transport_handle.await;
+        let _ = reader_handle.await;
+        let _ = writer_handle.await;
     }
 
     /// Dispatch an incoming message from the transport
@@ -850,15 +897,16 @@ impl Connection {
     }
 }
 
-/// Parse protocol error into Rust error type
+/// Converts [`ErrorPayload`] from Playwright into [`Error::Remote`].
+///
+/// Always uses the `Remote` variant to preserve full error context including
+/// the error name, message, and JavaScript stack trace. Callers can use
+/// [`Error::is_timeout`] or [`Error::is_target_closed`] for type checks.
 fn parse_protocol_error(error: ErrorPayload) -> Error {
-    match error.name.as_deref() {
-        Some("TimeoutError") => Error::Timeout(error.message),
-        Some("TargetClosedError") => Error::TargetClosed {
-            target_type: "target".to_string(),
-            context: error.message,
-        },
-        _ => Error::ProtocolError(error.message),
+    Error::Remote {
+        name: error.name.unwrap_or_else(|| "Error".to_string()),
+        message: error.message,
+        stack: error.stack,
     }
 }
 
@@ -885,14 +933,14 @@ impl ConnectionLike for Connection {
     ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
         Box::pin(async move {
             self.objects.lock().insert(guid, object);
+            // Notify any waiters that a new object was registered
+            self.object_registered.notify_waiters();
         })
     }
 
-    fn unregister_object(&self, guid: &str) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+    fn unregister_object(&self, guid: &str) {
         let guid_arc: Arc<str> = Arc::from(guid);
-        Box::pin(async move {
-            self.objects.lock().remove(&guid_arc);
-        })
+        self.objects.lock().remove(&guid_arc);
     }
 
     fn get_object(&self, guid: &str) -> AsyncChannelOwnerResult<'_> {
@@ -917,6 +965,56 @@ impl ConnectionLike for Connection {
                     context: format!("Object not found: {}", guid_arc),
                 }
             })
+        })
+    }
+
+    fn wait_for_object(
+        &self,
+        guid: &str,
+        timeout: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<Arc<dyn ChannelOwner>>> + Send + '_>> {
+        let guid_arc: Arc<str> = Arc::from(guid);
+        Box::pin(async move {
+            let deadline = tokio::time::Instant::now() + timeout;
+
+            loop {
+                // Check if object exists
+                if let Some(obj) = self.objects.lock().get(&guid_arc).cloned() {
+                    return Ok(obj);
+                }
+
+                // Calculate remaining time
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    // Timeout - return appropriate error based on GUID prefix
+                    let target_type = if guid_arc.starts_with("page@") {
+                        "Page"
+                    } else if guid_arc.starts_with("frame@") {
+                        "Frame"
+                    } else if guid_arc.starts_with("browser-context@") {
+                        "BrowserContext"
+                    } else if guid_arc.starts_with("browser@") {
+                        "Browser"
+                    } else if guid_arc.starts_with("response@") {
+                        "Response"
+                    } else {
+                        return Err(Error::Timeout(format!(
+                            "Timeout waiting for object: {}",
+                            guid_arc
+                        )));
+                    };
+
+                    return Err(Error::Timeout(format!(
+                        "Timeout waiting for {} object: {}",
+                        target_type, guid_arc
+                    )));
+                }
+
+                tokio::select! {
+                    _ = self.object_registered.notified() => {}
+                    _ = tokio::time::sleep(remaining) => {}
+                }
+            }
         })
     }
 }
@@ -1014,12 +1112,17 @@ mod tests {
         // Dispatch response
         Arc::new(connection).dispatch(response).await.unwrap();
 
-        // Verify error
+        // Verify error - now uses Remote variant with full context
         let result = rx.await.unwrap();
         assert!(result.is_err());
-        match result.unwrap_err() {
-            Error::Timeout(msg) => assert_eq!(msg, "Navigation timeout"),
-            _ => panic!("Expected Timeout error"),
+        let err = result.unwrap_err();
+        assert!(err.is_timeout(), "Expected timeout error, got: {:?}", err);
+        match err {
+            Error::Remote { name, message, .. } => {
+                assert_eq!(name, "TimeoutError");
+                assert_eq!(message, "Navigation timeout");
+            }
+            _ => panic!("Expected Remote error"),
         }
     }
 
@@ -1151,29 +1254,54 @@ mod tests {
 
     #[test]
     fn test_error_type_parsing() {
-        // TimeoutError
+        // TimeoutError - now uses Remote variant but is_timeout() returns true
         let error = parse_protocol_error(ErrorPayload {
             message: "timeout".to_string(),
             name: Some("TimeoutError".to_string()),
-            stack: None,
+            stack: Some("stack trace".to_string()),
         });
-        assert!(matches!(error, Error::Timeout(_)));
+        assert!(error.is_timeout());
+        match &error {
+            Error::Remote {
+                name,
+                message,
+                stack,
+            } => {
+                assert_eq!(name, "TimeoutError");
+                assert_eq!(message, "timeout");
+                assert_eq!(stack.as_deref(), Some("stack trace"));
+            }
+            _ => panic!("Expected Remote error"),
+        }
 
-        // TargetClosedError
+        // TargetClosedError - now uses Remote variant but is_target_closed() returns true
         let error = parse_protocol_error(ErrorPayload {
             message: "closed".to_string(),
             name: Some("TargetClosedError".to_string()),
             stack: None,
         });
-        assert!(matches!(error, Error::TargetClosed { .. }));
+        assert!(error.is_target_closed());
+        match &error {
+            Error::Remote { name, message, .. } => {
+                assert_eq!(name, "TargetClosedError");
+                assert_eq!(message, "closed");
+            }
+            _ => panic!("Expected Remote error"),
+        }
 
-        // Generic error
+        // Generic error - now uses Remote variant with default name "Error"
         let error = parse_protocol_error(ErrorPayload {
             message: "generic".to_string(),
             name: None,
             stack: None,
         });
-        assert!(matches!(error, Error::ProtocolError(_)));
+        match &error {
+            Error::Remote { name, message, .. } => {
+                assert_eq!(name, "Error");
+                assert_eq!(message, "generic");
+            }
+            _ => panic!("Expected Remote error"),
+        }
     }
 
     #[test]
