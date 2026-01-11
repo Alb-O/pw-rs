@@ -598,25 +598,13 @@ impl Page {
 
         let reload_result: ReloadResponse = self.channel().send("reload", params).await?;
 
-        // If reload returned a response, get the Response object
         if let Some(response_ref) = reload_result.response {
-            // Wait for Response object to be created
-            let response_arc = {
-                let mut attempts = 0;
-                let max_attempts = 20;
-                loop {
-                    match self.connection().get_object(&response_ref.guid).await {
-                        Ok(obj) => break obj,
-                        Err(_) if attempts < max_attempts => {
-                            attempts += 1;
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-            };
+            // Wait for Response object - __create__ may arrive after the response
+            let response_arc = self
+                .connection()
+                .wait_for_object(&response_ref.guid, std::time::Duration::from_secs(1))
+                .await?;
 
-            // Extract response data from initializer
             let initializer = response_arc.initializer();
 
             let status = initializer["status"].as_u64().ok_or_else(|| {

@@ -37,8 +37,30 @@ pub enum Error {
     TransportError(String),
 
     /// Protocol-level error (JSON-RPC)
+    ///
+    /// Generic protocol error - prefer using `Remote` for errors from the Playwright server
+    /// as it preserves full error context including name and stack trace.
     #[error("Protocol error: {0}")]
     ProtocolError(String),
+
+    /// Remote Playwright server error with full context
+    ///
+    /// Preserves the complete error information from the Playwright server:
+    /// - `name`: Error type (e.g., "TimeoutError", "Error")
+    /// - `message`: Human-readable error description
+    /// - `stack`: JavaScript stack trace (when available)
+    ///
+    /// This variant should be preferred over `ProtocolError` when handling
+    /// errors from the Playwright server as it enables better debugging.
+    #[error("{name}: {message}")]
+    Remote {
+        /// Error type name (e.g., "TimeoutError", "Error", "TargetClosedError")
+        name: String,
+        /// Human-readable error message
+        message: String,
+        /// JavaScript stack trace from the server (if available)
+        stack: Option<String>,
+    },
 
     /// I/O error
     #[error("I/O error: {0}")]
@@ -73,6 +95,21 @@ pub enum Error {
         context: String,
     },
 
+    /// Object not found in the connection registry
+    ///
+    /// Occurs when looking up an object by GUID that doesn't exist in the registry.
+    /// This can happen if:
+    /// - The object was disposed/garbage collected
+    /// - The GUID is invalid or refers to an object that was never created
+    /// - There's a race condition between object creation and lookup
+    #[error("Object not found: {guid}{}", expected.map(|t| format!(" (expected {})", t)).unwrap_or_default())]
+    ObjectNotFound {
+        /// The GUID that was looked up
+        guid: String,
+        /// Expected object type (if known from GUID prefix)
+        expected: Option<&'static str>,
+    },
+
     /// Unknown protocol object type
     #[error("Unknown protocol object type: {0}")]
     UnknownObjectType(String),
@@ -95,4 +132,42 @@ pub enum Error {
     /// Assertion timeout (expect API)
     #[error("Assertion timeout: {0}")]
     AssertionTimeout(String),
+}
+
+impl Error {
+    /// Returns the error name if this is a Remote error
+    pub fn error_name(&self) -> Option<&str> {
+        match self {
+            Error::Remote { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Returns the stack trace if this is a Remote error with a stack
+    pub fn stack_trace(&self) -> Option<&str> {
+        match self {
+            Error::Remote { stack, .. } => stack.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this is a timeout error
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            Error::Timeout(_) | Error::NavigationTimeout { .. } | Error::AssertionTimeout(_) => {
+                true
+            }
+            Error::Remote { name, .. } => name == "TimeoutError",
+            _ => false,
+        }
+    }
+
+    /// Returns true if this is a target closed error
+    pub fn is_target_closed(&self) -> bool {
+        match self {
+            Error::TargetClosed { .. } => true,
+            Error::Remote { name, .. } => name == "TargetClosedError",
+            _ => false,
+        }
+    }
 }
