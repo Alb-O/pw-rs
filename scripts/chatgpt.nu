@@ -172,12 +172,33 @@ export def "chatgpt paste" [
 # Attach text as a document file (triggers ChatGPT's file attachment UI)
 # Uses pw eval --file to handle large text (avoids shell argument limits)
 export def "chatgpt attach" [
-    --name (-n): string = "document.txt"  # Filename for attachment
-    --prompt (-p): string  # Optional prompt to add after attachment
-    --send (-s)  # Also send after attaching
-]: string -> record {
+    --file (-f): path        # Read text from file (alternative to pipeline input)
+    --name (-n): string      # Filename for attachment (defaults to --file basename or "document.txt")
+    --prompt (-p): string    # Optional prompt to add after attachment
+    --send (-s)              # Also send after attaching
+]: [string -> record, nothing -> record] {
+    # Capture pipeline input immediately (before any other commands consume it)
+    let pipeline_input = $in
+    
     ensure-tab
-    let text = $in
+    
+    # Get text from --file or pipeline input
+    let text = if $file != null {
+        open $file
+    } else if ($pipeline_input | is-not-empty) {
+        $pipeline_input
+    } else {
+        error make { msg: "chatgpt attach requires either --file or pipeline input" }
+    }
+    
+    # Default name to file basename if --file used, otherwise "document.txt"
+    let name = if ($name | is-not-empty) {
+        $name
+    } else if $file != null {
+        $file | path basename
+    } else {
+        "document.txt"
+    }
 
     # Build JS with embedded text using concatenation (avoids nushell interpolation issues)
     let js_text = ($text | to json)

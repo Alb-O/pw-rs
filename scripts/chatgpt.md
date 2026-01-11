@@ -93,8 +93,21 @@ Two approaches for inserting text:
 # Inline paste (small text, no attachment)
 cat small-file.rs | chatgpt paste
 
-# File attachment (recommended for large files)
-cat large-codemap.md | chatgpt attach --name "codemap.md"
+# File attachment via pipeline
+open large-codemap.md | chatgpt attach --name "codemap.md"
+
+# File attachment via --file flag (recommended for scripts)
+chatgpt attach --file codemap.md --prompt "Review this code" --send
+```
+
+The `--file` flag is recommended when calling from bash scripts, as it avoids issues with pipeline input not flowing through `nu -c`:
+
+```bash
+# This works (--file flag)
+nu -c 'use scripts/chatgpt.nu *; chatgpt attach --file codemap.md --prompt "Review" --send'
+
+# This does NOT work (bash pipe doesn't reach nushell pipeline)
+cat codemap.md | nu -c 'use scripts/chatgpt.nu *; chatgpt attach --name "codemap.md"'
 ```
 
 The attachment method creates a `File` object in `DataTransfer` and dispatches a `paste` event, which triggers ChatGPT's file attachment handler.
