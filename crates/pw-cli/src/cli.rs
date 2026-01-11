@@ -370,6 +370,18 @@ pub enum Commands {
     /// important tabs like Discord, Slack, etc.
     #[command(subcommand)]
     Protect(ProtectAction),
+
+    /// Run commands from stdin in batch mode (for AI agents)
+    ///
+    /// Reads NDJSON commands from stdin and streams responses to stdout.
+    /// Each line should be a JSON object with "id", "command", and "args" fields.
+    ///
+    /// Example input:
+    ///   {"id":"1","command":"navigate","args":{"url":"https://example.com"}}
+    ///   {"id":"2","command":"screenshot","args":{"output":"page.png"}}
+    ///
+    /// Use Ctrl+D (EOF) to exit batch mode.
+    Run,
 }
 
 /// Project template type for init command

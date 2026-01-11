@@ -14,8 +14,23 @@ use crate::types::BrowserKind;
 pub use protocol::{BrowserInfo, DaemonRequest, DaemonResponse};
 pub use server::Daemon;
 
-pub const DAEMON_SOCKET: &str = "/tmp/pw-daemon.sock";
 pub const DAEMON_TCP_PORT: u16 = 19222;
+
+/// Returns the daemon socket path for the current user.
+///
+/// Uses `$XDG_RUNTIME_DIR/pw-daemon.sock` if available (already user-permissioned),
+/// otherwise falls back to `/tmp/pw-daemon-{uid}.sock`.
+#[cfg(unix)]
+pub fn daemon_socket_path() -> std::path::PathBuf {
+    use std::path::PathBuf;
+
+    if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR") {
+        return PathBuf::from(xdg_runtime).join("pw-daemon.sock");
+    }
+
+    let uid = unsafe { libc::getuid() };
+    PathBuf::from(format!("/tmp/pw-daemon-{uid}.sock"))
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct DaemonClient;
@@ -67,7 +82,7 @@ async fn send_request(request: DaemonRequest) -> Result<DaemonResponse> {
 
 #[cfg(unix)]
 async fn connect_daemon() -> std::io::Result<UnixStream> {
-    UnixStream::connect(DAEMON_SOCKET).await
+    UnixStream::connect(daemon_socket_path()).await
 }
 
 #[cfg(windows)]

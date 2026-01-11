@@ -6,16 +6,21 @@ use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
-#[cfg(unix)]
-use crate::daemon::DAEMON_SOCKET;
 #[cfg(windows)]
 use crate::daemon::DAEMON_TCP_PORT;
+#[cfg(unix)]
+use crate::daemon::daemon_socket_path;
 use crate::daemon::{Daemon, DaemonRequest, DaemonResponse};
 use crate::error::{PwError, Result};
 use crate::output::{OutputFormat, ResultBuilder, print_result};
 
+/// Get the daemon PID file path for the current user.
+/// Uses the same directory as the daemon socket.
 #[cfg(unix)]
-const DAEMON_PID_PATH: &str = "/tmp/pw-daemon.pid";
+fn daemon_pid_path() -> std::path::PathBuf {
+    let socket_path = daemon_socket_path();
+    socket_path.with_file_name("pw-daemon.pid")
+}
 
 pub async fn start(foreground: bool, format: OutputFormat) -> Result<()> {
     if foreground {
@@ -57,7 +62,12 @@ pub async fn start(foreground: bool, format: OutputFormat) -> Result<()> {
             .map_err(|e| PwError::Anyhow(anyhow!("Failed to spawn daemon: {e}")))?;
 
         // Write PID file
-        std::fs::write(DAEMON_PID_PATH, child.id().to_string())?;
+        let pid_path = daemon_pid_path();
+        // Ensure parent directory exists
+        if let Some(parent) = pid_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(&pid_path, child.id().to_string())?;
 
         // Wait a bit for daemon to start
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -70,7 +80,7 @@ pub async fn start(foreground: bool, format: OutputFormat) -> Result<()> {
             .data(json!({
                 "started": running,
                 "foreground": false,
-                "pid_file": DAEMON_PID_PATH,
+                "pid_file": pid_path.display().to_string(),
                 "pid": child.id()
             }))
             .build();
@@ -163,7 +173,7 @@ async fn send_request(request: DaemonRequest) -> Result<Option<DaemonResponse>> 
 
 #[cfg(unix)]
 async fn connect_daemon() -> std::io::Result<UnixStream> {
-    UnixStream::connect(DAEMON_SOCKET).await
+    UnixStream::connect(daemon_socket_path()).await
 }
 
 #[cfg(windows)]

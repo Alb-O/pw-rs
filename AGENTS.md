@@ -192,8 +192,67 @@ The daemon spawns browsers on ports 9222-10221. Currently only Chromium is suppo
 | `--browser <kind>` | chromium (default), firefox, webkit |
 | `-v` / `-vv`       | Verbose / debug output              |
 
+## Batch Mode (for high-throughput agents)
+
+For agents that need to execute many commands with minimal overhead, use `pw run` to run in batch mode:
+
+```bash
+pw run
+```
+
+This reads NDJSON commands from stdin and streams responses to stdout. Each command is a JSON object:
+
+```json
+{"id":"1","command":"navigate","args":{"url":"https://example.com"}}
+{"id":"2","command":"text","args":{"selector":"h1"}}
+{"id":"3","command":"screenshot","args":{"output":"page.png"}}
+```
+
+Responses are streamed as NDJSON with request ID correlation:
+
+```json
+{"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
+{"id":"2","ok":true,"command":"text"}
+{"id":"3","ok":true,"command":"screenshot","data":{"path":"page.png"}}
+```
+
+### Supported commands
+
+- `navigate` - args: `url`
+- `click` - args: `url`, `selector`, `wait_ms`
+- `text` - args: `url`, `selector`
+- `html` - args: `url`, `selector`
+- `screenshot` - args: `url`, `output`, `full_page`
+- `eval` - args: `url`, `expression`
+- `fill` - args: `url`, `selector`, `text`
+- `wait` - args: `url`, `condition`
+- `elements` - args: `url`, `wait`, `timeout_ms`
+- `console` - args: `url`, `timeout_ms`
+- `read` - args: `url`, `output_format`, `metadata`
+- `coords` - args: `url`, `selector`
+- `coords_all` - args: `url`, `selector`
+
+### Special commands
+
+- `{"command":"ping"}` - Health check, returns `{"ok":true,"command":"ping"}`
+- `{"command":"quit"}` - Exit batch mode gracefully
+
+### Example session
+
+```bash
+$ pw run
+{"id":"1","command":"navigate","args":{"url":"https://example.com"}}
+{"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
+{"id":"2","command":"screenshot","args":{"output":"page.png"}}
+{"id":"2","ok":true,"command":"screenshot","data":{"path":"page.png"}}
+{"command":"quit"}
+{"ok":true,"command":"quit"}
+$
+```
+
 ## Best Practices for Agents
 
+1. **Use batch mode for high-throughput**: Run `pw run` once, stream commands via stdin
 1. **Start daemon at session begin**: Run `pw daemon start` once, then make many commands
 1. **Use context caching**: Let URLs and selectors carry over between related commands
 1. **Parse JSON output**: All commands return structured JSON for reliable parsing

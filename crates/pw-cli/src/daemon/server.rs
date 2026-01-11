@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::net::TcpListener as StdTcpListener;
-#[cfg(unix)]
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
@@ -13,10 +11,10 @@ use tokio::net::UnixListener;
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, info, warn};
 
-#[cfg(unix)]
-use super::DAEMON_SOCKET;
 #[cfg(windows)]
 use super::DAEMON_TCP_PORT;
+#[cfg(unix)]
+use super::daemon_socket_path;
 use super::protocol::{BrowserInfo, DaemonRequest, DaemonResponse};
 use crate::types::BrowserKind;
 use pw::{LaunchOptions, Playwright};
@@ -61,16 +59,29 @@ impl Daemon {
 
         #[cfg(unix)]
         {
-            if Path::new(DAEMON_SOCKET).exists() {
-                std::fs::remove_file(DAEMON_SOCKET).with_context(|| {
-                    format!("Failed to remove existing socket: {}", DAEMON_SOCKET)
+            let socket_path = daemon_socket_path();
+            if socket_path.exists() {
+                std::fs::remove_file(&socket_path).with_context(|| {
+                    format!(
+                        "Failed to remove existing socket: {}",
+                        socket_path.display()
+                    )
                 })?;
             }
-            let listener = UnixListener::bind(DAEMON_SOCKET)
-                .with_context(|| format!("Failed to bind daemon socket: {}", DAEMON_SOCKET))?;
+            // Ensure parent directory exists (for XDG_RUNTIME_DIR fallback)
+            if let Some(parent) = socket_path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create socket directory: {}", parent.display())
+                    })?;
+                }
+            }
+            let listener = UnixListener::bind(&socket_path).with_context(|| {
+                format!("Failed to bind daemon socket: {}", socket_path.display())
+            })?;
             info!(
                 target = "pw.daemon",
-                socket = DAEMON_SOCKET,
+                socket = %socket_path.display(),
                 "daemon listening"
             );
             Ok(Self {

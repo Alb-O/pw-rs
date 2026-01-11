@@ -68,6 +68,7 @@ use tokio::sync::{Notify, mpsc, oneshot};
 
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Trait defining the interface that ChannelOwner needs from a Connection
 ///
@@ -323,6 +324,89 @@ pub enum Message {
 /// Type alias for the object registry mapping GUIDs to ChannelOwner objects
 type ObjectRegistry = HashMap<Arc<str>, Arc<dyn ChannelOwner>>;
 
+/// Pending request callbacks keyed by request ID.
+type CallbackMap = Arc<TokioMutex<HashMap<u32, oneshot::Sender<Result<Value>>>>>;
+
+/// RAII guard ensuring callback cleanup when a request future is dropped.
+///
+/// When a [`Connection::send_message`] future is cancelled (dropped before the
+/// response arrives), this guard removes the orphaned callback entry from the
+/// pending requests map. This prevents memory leaks in scenarios like timeouts
+/// or task cancellation.
+///
+/// # Implementation
+///
+/// The guard spawns a cleanup task via [`tokio::runtime::Handle::try_current`]
+/// rather than blocking in [`Drop`]. If no runtime is available (e.g., during
+/// shutdown), cleanup is skipped since the map will be dropped anyway.
+struct CancelGuard {
+    id: u32,
+    callbacks: CallbackMap,
+    completed: bool,
+}
+
+impl CancelGuard {
+    fn new(id: u32, callbacks: CallbackMap) -> Self {
+        Self {
+            id,
+            callbacks,
+            completed: false,
+        }
+    }
+
+    fn complete(&mut self) {
+        self.completed = true;
+    }
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+
+        let id = self.id;
+        let callbacks = Arc::clone(&self.callbacks);
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if callbacks.lock().await.remove(&id).is_some() {
+                    tracing::debug!(id, "CancelGuard: removed orphaned callback");
+                }
+            });
+        }
+    }
+}
+
+/// Future returned by [`Connection::send_message`] with automatic cancellation cleanup.
+///
+/// Wraps a [`oneshot::Receiver`] and holds a [`CancelGuard`] that removes the
+/// callback from the pending requests map if this future is dropped before
+/// receiving a response.
+///
+/// # Cancel Safety
+///
+/// This future is cancel-safe: dropping it will not leak callback entries.
+/// The [`CancelGuard`] ensures cleanup even if the response never arrives.
+struct ResponseFuture {
+    rx: oneshot::Receiver<Result<Value>>,
+    guard: CancelGuard,
+}
+
+impl Future for ResponseFuture {
+    type Output = Result<Value>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.rx).poll(cx) {
+            Poll::Ready(result) => {
+                self.guard.complete();
+                Poll::Ready(result.map_err(|_| Error::ChannelClosed).and_then(|r| r))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 /// JSON-RPC connection to Playwright server
 ///
 /// Manages request/response correlation and event dispatch.
@@ -415,31 +499,34 @@ impl Connection {
         }
     }
 
-    /// Send a message to the Playwright server and await response
+    /// Sends a message to the Playwright server and awaits the response.
     ///
-    /// This method:
-    /// 1. Generates a unique request ID
-    /// 2. Creates a oneshot channel for the response
-    /// 3. Stores the channel sender in the callbacks map
-    /// 4. Serializes and sends the request via transport
-    /// 5. Awaits the response on the receiver
+    /// Generates a unique request ID, queues the message for sending, and waits
+    /// for the correlated response from the server.
     ///
     /// # Arguments
     ///
-    /// * `guid` - GUID of the target object (e.g., "page@abc123")
-    /// * `method` - Method name to invoke (e.g., "goto")
-    /// * `params` - Method parameters as JSON value
+    /// * `guid` - GUID of the target object (e.g., `"page@abc123"`)
+    /// * `method` - Method name to invoke (e.g., `"goto"`)
+    /// * `params` - Method parameters as a [`serde_json::Value`]
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// The result value from the server, or an error if:
-    /// - Transport send fails
-    /// - Server returns an error
-    /// - Connection is closed before response arrives
+    /// Returns an error if:
+    /// - [`Error::Serde`] - Request serialization fails
+    /// - [`Error::ChannelClosed`] - Connection closed before response arrives
+    /// - [`Error::Remote`] - Server returned a protocol error
     ///
-    /// See module-level documentation for usage examples.
+    /// # Cancel Safety
+    ///
+    /// This method is cancel-safe. If the returned future is dropped before
+    /// completion, the callback entry is automatically removed from the pending
+    /// requests map via [`CancelGuard`], preventing memory leaks.
+    ///
+    /// [`Error::Serde`]: crate::error::Error::Serde
+    /// [`Error::ChannelClosed`]: crate::error::Error::ChannelClosed
+    /// [`Error::Remote`]: crate::error::Error::Remote
     pub async fn send_message(&self, guid: &str, method: &str, params: Value) -> Result<Value> {
-        // Use atomic increment for thread-safe ID generation
         let id = self.last_id.fetch_add(1, Ordering::SeqCst);
 
         tracing::debug!(
@@ -451,6 +538,10 @@ impl Connection {
 
         let (tx, rx) = oneshot::channel();
         self.callbacks.lock().await.insert(id, tx);
+
+        // Create cancel guard AFTER inserting callback.
+        // If the future is dropped after this point, the guard will clean up.
+        let guard = CancelGuard::new(id, Arc::clone(&self.callbacks));
 
         // Build request with metadata
         let request = Request {
@@ -472,9 +563,9 @@ impl Connection {
         }
 
         tracing::debug!("Awaiting response for ID {}", id);
-        rx.await
-            .map_err(|_| Error::ChannelClosed)
-            .and_then(|result| result)
+
+        // Wrap receiver in ResponseFuture which handles cancellation cleanup
+        ResponseFuture { rx, guard }.await
     }
 
     /// Initialize the Playwright connection and return the root Playwright object
@@ -1333,5 +1424,91 @@ mod tests {
         // Dispatch should succeed without error (forward-compatible)
         let result = connection.dispatch(unknown).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_guard_removes_callback_on_drop() {
+        let (connection, _, _) = create_test_connection();
+        let connection = Arc::new(connection);
+
+        // Manually insert a callback to simulate what send_message does
+        let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, _rx) = oneshot::channel::<Result<Value>>();
+        connection.callbacks.lock().await.insert(id, tx);
+
+        // Verify callback is in the map
+        assert!(connection.callbacks.lock().await.contains_key(&id));
+
+        // Create and immediately drop a CancelGuard
+        {
+            let _guard = CancelGuard::new(id, Arc::clone(&connection.callbacks));
+            // Guard is dropped here
+        }
+
+        // Give the spawned cleanup task time to run
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Callback should be removed by the guard's Drop
+        assert!(
+            !connection.callbacks.lock().await.contains_key(&id),
+            "CancelGuard should have removed the callback on drop"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cancel_guard_does_not_remove_on_completion() {
+        let (connection, _, _) = create_test_connection();
+        let connection = Arc::new(connection);
+
+        // Manually insert a callback
+        let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, _rx) = oneshot::channel::<Result<Value>>();
+        connection.callbacks.lock().await.insert(id, tx);
+
+        // Create guard and mark it as completed before dropping
+        {
+            let mut guard = CancelGuard::new(id, Arc::clone(&connection.callbacks));
+            guard.complete(); // Mark as completed
+            // Guard is dropped here, but should NOT remove callback
+        }
+
+        // Give any potential cleanup task time to run
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Callback should still be in the map (guard was marked complete)
+        assert!(
+            connection.callbacks.lock().await.contains_key(&id),
+            "CancelGuard marked as complete should NOT remove callback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_response_future_cancellation() {
+        let (connection, _, _) = create_test_connection();
+        let connection = Arc::new(connection);
+
+        // Create a oneshot channel
+        let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = oneshot::channel::<Result<Value>>();
+        connection.callbacks.lock().await.insert(id, tx);
+
+        // Verify callback is in the map
+        assert!(connection.callbacks.lock().await.contains_key(&id));
+
+        // Create ResponseFuture and drop it without awaiting
+        {
+            let guard = CancelGuard::new(id, Arc::clone(&connection.callbacks));
+            let _future = ResponseFuture { rx, guard };
+            // Future is dropped here without being polled to completion
+        }
+
+        // Give the spawned cleanup task time to run
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Callback should be removed
+        assert!(
+            !connection.callbacks.lock().await.contains_key(&id),
+            "Dropped ResponseFuture should clean up its callback"
+        );
     }
 }

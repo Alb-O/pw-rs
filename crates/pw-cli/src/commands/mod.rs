@@ -12,6 +12,7 @@ pub mod init;
 mod navigate;
 mod protect;
 mod read;
+mod run;
 mod screenshot;
 mod session;
 mod tabs;
@@ -53,6 +54,48 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
         Commands::Relay { host, port } => relay::run_relay_server(&host, port)
             .await
             .map_err(PwError::Anyhow),
+        Commands::Run => {
+            // Batch mode - create context and run in NDJSON mode
+            let project = if no_project {
+                None
+            } else {
+                crate::project::Project::detect()
+            };
+            let project_root = project.as_ref().map(|p| p.paths.root.clone());
+            let mut ctx_state = ContextState::new(
+                project_root.clone(),
+                context,
+                base_url,
+                no_context,
+                no_save_context,
+                refresh_context,
+            )?;
+
+            let resolved_cdp = cdp_endpoint.or_else(|| ctx_state.cdp_endpoint().map(String::from));
+
+            let ctx = CommandContext::new(
+                browser,
+                no_project,
+                auth,
+                resolved_cdp,
+                launch_server,
+                no_daemon,
+            );
+
+            let mut broker = SessionBroker::new(
+                &ctx,
+                ctx_state.session_descriptor_path(),
+                ctx_state.refresh_requested(),
+            );
+
+            let result = run::execute(&ctx, &mut ctx_state, &mut broker).await;
+
+            if result.is_ok() {
+                ctx_state.persist()?;
+            }
+
+            result
+        }
         command => {
             // Create context state first to check for stored CDP endpoint
             let project = if no_project {
@@ -601,6 +644,7 @@ async fn dispatch_command_inner(
             nix,
         }),
         Commands::Relay { .. } => unreachable!("handled earlier"),
+        Commands::Run => unreachable!("handled earlier"),
         Commands::Connect { endpoint, clear } => connect::run(ctx_state, format, endpoint, clear),
         Commands::Tabs(action) => {
             let protected = ctx_state.protected_urls();
