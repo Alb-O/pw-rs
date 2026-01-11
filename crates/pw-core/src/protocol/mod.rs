@@ -21,6 +21,7 @@ pub mod cookie;
 pub mod dialog;
 pub mod download;
 pub mod element_handle;
+pub mod events;
 pub mod file_payload;
 pub mod frame;
 pub mod keyboard;
@@ -52,6 +53,7 @@ pub use cookie::{
 pub use dialog::Dialog;
 pub use download::Download;
 pub use element_handle::ElementHandle;
+pub use events::{ConsoleSubscription, EventStream, EventWaiter};
 pub use file_payload::{FilePayload, FilePayloadBuilder};
 pub use frame::Frame;
 pub use keyboard::Keyboard;

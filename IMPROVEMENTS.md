@@ -11,7 +11,7 @@ This document captures recommendations from a thorough code review discussion wi
 | Quick Win 3: Page console events | ✅ Done | `ccae233` |
 | Task 1.2: Centralize downcasting | ✅ Done | `ccae233` |
 | Task 1.3: CLI testing infrastructure | ✅ Done | `535bec8` |
-| Task 1.1: Event system infrastructure | Partial | console done, need EventBus |
+| Task 1.1: Event system infrastructure | ✅ Done | EventBus, EventStream, EventWaiter, on_console() |
 
 ---
 

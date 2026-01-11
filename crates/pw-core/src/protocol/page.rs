@@ -1384,6 +1384,65 @@ impl Page {
         .map_err(|_| Error::Timeout("Timeout waiting for console message".to_string()))?
     }
 
+    /// Registers a console message callback.
+    ///
+    /// The callback will be invoked for each console message emitted by the page.
+    /// Unlike [`console_messages()`](Self::console_messages), which returns a receiver that you
+    /// poll manually, this method spawns a background task that invokes your callback.
+    ///
+    /// Returns a [`ConsoleSubscription`] that cancels the background task when dropped.
+    /// To keep receiving messages, store the subscription.
+    ///
+    /// # Arguments
+    ///
+    /// * `handler` - A synchronous callback that receives each console message
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Store the subscription to keep the handler active
+    /// let _sub = page.on_console(|msg| {
+    ///     println!("[{}] {}", msg.kind(), msg.text());
+    /// });
+    ///
+    /// // Navigate and trigger console messages
+    /// page.goto("https://example.com", None).await?;
+    ///
+    /// // When _sub is dropped, the handler stops receiving messages
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-event-console>
+    ///
+    /// [`ConsoleSubscription`]: crate::protocol::events::ConsoleSubscription
+    pub fn on_console<F>(&self, handler: F) -> super::events::ConsoleSubscription
+    where
+        F: Fn(ConsoleMessage) + Send + Sync + 'static,
+    {
+        use tokio::sync::oneshot;
+
+        let mut rx = self.console_messages();
+        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    result = rx.recv() => {
+                        match result {
+                            Ok(msg) => handler(msg),
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!(dropped = n, "Console callback lagged");
+                            }
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                    _ = &mut cancel_rx => break,
+                }
+            }
+        });
+
+        super::events::ConsoleSubscription::new(cancel_tx)
+    }
+
     /// Handles a download event from the protocol
     async fn on_download_event(&self, download: Download) {
         let handlers = self.download_handlers.lock().clone();
