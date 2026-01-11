@@ -11,6 +11,7 @@
 // - Objects are created by the object factory when server sends __create__ messages
 // - Objects communicate with the server via their Channel
 
+pub mod accessibility;
 pub mod action_options;
 pub mod artifact;
 pub mod browser;
@@ -36,14 +37,20 @@ pub mod route;
 pub mod screenshot;
 pub mod select_option;
 pub mod tracing;
+pub mod video;
 
+pub use accessibility::{
+    Accessibility, AccessibilityNode, AccessibilitySnapshotOptions,
+    AccessibilitySnapshotOptionsBuilder, AccessibilityValue, CheckedState, PressedState,
+};
 pub use action_options::{
     CheckOptions, FillOptions, HoverOptions, KeyboardOptions, MouseOptions, PressOptions,
     SelectOptions,
 };
 pub use browser::Browser;
 pub use browser_context::{
-    BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder, Geolocation, Viewport,
+    BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder, Geolocation,
+    HarContentPolicy, HarMode, HarNotFound, RouteFromHarOptions, Viewport,
 };
 pub use browser_type::{BrowserType, ConnectOverCDPResult, LaunchedServer};
 pub use click::{ClickOptions, KeyboardModifier, MouseButton, Position};
@@ -77,3 +84,4 @@ pub use tracing::{
     Tracing, TracingStartChunkOptions, TracingStartOptions, TracingStartOptionsBuilder,
     TracingStopOptions,
 };
+pub use video::Video;
