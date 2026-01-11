@@ -8,6 +8,7 @@ use crate::protocol::page::{GotoOptions, Response};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::any::Any;
 use std::sync::Arc;
@@ -1063,7 +1064,142 @@ impl Frame {
             }
         }
     }
+
+    /// Evaluates JavaScript expression and returns the result as [`serde_json::Value`].
+    ///
+    /// This is the internal implementation used by [`Page::evaluate_json`]. It handles
+    /// the Playwright protocol's wrapped value format and converts it to standard JSON.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - JavaScript code to evaluate in the frame context
+    ///
+    /// # Returns
+    ///
+    /// The evaluation result as standard JSON after unwrapping Playwright's protocol format.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolError`] if the expression throws or contains non-serializable values.
+    pub(crate) async fn frame_evaluate_expression_json(
+        &self,
+        expression: &str,
+    ) -> Result<serde_json::Value> {
+        let params = serde_json::json!({
+            "expression": expression,
+            "arg": {
+                "value": {"v": "null"},
+                "handles": []
+            }
+        });
+
+        #[derive(Deserialize)]
+        struct EvaluateResult {
+            value: serde_json::Value,
+        }
+
+        let result: EvaluateResult = self.channel().send("evaluateExpression", params).await?;
+        Self::protocol_value_to_json(&result.value)
+    }
+
+    /// Evaluates JavaScript expression and deserializes the result to a typed value.
+    ///
+    /// This is the internal implementation used by [`Page::evaluate_typed`].
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - Target type for deserialization, must implement [`DeserializeOwned`]
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolError`] if:
+    /// - JavaScript evaluation fails
+    /// - Result cannot be deserialized to type `T`
+    pub(crate) async fn frame_evaluate_expression_typed<T: DeserializeOwned>(
+        &self,
+        expression: &str,
+    ) -> Result<T> {
+        let json_value = self.frame_evaluate_expression_json(expression).await?;
+
+        serde_json::from_value(json_value).map_err(|e| {
+            Error::ProtocolError(format!("Failed to deserialize evaluate result: {}", e))
+        })
+    }
+
+    /// Converts Playwright protocol value format to standard JSON.
+    ///
+    /// Playwright wraps JavaScript values in a specific format for serialization:
+    ///
+    /// | JavaScript Type | Protocol Format |
+    /// |-----------------|-----------------|
+    /// | String | `{"s": "value"}` |
+    /// | Number | `{"n": 123}` |
+    /// | Boolean | `{"b": true}` |
+    /// | null | `{"v": "null"}` |
+    /// | undefined | `{"v": "undefined"}` |
+    /// | Array | `{"a": [...]}` |
+    /// | Object | `{"o": [{"k": "key", "v": {...}}...]}` |
+    /// | Date | `{"d": "ISO string"}` |
+    /// | BigInt | `{"bi": "string"}` |
+    /// | Handle | `{"h": id}` (not serializable) |
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolError`] if the value contains a handle reference.
+    fn protocol_value_to_json(value: &serde_json::Value) -> Result<serde_json::Value> {
+        match value {
+            Value::Object(map) => {
+                if let Some(s) = map.get("s") {
+                    return Ok(s.clone());
+                }
+                if let Some(n) = map.get("n") {
+                    return Ok(n.clone());
+                }
+                if let Some(b) = map.get("b") {
+                    return Ok(b.clone());
+                }
+                if let Some(v) = map.get("v").and_then(|v| v.as_str()) {
+                    return match v {
+                        "null" | "undefined" | "NaN" | "Infinity" | "-Infinity" => Ok(Value::Null),
+                        "-0" => Ok(serde_json::json!(0)),
+                        _ => Ok(Value::Null),
+                    };
+                }
+                if let Some(arr) = map.get("a").and_then(|v| v.as_array()) {
+                    let converted: Result<Vec<Value>> =
+                        arr.iter().map(Self::protocol_value_to_json).collect();
+                    return Ok(Value::Array(converted?));
+                }
+                if let Some(obj_arr) = map.get("o").and_then(|v| v.as_array()) {
+                    let mut result_map = serde_json::Map::new();
+                    for entry in obj_arr {
+                        if let (Some(key), Some(val)) =
+                            (entry.get("k").and_then(|k| k.as_str()), entry.get("v"))
+                        {
+                            result_map.insert(key.to_string(), Self::protocol_value_to_json(val)?);
+                        }
+                    }
+                    return Ok(Value::Object(result_map));
+                }
+                if let Some(date_str) = map.get("d").and_then(|v| v.as_str()) {
+                    return Ok(Value::String(date_str.to_string()));
+                }
+                if let Some(bigint_str) = map.get("bi").and_then(|v| v.as_str()) {
+                    return Ok(Value::String(bigint_str.to_string()));
+                }
+                if map.contains_key("h") {
+                    return Err(Error::ProtocolError(
+                        "Cannot serialize handle reference to JSON".to_string(),
+                    ));
+                }
+                Ok(value.clone())
+            }
+            _ => Ok(value.clone()),
+        }
+    }
 }
+
+impl crate::server::channel_owner::private::Sealed for Frame {}
 
 impl ChannelOwner for Frame {
     fn guid(&self) -> &str {

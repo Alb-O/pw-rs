@@ -169,9 +169,7 @@ impl BrowserType {
                 let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
 
                 if is_ci {
-                    eprintln!(
-                        "[playwright-rust] Detected Windows CI environment, adding stability flags"
-                    );
+                    tracing::info!("Detected Windows CI environment, adding stability flags");
 
                     // Get existing args or create empty vec
                     let mut args = options.args.unwrap_or_default();
@@ -393,6 +391,8 @@ impl LaunchedServer {
         self.browser.close().await
     }
 }
+
+impl crate::server::channel_owner::private::Sealed for BrowserType {}
 
 impl ChannelOwner for BrowserType {
     fn guid(&self) -> &str {

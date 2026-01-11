@@ -303,7 +303,7 @@ impl Browser {
         {
             let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
             if is_ci {
-                eprintln!("[playwright-rust] Adding Windows CI browser cleanup delay");
+                tracing::debug!("Adding Windows CI browser cleanup delay");
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         }
@@ -311,6 +311,8 @@ impl Browser {
         result
     }
 }
+
+impl crate::server::channel_owner::private::Sealed for Browser {}
 
 impl ChannelOwner for Browser {
     fn guid(&self) -> &str {

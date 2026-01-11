@@ -323,6 +323,8 @@ impl Playwright {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for Playwright {}
+
 impl ChannelOwner for Playwright {
     fn guid(&self) -> &str {
         self.base.guid()

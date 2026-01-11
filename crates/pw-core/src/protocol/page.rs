@@ -8,12 +8,13 @@ use crate::protocol::{Dialog, Download, Route};
 use crate::server::channel::Channel;
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use base64::Engine;
+use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::Value;
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 /// Page represents a web page within a browser context.
 ///
@@ -96,22 +97,22 @@ use std::sync::{Arc, Mutex, RwLock};
 ///     // Data URLs may not return a response on reload (this is normal)
 ///     let _response = page.reload(None).await?;
 ///
-///     // Demonstrate route() - network interception
-///     page.route("**/*.png", |route| async move {
+///     // Demonstrate route() - network interception (returns Subscription)
+///     let _route_sub = page.route("**/*.png", |route| async move {
 ///         route.abort(None).await
 ///     }).await?;
 ///
-///     // Demonstrate on_download() - download handler
-///     page.on_download(|download| async move {
+///     // Demonstrate on_download() - download handler (returns Subscription)
+///     let _download_sub = page.on_download(|download| async move {
 ///         println!("Download started: {}", download.url());
 ///         Ok(())
-///     }).await?;
+///     });
 ///
-///     // Demonstrate on_dialog() - dialog handler
-///     page.on_dialog(|dialog| async move {
+///     // Demonstrate on_dialog() - dialog handler (returns Subscription)
+///     let _dialog_sub = page.on_dialog(|dialog| async move {
 ///         println!("Dialog: {} - {}", dialog.type_(), dialog.message());
 ///         dialog.accept(None).await
-///     }).await?;
+///     });
 ///
 ///     // Demonstrate close()
 ///     page.close().await?;
@@ -133,9 +134,9 @@ pub struct Page {
     /// Route handlers for network interception
     route_handlers: Arc<Mutex<Vec<RouteHandlerEntry>>>,
     /// Download event handlers
-    download_handlers: Arc<Mutex<Vec<DownloadHandler>>>,
+    download_handlers: Arc<Mutex<Vec<DownloadHandlerEntry>>>,
     /// Dialog event handlers
-    dialog_handlers: Arc<Mutex<Vec<DialogHandler>>>,
+    dialog_handlers: Arc<Mutex<Vec<DialogHandlerEntry>>>,
 }
 
 /// Type alias for boxed route handler future
@@ -147,18 +148,169 @@ type DownloadHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 /// Type alias for boxed dialog handler future
 type DialogHandlerFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 
+/// Unique identifier for event handlers
+type HandlerId = u64;
+
+/// Counter for generating unique handler IDs
+static NEXT_HANDLER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Generates a new unique handler ID
+fn next_handler_id() -> HandlerId {
+    NEXT_HANDLER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Storage for a single route handler
 #[derive(Clone)]
 struct RouteHandlerEntry {
+    id: HandlerId,
     pattern: String,
     handler: Arc<dyn Fn(Route) -> RouteHandlerFuture + Send + Sync>,
 }
 
-/// Download event handler
-type DownloadHandler = Arc<dyn Fn(Download) -> DownloadHandlerFuture + Send + Sync>;
+/// Storage for a download handler with ID
+#[derive(Clone)]
+struct DownloadHandlerEntry {
+    id: HandlerId,
+    handler: Arc<dyn Fn(Download) -> DownloadHandlerFuture + Send + Sync>,
+}
 
-/// Dialog event handler
-type DialogHandler = Arc<dyn Fn(Dialog) -> DialogHandlerFuture + Send + Sync>;
+/// Storage for a dialog handler with ID
+#[derive(Clone)]
+struct DialogHandlerEntry {
+    id: HandlerId,
+    handler: Arc<dyn Fn(Dialog) -> DialogHandlerFuture + Send + Sync>,
+}
+
+/// A subscription handle that unregisters the event handler when dropped.
+///
+/// This type implements the RAII (Resource Acquisition Is Initialization) pattern
+/// for event subscriptions. When a `Subscription` is dropped, the associated event
+/// handler is automatically removed from the page. This ensures that handlers don't
+/// leak and provides explicit lifetime control.
+///
+/// # Lifetime Management
+///
+/// The subscription holds a weak reference to the handler list, so dropping it
+/// after the page is closed is safe and will simply do nothing.
+///
+/// # Example
+///
+/// ```ignore
+/// // Register a route handler - returns a Subscription
+/// let subscription = page.route("**/*.png", |route| async move {
+///     route.abort(None).await
+/// }).await?;
+///
+/// // Handler is active while subscription is held...
+/// do_something().await;
+///
+/// // Explicitly unsubscribe when done
+/// subscription.unsubscribe();
+///
+/// // Or simply drop it
+/// // drop(subscription);
+/// ```
+///
+/// # Storing Subscriptions
+///
+/// To keep handlers active for the lifetime of your application, store the
+/// subscription in a struct or collection:
+///
+/// ```ignore
+/// struct MyApp {
+///     page: Page,
+///     _route_subscription: Subscription,
+/// }
+/// ```
+pub struct Subscription {
+    id: HandlerId,
+    inner: SubscriptionInner,
+}
+
+/// Internal storage for the weak reference to the handler list.
+enum SubscriptionInner {
+    Route(std::sync::Weak<Mutex<Vec<RouteHandlerEntry>>>),
+    Download(std::sync::Weak<Mutex<Vec<DownloadHandlerEntry>>>),
+    Dialog(std::sync::Weak<Mutex<Vec<DialogHandlerEntry>>>),
+}
+
+impl Subscription {
+    fn new_route(id: HandlerId, handlers: &Arc<Mutex<Vec<RouteHandlerEntry>>>) -> Self {
+        Self {
+            id,
+            inner: SubscriptionInner::Route(Arc::downgrade(handlers)),
+        }
+    }
+
+    fn new_download(id: HandlerId, handlers: &Arc<Mutex<Vec<DownloadHandlerEntry>>>) -> Self {
+        Self {
+            id,
+            inner: SubscriptionInner::Download(Arc::downgrade(handlers)),
+        }
+    }
+
+    fn new_dialog(id: HandlerId, handlers: &Arc<Mutex<Vec<DialogHandlerEntry>>>) -> Self {
+        Self {
+            id,
+            inner: SubscriptionInner::Dialog(Arc::downgrade(handlers)),
+        }
+    }
+
+    /// Returns the unique identifier for this subscription.
+    ///
+    /// Each subscription has a unique ID that can be used for debugging or
+    /// tracking purposes. IDs are globally unique across all subscription types.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Explicitly unsubscribes the event handler.
+    ///
+    /// This is equivalent to dropping the subscription, but provides a more
+    /// explicit API when you want to clearly indicate the intent to unsubscribe.
+    ///
+    /// After calling this method, the handler will no longer be invoked for
+    /// matching events.
+    pub fn unsubscribe(self) {
+        drop(self);
+    }
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        match &self.inner {
+            SubscriptionInner::Route(weak) => {
+                if let Some(handlers) = weak.upgrade() {
+                    handlers.lock().retain(|e| e.id != self.id);
+                }
+            }
+            SubscriptionInner::Download(weak) => {
+                if let Some(handlers) = weak.upgrade() {
+                    handlers.lock().retain(|e| e.id != self.id);
+                }
+            }
+            SubscriptionInner::Dialog(weak) => {
+                if let Some(handlers) = weak.upgrade() {
+                    handlers.lock().retain(|e| e.id != self.id);
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for Subscription {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match &self.inner {
+            SubscriptionInner::Route(_) => "Route",
+            SubscriptionInner::Download(_) => "Download",
+            SubscriptionInner::Dialog(_) => "Dialog",
+        };
+        f.debug_struct("Subscription")
+            .field("id", &self.id)
+            .field("kind", &kind)
+            .finish()
+    }
+}
 
 impl Page {
     /// Creates a new Page from protocol initialization
@@ -750,28 +902,137 @@ impl Page {
         frame.frame_evaluate_expression_value(expression).await
     }
 
+    /// Evaluates a JavaScript expression and returns the result as [`serde_json::Value`].
+    ///
+    /// This method is useful when working with complex objects or arrays where you
+    /// need access to the full JSON structure rather than a string representation.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - JavaScript code to evaluate in the page context
+    ///
+    /// # Returns
+    ///
+    /// The evaluation result as a [`serde_json::Value`], which can be an object,
+    /// array, string, number, boolean, or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolError`] if:
+    /// - The JavaScript expression throws an exception
+    /// - The result contains non-serializable values (e.g., DOM elements, functions)
+    /// - The page has been closed
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let value = page.evaluate_json("({ name: 'test', count: 42 })").await?;
+    /// assert_eq!(value["name"], "test");
+    /// assert_eq!(value["count"], 42);
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-evaluate>
+    pub async fn evaluate_json(&self, expression: &str) -> Result<serde_json::Value> {
+        let frame = self.main_frame().await?;
+        frame.frame_evaluate_expression_json(expression).await
+    }
+
+    /// Evaluates a JavaScript expression and deserializes the result to a typed value.
+    ///
+    /// This is the most ergonomic way to evaluate JavaScript when you know the
+    /// expected return type at compile time. The result is automatically deserialized
+    /// using serde.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The type to deserialize into. Must implement [`serde::de::DeserializeOwned`].
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - JavaScript code to evaluate in the page context
+    ///
+    /// # Returns
+    ///
+    /// The evaluation result deserialized as type `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The JavaScript expression throws an exception
+    /// - The result cannot be deserialized to type `T`
+    /// - The page has been closed
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[derive(Deserialize)]
+    /// struct PageInfo {
+    ///     title: String,
+    ///     url: String,
+    /// }
+    ///
+    /// let info: PageInfo = page.evaluate_typed(
+    ///     "({ title: document.title, url: location.href })"
+    /// ).await?;
+    /// println!("Page: {} at {}", info.title, info.url);
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-evaluate>
+    pub async fn evaluate_typed<T: serde::de::DeserializeOwned>(
+        &self,
+        expression: &str,
+    ) -> Result<T> {
+        let frame = self.main_frame().await?;
+        frame.frame_evaluate_expression_typed(expression).await
+    }
+
     /// Registers a route handler for network interception.
     ///
     /// When a request matches the specified pattern, the handler will be called
     /// with a Route object that can abort, continue, or fulfill the request.
+    ///
+    /// Returns a [`Subscription`] that will automatically unregister the handler
+    /// when dropped. To keep the handler active, store the subscription.
     ///
     /// # Arguments
     ///
     /// * `pattern` - URL pattern to match (supports glob patterns like "**/*.png")
     /// * `handler` - Async closure that handles the route
     ///
+    /// # Returns
+    ///
+    /// A [`Subscription`] that unregisters the handler when dropped.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Register a route handler
+    /// let subscription = page.route("**/*.png", |route| async move {
+    ///     route.abort(None).await
+    /// }).await?;
+    ///
+    /// // Handler is active while subscription is held
+    ///
+    /// // To explicitly unregister:
+    /// subscription.unsubscribe();
+    /// // Or just drop it:
+    /// // drop(subscription);
+    /// ```
+    ///
     /// See: <https://playwright.dev/docs/api/class-page#page-route>
-    pub async fn route<F, Fut>(&self, pattern: &str, handler: F) -> Result<()>
+    pub async fn route<F, Fut>(&self, pattern: &str, handler: F) -> Result<Subscription>
     where
         F: Fn(Route) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
-        // 1. Wrap handler in Arc with type erasure
+        // 1. Generate unique ID and wrap handler
+        let id = next_handler_id();
         let handler =
             Arc::new(move |route: Route| -> RouteHandlerFuture { Box::pin(handler(route)) });
 
         // 2. Store in handlers list
-        self.route_handlers.lock().unwrap().push(RouteHandlerEntry {
+        self.route_handlers.lock().push(RouteHandlerEntry {
+            id,
             pattern: pattern.to_string(),
             handler,
         });
@@ -779,7 +1040,8 @@ impl Page {
         // 3. Enable network interception via protocol
         self.enable_network_interception().await?;
 
-        Ok(())
+        // 4. Return subscription handle
+        Ok(Subscription::new_route(id, &self.route_handlers))
     }
 
     /// Updates network interception patterns for this page
@@ -789,7 +1051,6 @@ impl Page {
         let patterns: Vec<serde_json::Value> = self
             .route_handlers
             .lock()
-            .unwrap()
             .iter()
             .map(|entry| serde_json::json!({ "glob": entry.pattern }))
             .collect();
@@ -810,7 +1071,7 @@ impl Page {
     ///
     /// Called by on_event when a "route" event is received
     async fn on_route_event(&self, route: Route) {
-        let handlers = self.route_handlers.lock().unwrap().clone();
+        let handlers = self.route_handlers.lock().clone();
         let url = route.request().url().to_string();
 
         for entry in handlers.iter().rev() {
@@ -818,7 +1079,7 @@ impl Page {
                 let handler = entry.handler.clone();
                 // Ensure fulfill/continue/abort completes before browser continues
                 if let Err(e) = handler(route).await {
-                    eprintln!("Route handler error: {}", e);
+                    tracing::error!(error = %e, "Route handler error");
                 }
                 break;
             }
@@ -847,23 +1108,33 @@ impl Page {
     /// Downloads occur when the page initiates a file download (e.g., clicking a link
     /// with the download attribute, or a server response with Content-Disposition: attachment).
     ///
+    /// Returns a [`Subscription`] that will automatically unregister the handler
+    /// when dropped. To keep the handler active, store the subscription.
+    ///
     /// # Arguments
     ///
     /// * `handler` - Async closure that receives the Download object
     ///
+    /// # Returns
+    ///
+    /// A [`Subscription`] that unregisters the handler when dropped.
+    ///
     /// See: <https://playwright.dev/docs/api/class-page#page-event-download>
-    pub async fn on_download<F, Fut>(&self, handler: F) -> Result<()>
+    pub fn on_download<F, Fut>(&self, handler: F) -> Subscription
     where
         F: Fn(Download) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
+        let id = next_handler_id();
         let handler = Arc::new(move |download: Download| -> DownloadHandlerFuture {
             Box::pin(handler(download))
         });
 
-        self.download_handlers.lock().unwrap().push(handler);
+        self.download_handlers
+            .lock()
+            .push(DownloadHandlerEntry { id, handler });
 
-        Ok(())
+        Subscription::new_download(id, &self.download_handlers)
     }
 
     /// Registers a dialog event handler.
@@ -871,42 +1142,52 @@ impl Page {
     /// The handler will be called when a JavaScript dialog is triggered (alert, confirm, prompt, or beforeunload).
     /// The dialog must be explicitly accepted or dismissed, otherwise the page will freeze.
     ///
+    /// Returns a [`Subscription`] that will automatically unregister the handler
+    /// when dropped. To keep the handler active, store the subscription.
+    ///
     /// # Arguments
     ///
     /// * `handler` - Async closure that receives the Dialog object
     ///
+    /// # Returns
+    ///
+    /// A [`Subscription`] that unregisters the handler when dropped.
+    ///
     /// See: <https://playwright.dev/docs/api/class-page#page-event-dialog>
-    pub async fn on_dialog<F, Fut>(&self, handler: F) -> Result<()>
+    pub fn on_dialog<F, Fut>(&self, handler: F) -> Subscription
     where
         F: Fn(Dialog) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
+        let id = next_handler_id();
         let handler =
             Arc::new(move |dialog: Dialog| -> DialogHandlerFuture { Box::pin(handler(dialog)) });
 
-        self.dialog_handlers.lock().unwrap().push(handler);
+        self.dialog_handlers
+            .lock()
+            .push(DialogHandlerEntry { id, handler });
 
-        Ok(())
+        Subscription::new_dialog(id, &self.dialog_handlers)
     }
 
     /// Handles a download event from the protocol
     async fn on_download_event(&self, download: Download) {
-        let handlers = self.download_handlers.lock().unwrap().clone();
+        let handlers = self.download_handlers.lock().clone();
 
-        for handler in handlers {
-            if let Err(e) = handler(download.clone()).await {
-                eprintln!("Download handler error: {}", e);
+        for entry in handlers {
+            if let Err(e) = (entry.handler)(download.clone()).await {
+                tracing::error!(error = %e, handler_id = entry.id, "Download handler error");
             }
         }
     }
 
     /// Handles a dialog event from the protocol
     async fn on_dialog_event(&self, dialog: Dialog) {
-        let handlers = self.dialog_handlers.lock().unwrap().clone();
+        let handlers = self.dialog_handlers.lock().clone();
 
-        for handler in handlers {
-            if let Err(e) = handler(dialog.clone()).await {
-                eprintln!("Dialog handler error: {}", e);
+        for entry in handlers {
+            if let Err(e) = (entry.handler)(dialog.clone()).await {
+                tracing::error!(error = %e, handler_id = entry.id, "Dialog handler error");
             }
         }
     }
@@ -919,6 +1200,8 @@ impl Page {
         self.on_dialog_event(dialog).await;
     }
 }
+
+impl crate::server::channel_owner::private::Sealed for Page {}
 
 impl ChannelOwner for Page {
     fn guid(&self) -> &str {
@@ -987,7 +1270,7 @@ impl ChannelOwner for Page {
                         let route_arc = match connection.get_object(&route_guid_owned).await {
                             Ok(obj) => obj,
                             Err(e) => {
-                                eprintln!("Failed to get route object: {}", e);
+                                tracing::error!(error = %e, guid = %route_guid_owned, "Failed to get route object");
                                 return;
                             }
                         };
@@ -995,7 +1278,7 @@ impl ChannelOwner for Page {
                         let route = match route_arc.as_any().downcast_ref::<Route>() {
                             Some(r) => r.clone(),
                             None => {
-                                eprintln!("Failed to downcast to Route");
+                                tracing::error!(guid = %route_guid_owned, "Failed to downcast to Route");
                                 return;
                             }
                         };
@@ -1031,7 +1314,7 @@ impl ChannelOwner for Page {
                         let artifact_arc = match connection.get_object(&artifact_guid_owned).await {
                             Ok(obj) => obj,
                             Err(e) => {
-                                eprintln!("Failed to get artifact object: {}", e);
+                                tracing::error!(error = %e, guid = %artifact_guid_owned, "Failed to get artifact object");
                                 return;
                             }
                         };

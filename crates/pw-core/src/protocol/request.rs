@@ -80,6 +80,8 @@ impl Request {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for Request {}
+
 impl ChannelOwner for Request {
     fn guid(&self) -> &str {
         self.base.guid()

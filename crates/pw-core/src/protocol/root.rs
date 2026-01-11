@@ -133,6 +133,8 @@ impl Root {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for Root {}
+
 impl ChannelOwner for Root {
     fn guid(&self) -> &str {
         self.base.guid()

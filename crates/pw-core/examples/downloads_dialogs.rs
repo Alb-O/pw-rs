@@ -29,8 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let download_info = Arc::new(Mutex::new(None));
     let download_info_clone = Arc::clone(&download_info);
 
-    // Register download handler
-    page.on_download(move |download| {
+    // Register download handler (returns Subscription that unregisters on Drop)
+    let _download_sub = page.on_download(move |download| {
         let download_info = Arc::clone(&download_info_clone);
         async move {
             println!("📥 Download started:");
@@ -50,8 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             Ok(())
         }
-    })
-    .await?;
+    });
 
     // Navigate to a page that triggers a download
     // Note: In a real example, you'd navigate to a page with a download link
@@ -66,8 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dialog_info = Arc::new(Mutex::new(Vec::new()));
     let dialog_info_clone = Arc::clone(&dialog_info);
 
-    // Register dialog handler
-    page.on_dialog(move |dialog| {
+    // Register dialog handler (returns Subscription that unregisters on Drop)
+    let _dialog_sub = page.on_dialog(move |dialog| {
         let dialog_info = Arc::clone(&dialog_info_clone);
         async move {
             let dialog_type = dialog.type_().to_string();
@@ -107,8 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             Ok(())
         }
-    })
-    .await?;
+    });
 
     // Navigate to a page with dialogs
     // Note: In a real example, you'd navigate to a page that triggers dialogs

@@ -40,6 +40,8 @@ impl Artifact {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for Artifact {}
+
 impl ChannelOwner for Artifact {
     fn guid(&self) -> &str {
         self.base.guid()

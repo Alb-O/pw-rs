@@ -43,6 +43,8 @@ impl ResponseObject {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for ResponseObject {}
+
 impl ChannelOwner for ResponseObject {
     fn guid(&self) -> &str {
         self.base.guid()

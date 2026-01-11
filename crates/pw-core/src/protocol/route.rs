@@ -411,6 +411,8 @@ impl FulfillOptionsBuilder {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for Route {}
+
 impl ChannelOwner for Route {
     fn guid(&self) -> &str {
         self.base.guid()

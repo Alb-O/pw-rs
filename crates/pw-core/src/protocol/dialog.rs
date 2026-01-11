@@ -133,6 +133,8 @@ impl Dialog {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for Dialog {}
+
 impl ChannelOwner for Dialog {
     fn guid(&self) -> &str {
         self.base.guid()

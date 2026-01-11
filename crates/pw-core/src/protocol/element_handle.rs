@@ -100,6 +100,8 @@ impl ElementHandle {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for ElementHandle {}
+
 impl ChannelOwner for ElementHandle {
     fn guid(&self) -> &str {
         self.base.guid()

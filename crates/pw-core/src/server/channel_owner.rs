@@ -23,6 +23,20 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
+/// Private module for the sealed trait pattern.
+///
+/// This prevents external crates from implementing `ChannelOwner`.
+/// The module is `pub(crate)` so types within this crate can implement `Sealed`,
+/// but external crates cannot access it.
+pub(crate) mod private {
+    /// Marker trait that seals `ChannelOwner`.
+    ///
+    /// This trait is only implementable within this crate because the
+    /// module is `pub(crate)`. External crates can use `ChannelOwner` but
+    /// cannot implement it.
+    pub trait Sealed {}
+}
+
 /// Type alias for the children registry mapping GUIDs to ChannelOwner objects
 type ChildrenRegistry = HashMap<Arc<str>, Arc<dyn ChannelOwner>>;
 
@@ -60,6 +74,13 @@ pub enum ParentOrConnection {
 /// 4. **Channel Communication**: Objects send/receive messages via their Channel
 /// 5. **Event Handling**: Protocol events are dispatched to objects by GUID
 ///
+/// # Sealed Trait
+///
+/// This trait is sealed - it cannot be implemented outside of `pw-rs`.
+/// This ensures that the library can evolve the trait without breaking
+/// downstream code, and guarantees that all implementations maintain
+/// internal invariants.
+///
 /// # Example
 ///
 /// ```ignore
@@ -74,7 +95,7 @@ pub enum ParentOrConnection {
 /// browser.dispose(pw::server::channel_owner::DisposeReason::Closed);
 /// # }
 /// ```
-pub trait ChannelOwner: Send + Sync {
+pub trait ChannelOwner: private::Sealed + Send + Sync {
     /// Returns the unique GUID for this object.
     ///
     /// The GUID is assigned by the Playwright server and used for:

@@ -35,14 +35,13 @@ async fn test_download_methods() -> Result<(), Box<dyn std::error::Error>> {
     let download_captured = Arc::new(Mutex::new(None));
     let download_captured_clone = download_captured.clone();
 
-    page.on_download(move |download| {
+    let _sub = page.on_download(move |download| {
         let captured = download_captured_clone.clone();
         async move {
             *captured.lock().unwrap() = Some(download);
             Ok(())
         }
-    })
-    .await?;
+    });
 
     let _ = page.goto("about:blank", None).await;
 
@@ -82,14 +81,13 @@ async fn test_download_methods() -> Result<(), Box<dyn std::error::Error>> {
     let download_captured2 = Arc::new(Mutex::new(None));
     let download_captured2_clone = download_captured2.clone();
 
-    page.on_download(move |download| {
+    let _sub2 = page.on_download(move |download| {
         let captured = download_captured2_clone.clone();
         async move {
             *captured.lock().unwrap() = Some(download);
             Ok(())
         }
-    })
-    .await?;
+    });
 
     page.evaluate(
         r#"
@@ -149,7 +147,7 @@ async fn test_dialog_alert_methods() -> Result<(), Box<dyn std::error::Error>> {
     let dialog_info = Arc::new(Mutex::new(None));
     let dialog_info_clone = dialog_info.clone();
 
-    page.on_dialog(move |dialog| {
+    let _sub = page.on_dialog(move |dialog| {
         let info = dialog_info_clone.clone();
         async move {
             let type_ = dialog.type_().to_string();
@@ -157,8 +155,7 @@ async fn test_dialog_alert_methods() -> Result<(), Box<dyn std::error::Error>> {
             *info.lock().unwrap() = Some((type_, message));
             dialog.accept(None).await
         }
-    })
-    .await?;
+    });
 
     let _ = page.goto("about:blank", None).await;
 
@@ -213,15 +210,13 @@ async fn test_dialog_confirm_methods() -> Result<(), Box<dyn std::error::Error>>
     let dialog_info = Arc::new(Mutex::new(None));
     let dialog_info_clone = dialog_info.clone();
 
-    page1
-        .on_dialog(move |dialog| {
-            let info = dialog_info_clone.clone();
-            async move {
-                *info.lock().unwrap() = Some(dialog.type_().to_string());
-                dialog.accept(None).await
-            }
-        })
-        .await?;
+    let _sub = page1.on_dialog(move |dialog| {
+        let info = dialog_info_clone.clone();
+        async move {
+            *info.lock().unwrap() = Some(dialog.type_().to_string());
+            dialog.accept(None).await
+        }
+    });
 
     let _ = page1.goto("about:blank", None).await;
 
@@ -257,9 +252,7 @@ async fn test_dialog_confirm_methods() -> Result<(), Box<dyn std::error::Error>>
     let browser2 = playwright.chromium().launch().await?;
     let page2 = browser2.new_page().await?;
 
-    page2
-        .on_dialog(move |dialog| async move { dialog.dismiss().await })
-        .await?;
+    let _sub = page2.on_dialog(move |dialog| async move { dialog.dismiss().await });
 
     let _ = page2.goto("about:blank", None).await;
 
@@ -312,18 +305,16 @@ async fn test_dialog_prompt_methods() -> Result<(), Box<dyn std::error::Error>> 
     let dialog_data = Arc::new(Mutex::new(None));
     let dialog_data_clone = dialog_data.clone();
 
-    page1
-        .on_dialog(move |dialog| {
-            let data = dialog_data_clone.clone();
-            async move {
-                let type_ = dialog.type_().to_string();
-                let message = dialog.message().to_string();
-                let default = dialog.default_value().to_string();
-                *data.lock().unwrap() = Some((type_, message, default));
-                dialog.accept(Some("Custom Input")).await
-            }
-        })
-        .await?;
+    let _sub = page1.on_dialog(move |dialog| {
+        let data = dialog_data_clone.clone();
+        async move {
+            let type_ = dialog.type_().to_string();
+            let message = dialog.message().to_string();
+            let default = dialog.default_value().to_string();
+            *data.lock().unwrap() = Some((type_, message, default));
+            dialog.accept(Some("Custom Input")).await
+        }
+    });
 
     let _ = page1.goto("about:blank", None).await;
 
@@ -366,9 +357,7 @@ async fn test_dialog_prompt_methods() -> Result<(), Box<dyn std::error::Error>> 
     let browser2 = playwright.chromium().launch().await?;
     let page2 = browser2.new_page().await?;
 
-    page2
-        .on_dialog(move |dialog| async move { dialog.dismiss().await })
-        .await?;
+    let _sub = page2.on_dialog(move |dialog| async move { dialog.dismiss().await });
 
     let _ = page2.goto("about:blank", None).await;
 
@@ -415,15 +404,13 @@ async fn test_cross_browser_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let dialog_handled = Arc::new(Mutex::new(false));
     let dialog_handled_clone = dialog_handled.clone();
 
-    firefox_page
-        .on_dialog(move |dialog| {
-            let handled = dialog_handled_clone.clone();
-            async move {
-                *handled.lock().unwrap() = true;
-                dialog.accept(None).await
-            }
-        })
-        .await?;
+    let _sub = firefox_page.on_dialog(move |dialog| {
+        let handled = dialog_handled_clone.clone();
+        async move {
+            *handled.lock().unwrap() = true;
+            dialog.accept(None).await
+        }
+    });
 
     let _ = firefox_page.goto("about:blank", None).await;
 
@@ -457,15 +444,13 @@ async fn test_cross_browser_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let download_captured = Arc::new(Mutex::new(false));
     let download_captured_clone = download_captured.clone();
 
-    webkit_page
-        .on_download(move |_download| {
-            let captured = download_captured_clone.clone();
-            async move {
-                *captured.lock().unwrap() = true;
-                Ok(())
-            }
-        })
-        .await?;
+    let _sub = webkit_page.on_download(move |_download| {
+        let captured = download_captured_clone.clone();
+        async move {
+            *captured.lock().unwrap() = true;
+            Ok(())
+        }
+    });
 
     let _ = webkit_page.goto("about:blank", None).await;
 

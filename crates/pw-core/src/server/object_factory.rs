@@ -287,6 +287,8 @@ impl UnknownObject {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for UnknownObject {}
+
 impl ChannelOwner for UnknownObject {
     fn guid(&self) -> &str {
         self.base.guid()

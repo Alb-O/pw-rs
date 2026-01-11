@@ -367,6 +367,8 @@ impl BrowserContext {
     }
 }
 
+impl crate::server::channel_owner::private::Sealed for BrowserContext {}
+
 impl ChannelOwner for BrowserContext {
     fn guid(&self) -> &str {
         self.base.guid()
