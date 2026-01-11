@@ -15,6 +15,60 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Options for [`BrowserContext::route_from_har`].
+#[derive(Debug, Clone, Default)]
+pub struct RouteFromHarOptions {
+    /// URL pattern to match for HAR routing.
+    pub url: Option<String>,
+    /// How to handle requests not found in HAR.
+    pub not_found: Option<HarNotFound>,
+    /// Whether to update the HAR file with new requests.
+    pub update: Option<bool>,
+}
+
+impl RouteFromHarOptions {
+    /// Creates new options with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the URL pattern to match.
+    pub fn url(mut self, pattern: impl Into<String>) -> Self {
+        self.url = Some(pattern.into());
+        self
+    }
+
+    /// Sets what to do when a request is not found in HAR.
+    pub fn not_found(mut self, action: HarNotFound) -> Self {
+        self.not_found = Some(action);
+        self
+    }
+
+    /// Whether to update the HAR file with missing requests.
+    pub fn update(mut self, update: bool) -> Self {
+        self.update = Some(update);
+        self
+    }
+}
+
+/// What to do when a request is not found in the HAR file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HarNotFound {
+    /// Abort the request.
+    Abort,
+    /// Fall through to the network.
+    Fallback,
+}
+
+impl HarNotFound {
+    fn as_str(&self) -> &'static str {
+        match self {
+            HarNotFound::Abort => "abort",
+            HarNotFound::Fallback => "fallback",
+        }
+    }
+}
+
 /// BrowserContext represents an isolated browser session.
 ///
 /// Contexts are isolated environments within a browser instance. Each context
@@ -366,6 +420,96 @@ impl BrowserContext {
         Ok(state)
     }
 
+    /// Saves the storage state to the specified `path`.
+    ///
+    /// This is a convenience method equivalent to calling [`storage_state`] and
+    /// writing to a file. The storage state includes cookies and localStorage
+    /// for all origins.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Save authentication state
+    /// context.save_storage_state("auth.json").await?;
+    ///
+    /// // Later, restore in a new context
+    /// let state = StorageState::from_file("auth.json")?;
+    /// let options = BrowserContextOptions::builder()
+    ///     .storage_state(state)
+    ///     .build();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolError`] if the context has been closed, or
+    /// [`Error::IoError`] if the file cannot be written.
+    ///
+    /// [`Error::ProtocolError`]: crate::error::Error::ProtocolError
+    /// [`Error::IoError`]: crate::error::Error::IoError
+    /// [`storage_state`]: Self::storage_state
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state>
+    pub async fn save_storage_state(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        let state = self.storage_state(None).await?;
+        state.to_file(path.as_ref())?;
+        Ok(())
+    }
+
+    /// Enables HAR-based request playback from `har_path`.
+    ///
+    /// Intercepts requests matching the HAR file and returns recorded responses.
+    /// This is useful for replaying network traffic in tests. Pass `options` to
+    /// configure URL filtering and behavior for unmatched requests.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Record HAR first
+    /// let options = BrowserContextOptions::builder()
+    ///     .record_har_path("network.har")
+    ///     .build();
+    /// let context = browser.new_context_with_options(options).await?;
+    /// // ... perform actions ...
+    /// context.close().await?;
+    ///
+    /// // Replay later
+    /// let context = browser.new_context().await?;
+    /// context.route_from_har("network.har", None).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ProtocolError`] if the HAR file is invalid, or
+    /// [`Error::IoError`] if the HAR file cannot be read.
+    ///
+    /// [`Error::ProtocolError`]: crate::error::Error::ProtocolError
+    /// [`Error::IoError`]: crate::error::Error::IoError
+    ///
+    /// See: <https://playwright.dev/docs/api/class-browsercontext#browser-context-route-from-har>
+    pub async fn route_from_har(
+        &self,
+        har_path: impl AsRef<std::path::Path>,
+        options: Option<RouteFromHarOptions>,
+    ) -> Result<()> {
+        let mut params = serde_json::json!({
+            "har": har_path.as_ref().to_string_lossy()
+        });
+
+        if let Some(opts) = options {
+            if let Some(url) = opts.url {
+                params["url"] = serde_json::json!(url);
+            }
+            if let Some(not_found) = opts.not_found {
+                params["notFound"] = serde_json::json!(not_found.as_str());
+            }
+            if let Some(update) = opts.update {
+                params["update"] = serde_json::json!(update);
+            }
+        }
+
+        self.channel().send_no_result("routeFromHAR", params).await
+    }
+
     /// Returns a handle for managing Playwright traces.
     ///
     /// Tracing captures a trace of browser operations that can be viewed in the
@@ -540,6 +684,32 @@ pub struct Geolocation {
     pub accuracy: Option<f64>,
 }
 
+/// Policy for what content to include in HAR recordings.
+///
+/// See: <https://playwright.dev/docs/api/class-browser#browser-new-context>
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HarContentPolicy {
+    /// Include content inline (base64).
+    Embed,
+    /// Store content in separate files.
+    Attach,
+    /// Omit content entirely.
+    Omit,
+}
+
+/// Mode for HAR recording.
+///
+/// See: <https://playwright.dev/docs/api/class-browser#browser-new-context>
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HarMode {
+    /// Store all content.
+    Full,
+    /// Store only essential content to replay the HAR.
+    Minimal,
+}
+
 /// Options for creating a new browser context.
 ///
 /// Allows customizing viewport, user agent, locale, timezone, geolocation,
@@ -626,6 +796,34 @@ pub struct BrowserContextOptions {
     /// Can be loaded from a file saved by `context.storage_state()`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_state: Option<StorageState>,
+
+    /// Directory to save videos to. Enables video recording for all pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_video_dir: Option<String>,
+
+    /// Size of recorded videos (defaults to viewport size scaled to fit 800x800).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_video_size: Option<Viewport>,
+
+    /// Path to save HAR file. Enables HAR recording for all pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_har_path: Option<String>,
+
+    /// HAR recording content policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_har_content: Option<HarContentPolicy>,
+
+    /// HAR recording mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_har_mode: Option<HarMode>,
+
+    /// Whether to omit request content from HAR.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_har_omit_content: Option<bool>,
+
+    /// URL pattern to filter HAR entries by URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_har_url_filter: Option<String>,
 }
 
 impl BrowserContextOptions {
@@ -657,6 +855,13 @@ pub struct BrowserContextOptionsBuilder {
     extra_http_headers: Option<HashMap<String, String>>,
     base_url: Option<String>,
     storage_state: Option<StorageState>,
+    record_video_dir: Option<String>,
+    record_video_size: Option<Viewport>,
+    record_har_path: Option<String>,
+    record_har_content: Option<HarContentPolicy>,
+    record_har_mode: Option<HarMode>,
+    record_har_omit_content: Option<bool>,
+    record_har_url_filter: Option<String>,
 }
 
 impl BrowserContextOptionsBuilder {
@@ -792,6 +997,69 @@ impl BrowserContextOptionsBuilder {
         self
     }
 
+    /// Enables video recording for all pages in this context.
+    ///
+    /// Videos are saved to the specified directory.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let options = BrowserContextOptions::builder()
+    ///     .record_video_dir("/tmp/videos")
+    ///     .build();
+    /// ```
+    pub fn record_video_dir(mut self, dir: impl Into<String>) -> Self {
+        self.record_video_dir = Some(dir.into());
+        self
+    }
+
+    /// Sets the size of recorded videos.
+    ///
+    /// Defaults to viewport size scaled to fit 800x800.
+    pub fn record_video_size(mut self, size: Viewport) -> Self {
+        self.record_video_size = Some(size);
+        self
+    }
+
+    /// Enables HAR recording and saves to the specified path.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let options = BrowserContextOptions::builder()
+    ///     .record_har_path("network.har")
+    ///     .record_har_content(HarContentPolicy::Embed)
+    ///     .build();
+    /// ```
+    pub fn record_har_path(mut self, path: impl Into<String>) -> Self {
+        self.record_har_path = Some(path.into());
+        self
+    }
+
+    /// Sets the HAR content policy.
+    pub fn record_har_content(mut self, policy: HarContentPolicy) -> Self {
+        self.record_har_content = Some(policy);
+        self
+    }
+
+    /// Sets the HAR recording mode.
+    pub fn record_har_mode(mut self, mode: HarMode) -> Self {
+        self.record_har_mode = Some(mode);
+        self
+    }
+
+    /// Whether to omit request content from HAR.
+    pub fn record_har_omit_content(mut self, omit: bool) -> Self {
+        self.record_har_omit_content = Some(omit);
+        self
+    }
+
+    /// URL pattern to filter HAR entries.
+    pub fn record_har_url_filter(mut self, pattern: impl Into<String>) -> Self {
+        self.record_har_url_filter = Some(pattern.into());
+        self
+    }
+
     /// Builds the BrowserContextOptions
     pub fn build(self) -> BrowserContextOptions {
         BrowserContextOptions {
@@ -814,6 +1082,13 @@ impl BrowserContextOptionsBuilder {
             extra_http_headers: self.extra_http_headers,
             base_url: self.base_url,
             storage_state: self.storage_state,
+            record_video_dir: self.record_video_dir,
+            record_video_size: self.record_video_size,
+            record_har_path: self.record_har_path,
+            record_har_content: self.record_har_content,
+            record_har_mode: self.record_har_mode,
+            record_har_omit_content: self.record_har_omit_content,
+            record_har_url_filter: self.record_har_url_filter,
         }
     }
 }

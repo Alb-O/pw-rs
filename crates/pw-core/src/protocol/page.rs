@@ -503,10 +503,10 @@ impl Page {
         })
     }
 
-    /// Returns the channel for sending protocol messages
+    /// Returns the channel for sending protocol messages.
     ///
     /// Used internally for sending RPC calls to the page.
-    fn channel(&self) -> &Channel {
+    pub(crate) fn channel(&self) -> &Channel {
         self.base.channel()
     }
 
@@ -649,6 +649,68 @@ impl Page {
     /// See: <https://playwright.dev/docs/api/class-page#page-mouse>
     pub fn mouse(&self) -> crate::protocol::Mouse {
         crate::protocol::Mouse::new(self.clone())
+    }
+
+    /// Returns the accessibility handle for inspecting the page's accessibility tree.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let snapshot = page.accessibility().snapshot(None).await?;
+    /// if let Some(tree) = snapshot {
+    ///     println!("Root role: {}", tree.role);
+    /// }
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-accessibility>
+    pub fn accessibility(&self) -> crate::protocol::Accessibility {
+        crate::protocol::Accessibility::new(self.clone())
+    }
+
+    /// Returns the video recording handle if video recording is enabled.
+    ///
+    /// Video recording is enabled when [`BrowserContextOptions::record_video_dir`]
+    /// is set when creating the browser context.
+    ///
+    /// Returns `None` if video recording is not enabled for this page's context.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Create context with video recording
+    /// let options = BrowserContextOptions::builder()
+    ///     .record_video_dir("/tmp/videos")
+    ///     .build();
+    /// let context = browser.new_context_with_options(options).await?;
+    /// let page = context.new_page().await?;
+    ///
+    /// // Perform actions...
+    /// page.goto("https://example.com", None).await?;
+    ///
+    /// // Get video after closing page
+    /// if let Some(video) = page.video() {
+    ///     page.close().await?;
+    ///     let path = video.path().await?;
+    ///     println!("Video saved: {}", path.display());
+    /// }
+    /// ```
+    ///
+    /// See: <https://playwright.dev/docs/api/class-page#page-video>
+    ///
+    /// [`BrowserContextOptions::record_video_dir`]: crate::protocol::BrowserContextOptions::record_video_dir
+    pub fn video(&self) -> Option<crate::protocol::Video> {
+        let video_guid = self
+            .base
+            .initializer()
+            .get("video")
+            .and_then(|v| v.get("guid"))
+            .and_then(|v| v.as_str())?;
+
+        self.base
+            .children()
+            .into_iter()
+            .find(|child| child.guid() == video_guid)
+            .and_then(|child| child.downcast_ref::<crate::protocol::Video>().cloned())
     }
 
     // Internal keyboard methods (called by Keyboard struct)

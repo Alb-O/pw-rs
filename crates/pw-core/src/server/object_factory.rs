@@ -15,7 +15,7 @@
 use crate::error::{Error, Result};
 use crate::protocol::{
     Browser, BrowserContext, BrowserType, Dialog, Frame, Page, Playwright, Request, ResponseObject,
-    Route, Tracing, artifact::Artifact,
+    Route, Tracing, Video, artifact::Artifact,
 };
 use crate::server::channel_owner::{ChannelOwner, ChannelOwnerImpl, ParentOrConnection};
 use serde_json::Value;
@@ -272,6 +272,20 @@ pub async fn create_object(
             };
 
             Arc::new(Tracing::new(parent_owner, type_name, guid, initializer)?)
+        }
+
+        "Video" => {
+            // Video has Page as parent (created when video recording is enabled)
+            let parent_owner = match parent {
+                ParentOrConnection::Parent(p) => p,
+                ParentOrConnection::Connection(_) => {
+                    return Err(Error::ProtocolError(
+                        "Video must have Page as parent".to_string(),
+                    ));
+                }
+            };
+
+            Arc::new(Video::new(parent_owner, type_name, guid, initializer)?)
         }
 
         _ => {
