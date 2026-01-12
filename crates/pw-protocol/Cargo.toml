@@ -1,0 +1,17 @@
+[package]
+name = "pw-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Wire types for Playwright protocol (internal)"
+
+[lib]
+doctest = false
+
+[dependencies]
+base64 = "0.22"
+serde.workspace = true
+serde_json.workspace = true

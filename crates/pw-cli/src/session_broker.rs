@@ -385,11 +385,11 @@ impl SessionHandle {
         self.goto_if_needed(url).await
     }
 
-    pub fn page(&self) -> &pw::protocol::Page {
+    pub fn page(&self) -> &pw::Page {
         self.session.page()
     }
 
-    pub fn context(&self) -> &pw::protocol::BrowserContext {
+    pub fn context(&self) -> &pw::BrowserContext {
         self.session.context()
     }
 
@@ -401,7 +401,7 @@ impl SessionHandle {
         self.session.cdp_endpoint()
     }
 
-    pub fn browser(&self) -> &pw::protocol::Browser {
+    pub fn browser(&self) -> &pw::Browser {
         self.session.browser()
     }
 

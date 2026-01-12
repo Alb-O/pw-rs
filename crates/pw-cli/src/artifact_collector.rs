@@ -5,7 +5,7 @@
 //! and reported in the error envelope.
 
 use crate::output::{Artifact, ArtifactType};
-use pw::protocol::Page;
+use pw::Page;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, warn};

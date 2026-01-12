@@ -25,7 +25,7 @@ fn is_protected(url: &str, protected_patterns: &[String]) -> bool {
 }
 
 /// Get URL for a page (via JS evaluation for accuracy)
-async fn get_page_url(page: &pw::protocol::Page) -> String {
+async fn get_page_url(page: &pw::Page) -> String {
     page.evaluate_value("window.location.href")
         .await
         .unwrap_or_else(|_| page.url())
@@ -35,10 +35,8 @@ async fn get_page_url(page: &pw::protocol::Page) -> String {
 
 /// Sort pages by URL for stable ordering across invocations.
 /// Returns Vec of (url, title, page_ref) sorted by URL.
-async fn sort_pages_by_url(
-    pages: &[pw::protocol::Page],
-) -> Vec<(String, String, &pw::protocol::Page)> {
-    let mut page_info: Vec<(String, String, &pw::protocol::Page)> = Vec::with_capacity(pages.len());
+async fn sort_pages_by_url(pages: &[pw::Page]) -> Vec<(String, String, &pw::Page)> {
+    let mut page_info: Vec<(String, String, &pw::Page)> = Vec::with_capacity(pages.len());
 
     for page in pages {
         let url = get_page_url(page).await;
@@ -189,10 +187,10 @@ pub async fn new_tab(
 /// Find a page by index or URL/title pattern from sorted pages.
 /// Returns (index, url, title, page_ref).
 fn find_page<'a>(
-    sorted_pages: &'a [(String, String, &'a pw::protocol::Page)],
+    sorted_pages: &'a [(String, String, &'a pw::Page)],
     target: &str,
     protected_patterns: &[String],
-) -> Result<(usize, String, String, &'a pw::protocol::Page)> {
+) -> Result<(usize, String, String, &'a pw::Page)> {
     // Try parsing as index first
     if let Ok(index) = target.parse::<usize>() {
         let (url, title, page) = sorted_pages.get(index).ok_or_else(|| {
