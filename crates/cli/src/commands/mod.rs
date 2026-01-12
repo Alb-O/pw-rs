@@ -651,11 +651,12 @@ async fn dispatch_command_inner(
             clear,
             launch,
             discover,
+            kill,
             port,
             profile,
         } => {
             connect::run(
-                ctx_state, format, endpoint, clear, launch, discover, port, profile,
+                ctx_state, format, endpoint, clear, launch, discover, kill, port, profile,
             )
             .await
         }
