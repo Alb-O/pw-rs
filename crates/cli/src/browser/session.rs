@@ -435,6 +435,35 @@ impl BrowserSession {
         self.keep_browser_running = keep;
     }
 
+    /// Inject cookies from auth files into the browser context.
+    /// Used when connecting to real browser via CDP to add saved auth state.
+    pub async fn inject_auth_files(&self, auth_files: &[std::path::PathBuf]) -> Result<()> {
+        for path in auth_files {
+            match StorageState::from_file(path) {
+                Ok(state) => {
+                    if !state.cookies.is_empty() {
+                        debug!(
+                            target = "pw",
+                            path = %path.display(),
+                            count = state.cookies.len(),
+                            "injecting cookies from auth file"
+                        );
+                        self.context.add_cookies(state.cookies).await?;
+                    }
+                }
+                Err(e) => {
+                    debug!(
+                        target = "pw",
+                        path = %path.display(),
+                        error = %e,
+                        "failed to load auth file, skipping"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn close(self) -> Result<()> {
         if self.keep_browser_running || self.launched_server.is_some() {
             // Close the context/page but keep the browser running for reuse

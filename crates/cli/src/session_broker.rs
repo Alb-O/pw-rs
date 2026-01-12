@@ -304,6 +304,19 @@ impl<'a> SessionBroker<'a> {
             .await?
         };
 
+        // Auto-inject cookies from project auth files when using CDP without explicit auth
+        if request.cdp_endpoint.is_some() && request.auth_file.is_none() {
+            let auth_files = self.ctx.auth_files();
+            if !auth_files.is_empty() {
+                debug!(
+                    target = "pw.session",
+                    count = auth_files.len(),
+                    "auto-injecting cookies from project auth files"
+                );
+                session.inject_auth_files(&auth_files).await?;
+            }
+        }
+
         // Save session descriptor if we have a path and an endpoint
         if let Some(path) = &self.descriptor_path {
             let cdp = session.cdp_endpoint().map(|e| e.to_string());

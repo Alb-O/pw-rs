@@ -115,6 +115,30 @@ impl CommandContext {
             .map(|p| p.paths.root.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
+
+    /// Get all auth files in the project auth directory (*.json)
+    pub fn auth_files(&self) -> Vec<PathBuf> {
+        let auth_dir = if let Some(ref proj) = self.project {
+            proj.paths.auth_dir()
+        } else {
+            PathBuf::from("playwright/auth")
+        };
+
+        if !auth_dir.exists() {
+            return Vec::new();
+        }
+
+        std::fs::read_dir(&auth_dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
