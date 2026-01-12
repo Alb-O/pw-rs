@@ -646,7 +646,19 @@ async fn dispatch_command_inner(
         }),
         Commands::Relay { .. } => unreachable!("handled earlier"),
         Commands::Run => unreachable!("handled earlier"),
-        Commands::Connect { endpoint, clear } => connect::run(ctx_state, format, endpoint, clear),
+        Commands::Connect {
+            endpoint,
+            clear,
+            launch,
+            discover,
+            port,
+            profile,
+        } => {
+            connect::run(
+                ctx_state, format, endpoint, clear, launch, discover, port, profile,
+            )
+            .await
+        }
         Commands::Tabs(action) => {
             let protected = ctx_state.protected_urls();
             match action {

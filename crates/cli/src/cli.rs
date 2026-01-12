@@ -347,16 +347,34 @@ pub enum Commands {
         port: u16,
     },
 
-    /// Set or show the CDP endpoint for connecting to a running browser
+    /// Connect to or launch a browser with remote debugging
     ///
-    /// Once set, all pw commands will use this endpoint instead of launching a new browser.
-    /// Use `pw connect --clear` to remove the saved endpoint.
+    /// Once connected, all pw commands will use this browser instead of launching a new one.
+    /// This is the recommended way to bypass bot detection - use your real browser.
+    ///
+    /// Examples:
+    ///   pw connect --launch          # Launch Chrome with debugging enabled
+    ///   pw connect --discover        # Find existing Chrome with debugging
+    ///   pw connect ws://...          # Set endpoint manually
+    ///   pw connect --clear           # Disconnect
     Connect {
         /// CDP WebSocket endpoint URL (e.g., ws://127.0.0.1:9222/devtools/browser/...)
         endpoint: Option<String>,
         /// Clear the saved CDP endpoint
         #[arg(long)]
         clear: bool,
+        /// Launch Chrome with remote debugging enabled
+        #[arg(long)]
+        launch: bool,
+        /// Discover and connect to existing Chrome with debugging enabled
+        #[arg(long)]
+        discover: bool,
+        /// Remote debugging port (default: 9222)
+        #[arg(long, short, default_value = "9222")]
+        port: u16,
+        /// Chrome profile directory to use (for --launch)
+        #[arg(long)]
+        profile: Option<String>,
     },
 
     /// Manage browser tabs

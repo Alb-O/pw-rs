@@ -81,29 +81,36 @@ pw --auth auth.json navigate https://app.example.com/dashboard
 pw --auth auth.json text -s ".user-name"
 ```
 
-### Connect to existing browser
+### Connect to your real browser
 
-Use `pw connect` to control a browser you've already opened (with your logged-in sessions, extensions, etc.):
+Use `pw connect --launch` to launch your real browser with remote debugging. This bypasses bot detection and uses real fingerprint, cookies, and extensions:
 
 ```bash
-# Launch Chrome with remote debugging enabled
-google-chrome-stable --remote-debugging-port=9222
+# Launch your browser with debugging enabled (auto-discovers Chrome/Brave/Helium)
+pw connect --launch
 
-# Get the WebSocket URL
-curl -s http://127.0.0.1:9222/json/version | jq -r .webSocketDebuggerUrl
-
-# Set it once (stored in context)
-pw connect "ws://127.0.0.1:9222/devtools/browser/..."
-
-# All commands now use your existing browser
-pw text https://example.com -s "h1"
+# All commands now use your real browser
+pw navigate https://chatgpt.com
+pw text -s "h1"
 pw screenshot -o page.png
-
-# Clear when done
-pw connect --clear
 ```
 
-This is useful when you need access to existing login sessions or browser state that can't be captured with `pw auth`.
+If you already have a browser running with debugging enabled:
+
+```bash
+# Auto-discover and connect to existing browser
+pw connect --discover
+
+# Or manually specify an endpoint
+pw connect "ws://127.0.0.1:9222/devtools/browser/..."
+```
+
+Options:
+- `--launch` - Launch Chrome/Brave/Helium with remote debugging
+- `--discover` - Find and connect to existing browser with debugging
+- `--port <PORT>` - Use specific debugging port (default: 9222)
+- `--profile <NAME>` - Use specific Chrome profile directory
+- `--clear` - Disconnect from browser
 
 ### Protect tabs from CLI access
 
@@ -112,8 +119,6 @@ When connecting to an existing browser, you may have tabs open (like Discord, Sl
 ```bash
 # Add patterns to protect (substring match, case-insensitive)
 pw protect add discord.com
-pw protect add slack.com
-pw protect add notion.so
 
 # List protected patterns
 pw protect list
@@ -236,19 +241,6 @@ Responses are streamed as NDJSON with request ID correlation:
 
 - `{"command":"ping"}` - Health check, returns `{"ok":true,"command":"ping"}`
 - `{"command":"quit"}` - Exit batch mode gracefully
-
-### Example session
-
-```bash
-$ pw run
-{"id":"1","command":"navigate","args":{"url":"https://example.com"}}
-{"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
-{"id":"2","command":"screenshot","args":{"output":"page.png"}}
-{"id":"2","ok":true,"command":"screenshot","data":{"path":"page.png"}}
-{"command":"quit"}
-{"ok":true,"command":"quit"}
-$
-```
 
 ## Best Practices for Agents
 
