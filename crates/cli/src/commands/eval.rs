@@ -86,8 +86,36 @@ pub async fn execute(
 fn truncate_expression(expr: &str) -> String {
     const MAX_LEN: usize = 500;
     if expr.len() > MAX_LEN {
-        format!("{}...", &expr[..MAX_LEN])
+        // Find a valid UTF-8 char boundary at or before MAX_LEN
+        let truncate_at = expr
+            .char_indices()
+            .take_while(|(i, _)| *i < MAX_LEN)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &expr[..truncate_at])
     } else {
         expr.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_handles_multibyte_utf8() {
+        // '─' is 3 bytes (U+2500), create a string where byte 500 falls mid-char
+        let s = "x".repeat(498) + "─────"; // 498 + 15 = 513 bytes
+        let result = truncate_expression(&s);
+        // Should not panic, and should end with "..."
+        assert!(result.ends_with("..."));
+        assert!(result.len() <= 504); // 501 max + "..."
+    }
+
+    #[test]
+    fn truncate_short_string_unchanged() {
+        let s = "short";
+        assert_eq!(truncate_expression(s), "short");
     }
 }
