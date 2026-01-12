@@ -8,9 +8,9 @@ use crate::types::BrowserKind;
 
 pub struct BrowserSession {
     _playwright: Playwright,
-    browser: pw::protocol::Browser,
-    context: pw::protocol::BrowserContext,
-    page: pw::protocol::Page,
+    browser: pw::Browser,
+    context: pw::BrowserContext,
+    page: pw::Page,
     wait_until: WaitUntil,
     ws_endpoint: Option<String>,
     cdp_endpoint: Option<String>,
@@ -410,11 +410,11 @@ impl BrowserSession {
             })
     }
 
-    pub fn page(&self) -> &pw::protocol::Page {
+    pub fn page(&self) -> &pw::Page {
         &self.page
     }
 
-    pub fn context(&self) -> &pw::protocol::BrowserContext {
+    pub fn context(&self) -> &pw::BrowserContext {
         &self.context
     }
 
@@ -426,7 +426,7 @@ impl BrowserSession {
         self.cdp_endpoint.as_deref()
     }
 
-    pub fn browser(&self) -> &pw::protocol::Browser {
+    pub fn browser(&self) -> &pw::Browser {
         &self.browser
     }
 

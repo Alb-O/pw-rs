@@ -297,7 +297,7 @@ fn preferred_url<'a>(final_url: &'a str, ctx_state: &'a ContextState) -> Option<
 ///
 /// Sentinel values like `__CURRENT_PAGE__` should not be persisted to context
 /// since they don't represent actual URLs.
-fn record_url<'a>(final_url: &'a str) -> Option<&'a str> {
+fn record_url(final_url: &str) -> Option<&str> {
     if is_current_page_sentinel(final_url) {
         None
     } else {

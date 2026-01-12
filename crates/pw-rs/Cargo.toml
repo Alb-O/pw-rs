@@ -1,0 +1,31 @@
+[package]
+name = "pw-rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Rust bindings for Microsoft Playwright"
+keywords = ["playwright", "browser", "automation", "testing", "e2e"]
+categories = ["development-tools::testing", "web-programming"]
+readme.workspace = true
+
+[lib]
+name = "pw"
+doctest = false
+
+[dependencies]
+base64 = "0.22"
+downcast-rs = "2.0"
+futures-util = "0.3"
+glob = "0.3"
+parking_lot = "0.12"
+pw-protocol = { path = "../pw-protocol" }
+pw-runtime = { path = "../pw-runtime" }
+regex = "1.12"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing = "0.1"

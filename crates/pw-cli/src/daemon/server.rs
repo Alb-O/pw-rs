@@ -24,7 +24,7 @@ const PORT_RANGE_END: u16 = 10221;
 
 struct BrowserInstance {
     info: BrowserInfo,
-    browser: pw::protocol::Browser,
+    browser: pw::Browser,
 }
 
 struct DaemonState {
