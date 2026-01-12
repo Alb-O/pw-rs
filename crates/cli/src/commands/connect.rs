@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use tracing::debug;
 
 /// Response from Chrome DevTools Protocol /json/version endpoint
 #[derive(Debug, Deserialize)]
@@ -209,6 +210,95 @@ async fn launch_chrome(port: u16, profile: Option<&str>) -> Result<CdpVersionInf
     )))
 }
 
+/// Kill Chrome process listening on the debugging port
+async fn kill_chrome(port: u16) -> Result<Option<String>> {
+    // First check if anything is actually listening on this port
+    if fetch_cdp_endpoint(port).await.is_err() {
+        return Ok(None); // Nothing to kill
+    }
+
+    #[cfg(unix)]
+    {
+        // Use lsof to find the PID listening on the port
+        let output = Command::new("lsof")
+            .args(["-ti", &format!(":{}", port)])
+            .output()
+            .map_err(|e| PwError::Context(format!("Failed to run lsof: {}", e)))?;
+
+        if !output.status.success() || output.stdout.is_empty() {
+            return Err(PwError::Context(format!(
+                "Could not find process listening on port {}",
+                port
+            )));
+        }
+
+        let pids: Vec<&str> = std::str::from_utf8(&output.stdout)
+            .map_err(|e| PwError::Context(format!("Invalid lsof output: {}", e)))?
+            .trim()
+            .lines()
+            .collect();
+
+        if pids.is_empty() {
+            return Err(PwError::Context(format!(
+                "No process found on port {}",
+                port
+            )));
+        }
+
+        // Kill each PID
+        let mut killed = Vec::new();
+        for pid in &pids {
+            debug!("Killing PID {} on port {}", pid, port);
+            let kill_result = Command::new("kill").args(["-TERM", pid]).status();
+
+            match kill_result {
+                Ok(status) if status.success() => killed.push(*pid),
+                Ok(_) => debug!("kill -TERM {} returned non-zero", pid),
+                Err(e) => debug!("Failed to kill {}: {}", pid, e),
+            }
+        }
+
+        if killed.is_empty() {
+            return Err(PwError::Context(format!(
+                "Failed to kill process on port {}",
+                port
+            )));
+        }
+
+        Ok(Some(killed.join(", ")))
+    }
+
+    #[cfg(windows)]
+    {
+        // Use netstat to find the PID, then taskkill
+        let output = Command::new("netstat")
+            .args(["-ano"])
+            .output()
+            .map_err(|e| PwError::Context(format!("Failed to run netstat: {}", e)))?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let port_str = format!(":{}", port);
+
+        for line in output_str.lines() {
+            if line.contains(&port_str) && line.contains("LISTENING") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(pid) = parts.last() {
+                    let kill_result = Command::new("taskkill").args(["/PID", pid, "/F"]).status();
+
+                    if kill_result.map(|s| s.success()).unwrap_or(false) {
+                        return Ok(Some(pid.to_string()));
+                    }
+                }
+            }
+        }
+
+        Err(PwError::Context(format!(
+            "Could not find or kill process on port {}",
+            port
+        )))
+    }
+}
+
 pub async fn run(
     ctx_state: &mut ContextState,
     format: OutputFormat,
@@ -216,9 +306,39 @@ pub async fn run(
     clear: bool,
     launch: bool,
     discover: bool,
+    kill: bool,
     port: u16,
     profile: Option<String>,
 ) -> Result<()> {
+    // Kill Chrome on the debugging port
+    if kill {
+        match kill_chrome(port).await? {
+            Some(pids) => {
+                ctx_state.set_cdp_endpoint(None);
+                let result = ResultBuilder::<serde_json::Value>::new("connect")
+                    .data(json!({
+                        "action": "killed",
+                        "port": port,
+                        "pids": pids,
+                        "message": format!("Killed Chrome process(es) on port {}: {}", port, pids)
+                    }))
+                    .build();
+                print_result(&result, format);
+            }
+            None => {
+                let result = ResultBuilder::<serde_json::Value>::new("connect")
+                    .data(json!({
+                        "action": "kill",
+                        "port": port,
+                        "message": format!("No Chrome process found on port {}", port)
+                    }))
+                    .build();
+                print_result(&result, format);
+            }
+        }
+        return Ok(());
+    }
+
     // Clear endpoint
     if clear {
         ctx_state.set_cdp_endpoint(None);

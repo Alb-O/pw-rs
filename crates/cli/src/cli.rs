@@ -369,6 +369,9 @@ pub enum Commands {
         /// Discover and connect to existing Chrome with debugging enabled
         #[arg(long)]
         discover: bool,
+        /// Kill Chrome process on the debugging port
+        #[arg(long)]
+        kill: bool,
         /// Remote debugging port (default: 9222)
         #[arg(long, short, default_value = "9222")]
         port: u16,

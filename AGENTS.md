@@ -108,6 +108,7 @@ pw connect "ws://127.0.0.1:9222/devtools/browser/..."
 Options:
 - `--launch` - Launch Chrome/Brave/Helium with remote debugging
 - `--discover` - Find and connect to existing browser with debugging
+- `--kill` - Kill Chrome process on the debugging port
 - `--port <PORT>` - Use specific debugging port (default: 9222)
 - `--profile <NAME>` - Use specific Chrome profile directory
 - `--clear` - Disconnect from browser
