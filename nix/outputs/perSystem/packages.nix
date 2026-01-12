@@ -47,7 +47,7 @@
         version = workspaceVersion;
         src = rootSrc;
         cargoLock.lockFile = rootSrc + "/Cargo.lock";
-        buildAndTestSubdir = "crates/pw-cli";
+        buildAndTestSubdir = "crates/cli";
 
         inherit buildInputs nativeBuildInputs;
         inherit (commonEnv) OPENSSL_DIR OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR;
@@ -109,12 +109,12 @@
       # Unwrapped version for dev/testing
       pw-cli-unwrapped = pw-cli-unwrapped;
 
-      pw-core = rustPlatform.buildRustPackage {
-        pname = "pw-core";
+      pw-rs = rustPlatform.buildRustPackage {
+        pname = "pw-rs";
         version = workspaceVersion;
         src = rootSrc;
         cargoLock.lockFile = rootSrc + "/Cargo.lock";
-        buildAndTestSubdir = "crates/pw-core";
+        buildAndTestSubdir = "crates/core";
 
         inherit buildInputs nativeBuildInputs;
         inherit (commonEnv) OPENSSL_DIR OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR;

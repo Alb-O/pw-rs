@@ -21,7 +21,7 @@ clap = { version = "4", features = ["derive"] }
 colored = "3"
 futures = "0.3"
 libc = "0.2"
-pw = { package = "pw-rs", path = "../pw-rs" }
+pw = { package = "pw-rs", path = "../core" }
 regex-lite = "0.1"
 serde.workspace = true
 serde_json.workspace = true

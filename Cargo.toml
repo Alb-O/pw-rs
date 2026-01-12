@@ -1,13 +1,13 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/pw-cli",
-    "crates/pw-protocol",
-    "crates/pw-rs",
-    "crates/pw-runtime",
+    "crates/cli",
+    "crates/protocol",
+    "crates/core",
+    "crates/runtime",
     "extension/background",
 ]
-default-members = ["crates/pw-rs", "crates/pw-cli"]
+default-members = ["crates/core", "crates/cli"]
 
 [workspace.package]
 version = "0.12.0"
