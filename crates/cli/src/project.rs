@@ -56,6 +56,11 @@ impl ProjectPaths {
     pub fn auth_file(&self, filename: &str) -> PathBuf {
         self.auth_dir.join(filename)
     }
+
+    /// Get the auth directory path
+    pub fn auth_dir(&self) -> PathBuf {
+        self.auth_dir.clone()
+    }
 }
 
 /// Detected playwright project

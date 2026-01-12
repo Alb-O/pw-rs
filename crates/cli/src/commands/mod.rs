@@ -612,6 +612,7 @@ async fn dispatch_command_inner(
                 outcome
             }
             AuthAction::Show { file } => auth::show(&file).await,
+            AuthAction::Listen { host, port } => auth::listen(&host, port, ctx).await,
         },
         Commands::Session { action } => match action {
             SessionAction::Status => session::status(ctx_state, format).await,

@@ -434,6 +434,19 @@ pub enum AuthAction {
         /// File to read authentication state from
         file: PathBuf,
     },
+
+    /// Listen for cookies from browser extension
+    ///
+    /// Starts a WebSocket server that receives cookies from the pw browser extension.
+    /// A one-time token is displayed for authentication.
+    Listen {
+        /// Host to bind
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port to bind
+        #[arg(long, default_value_t = 9271)]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand, Debug)]

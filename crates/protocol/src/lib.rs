@@ -13,10 +13,12 @@
 //!
 //! Higher-level ergonomic APIs are built on top of these types in `pw-api`.
 
+pub mod auth_exchange;
 pub mod cookie;
 pub mod options;
 pub mod types;
 
+pub use auth_exchange::*;
 pub use cookie::*;
 pub use options::*;
 pub use types::*;

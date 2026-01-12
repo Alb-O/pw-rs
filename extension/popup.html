@@ -2,24 +2,167 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>pw-rs bridge</title>
+    <title>pw Cookie Export</title>
     <style>
-      body { font-family: sans-serif; margin: 12px; min-width: 220px; }
-      .status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: #999; }
-      .log { font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; background: #f6f6f6; border: 1px solid #ddd; padding: 8px; }
-      .addr { font-family: monospace; color: #333; }
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        padding: 16px;
+        min-width: 320px;
+        background: #1a1a1a;
+        color: #e0e0e0;
+      }
+      h2 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #fff;
+      }
+      .section {
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #252525;
+        border-radius: 8px;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #666;
+      }
+      .dot.connected { background: #4caf50; }
+      .dot.authenticated { background: #2196f3; }
+      .dot.error { background: #f44336; }
+      label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12px;
+        color: #999;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #444;
+        border-radius: 4px;
+        background: #1a1a1a;
+        color: #e0e0e0;
+        font-family: monospace;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #2196f3;
+      }
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      button.primary {
+        background: #2196f3;
+        color: white;
+      }
+      button.primary:hover { background: #1976d2; }
+      button.primary:disabled {
+        background: #444;
+        color: #888;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: #333;
+        color: #e0e0e0;
+      }
+      button.secondary:hover { background: #444; }
+      .domains {
+        margin: 8px 0;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .domain-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+        border-bottom: 1px solid #333;
+      }
+      .domain-item:last-child { border-bottom: none; }
+      .domain-item input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #2196f3;
+      }
+      .domain-item label {
+        margin: 0;
+        font-size: 13px;
+        color: #e0e0e0;
+        cursor: pointer;
+      }
+      .add-domain {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .add-domain input {
+        flex: 1;
+        margin-bottom: 0;
+      }
+      .message {
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      .message.success { background: #1b5e20; color: #a5d6a7; }
+      .message.error { background: #b71c1c; color: #ef9a9a; }
+      .message.info { background: #0d47a1; color: #90caf9; }
+      .paths {
+        font-family: monospace;
+        font-size: 11px;
+        margin-top: 4px;
+        color: #888;
+      }
     </style>
   </head>
   <body>
-    <div class="status">
-      <div class="dot" id="dot"></div>
-      <div>
-        <div id="state">Connecting…</div>
-        <div class="addr" id="addr"></div>
+    <h2>pw Cookie Export</h2>
+    
+    <div class="section">
+      <div class="status">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">Not connected</span>
+      </div>
+      <label>Server URL</label>
+      <input type="text" id="serverInput" value="ws://127.0.0.1:9271" placeholder="ws://127.0.0.1:9271" />
+      <label>Token (from pw auth listen)</label>
+      <input type="text" id="tokenInput" placeholder="Paste token here" />
+      <button class="primary" id="connectBtn">Connect</button>
+    </div>
+    
+    <div class="section">
+      <label>Domains to export</label>
+      <div class="domains" id="domainList"></div>
+      <div class="add-domain">
+        <input type="text" id="newDomain" placeholder="Loading..." />
+        <button class="secondary" id="addDomainBtn">Add</button>
       </div>
     </div>
-    <div class="log" id="log">Loading log…</div>
+    
+    <button class="primary" id="exportBtn" disabled>Export Cookies</button>
+    
+    <div id="messageArea"></div>
+    
     <script src="popup.js"></script>
   </body>
 </html>

@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "pw-rs Bridge",
-  "description": "Rust-based Playwright CDP bridge for pw-cli",
-  "version": "0.0.6",
+  "name": "pw Cookie Export",
+  "description": "Export browser cookies to pw-cli for authenticated automation",
+  "version": "0.1.0",
   "background": {
     "service_worker": "dist/init.js",
     "type": "module"
   },
   "permissions": [
-    "debugger",
-    "tabs",
+    "cookies",
+    "activeTab",
     "storage"
   ],
   "host_permissions": [
@@ -19,7 +19,7 @@
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "action": {
-    "default_title": "pw-rs bridge",
+    "default_title": "pw Cookie Export",
     "default_popup": "popup.html"
   },
   "web_accessible_resources": [
