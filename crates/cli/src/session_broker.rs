@@ -7,6 +7,7 @@ use crate::context::CommandContext;
 use crate::context_store::is_current_page_sentinel;
 use crate::daemon;
 use crate::error::{PwError, Result};
+use crate::target::Target;
 use crate::types::BrowserKind;
 use pw::{StorageState, WaitUntil};
 use serde::{Deserialize, Serialize};
@@ -396,6 +397,19 @@ impl SessionHandle {
             return Ok(false);
         }
         self.goto_if_needed(url).await
+    }
+
+    /// Navigate based on a typed [`Target`].
+    ///
+    /// For `Target::Navigate(url)`, navigates to the URL (if not already there).
+    /// For `Target::CurrentPage`, does nothing (operates on current page).
+    ///
+    /// Returns `true` if navigation was performed, `false` if skipped.
+    pub async fn goto_target(&self, target: &Target) -> Result<bool> {
+        match target {
+            Target::Navigate(url) => self.goto_if_needed(url.as_str()).await,
+            Target::CurrentPage => Ok(false),
+        }
     }
 
     pub fn page(&self) -> &pw::Page {

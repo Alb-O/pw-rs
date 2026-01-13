@@ -498,6 +498,27 @@ impl ContextState {
         selected.data.last_used_at = Some(now_ts());
     }
 
+    /// Record context from a typed [`ResolvedTarget`].
+    ///
+    /// For `Target::Navigate`, records the URL. For `Target::CurrentPage`,
+    /// does not record URL (avoids polluting context with sentinel values).
+    ///
+    /// [`ResolvedTarget`]: crate::target::ResolvedTarget
+    pub fn record_from_target(
+        &mut self,
+        target: &crate::target::ResolvedTarget,
+        selector: Option<&str>,
+    ) {
+        // Only record URL for Navigate targets
+        let url = target.url_str();
+
+        self.record(ContextUpdate {
+            url,
+            selector,
+            ..Default::default()
+        });
+    }
+
     pub fn persist(&mut self) -> Result<()> {
         if self.no_save || self.no_context {
             return Ok(());
@@ -541,7 +562,8 @@ impl ContextState {
         Ok(())
     }
 
-    fn base_url(&self) -> Option<&str> {
+    /// Get the effective base URL (override or from context).
+    pub fn base_url(&self) -> Option<&str> {
         self.base_url_override.as_deref().or_else(|| {
             self.selected
                 .as_ref()
