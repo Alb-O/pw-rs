@@ -227,7 +227,9 @@ pub async fn execute_resolved(
                 .with_preferred_url(args.preferred_url(last_url)),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let locator = session.page().locator("html").await;
     let html = locator.inner_html().await?;

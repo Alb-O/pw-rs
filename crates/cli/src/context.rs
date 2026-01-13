@@ -103,6 +103,8 @@ pub struct CommandContext {
     block_config: BlockConfig,
     /// Download management configuration
     download_config: DownloadConfig,
+    /// Timeout for navigation and wait operations (milliseconds)
+    timeout_ms: Option<u64>,
 }
 
 impl CommandContext {
@@ -125,6 +127,7 @@ impl CommandContext {
             HarConfig::default(),
             BlockConfig::default(),
             DownloadConfig::default(),
+            None,
         )
     }
 
@@ -148,6 +151,7 @@ impl CommandContext {
             har_config,
             BlockConfig::default(),
             DownloadConfig::default(),
+            None,
         )
     }
 
@@ -162,6 +166,7 @@ impl CommandContext {
         har_config: HarConfig,
         block_config: BlockConfig,
         download_config: DownloadConfig,
+        timeout_ms: Option<u64>,
     ) -> Self {
         let project = if no_project { None } else { Project::detect() };
 
@@ -214,6 +219,7 @@ impl CommandContext {
             har_config: resolved_har_config,
             block_config,
             download_config: resolved_download_config,
+            timeout_ms,
         }
     }
 
@@ -248,6 +254,11 @@ impl CommandContext {
     /// Get the download management configuration
     pub fn download_config(&self) -> &DownloadConfig {
         &self.download_config
+    }
+
+    /// Get the timeout for navigation and wait operations
+    pub fn timeout_ms(&self) -> Option<u64> {
+        self.timeout_ms
     }
 
     /// Get the screenshot output path, using project paths if available

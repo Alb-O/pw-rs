@@ -55,6 +55,8 @@ pub struct RuntimeConfig {
     pub block_file: Option<PathBuf>,
     // Download management configuration
     pub downloads_dir: Option<PathBuf>,
+    // Timeout configuration
+    pub timeout_ms: Option<u64>,
 }
 
 impl From<&Cli> for RuntimeConfig {
@@ -87,6 +89,7 @@ impl From<&Cli> for RuntimeConfig {
             block_patterns: cli.block.clone(),
             block_file: cli.block_file.clone(),
             downloads_dir: cli.downloads_dir.clone(),
+            timeout_ms: cli.timeout,
         }
     }
 }
@@ -179,6 +182,7 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
         har_config,
         block_config,
         download_config,
+        config.timeout_ms,
     );
 
     Ok(RuntimeContext { ctx, ctx_state })
@@ -212,6 +216,7 @@ mod tests {
             block_patterns: Vec::new(),
             block_file: None,
             downloads_dir: None,
+            timeout_ms: None,
         };
 
         assert!(config.no_project);
@@ -242,6 +247,7 @@ mod tests {
             block_patterns: Vec::new(),
             block_file: None,
             downloads_dir: None,
+            timeout_ms: None,
         };
 
         let result = build_runtime(&config);

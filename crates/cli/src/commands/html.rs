@@ -134,7 +134,9 @@ pub async fn execute_resolved(
         .await?;
 
     // Use typed target navigation
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let locator = session.page().locator(&args.selector).await;
     let html = locator.inner_html().await?;

@@ -114,7 +114,16 @@ pub async fn execute_resolved(
         )
         .await?;
 
-    match execute_inner(&session, &args.target, &args.selector, args.wait_ms, format).await {
+    match execute_inner(
+        &session,
+        &args.target,
+        &args.selector,
+        args.wait_ms,
+        format,
+        ctx.timeout_ms(),
+    )
+    .await
+    {
         Ok(after_url) => {
             session.close().await?;
             Ok(after_url)
@@ -144,8 +153,9 @@ async fn execute_inner(
     selector: &str,
     wait_ms: u64,
     format: OutputFormat,
+    timeout_ms: Option<u64>,
 ) -> Result<String> {
-    session.goto_target(&target.target).await?;
+    session.goto_target(&target.target, timeout_ms).await?;
 
     let before_url = session
         .page()

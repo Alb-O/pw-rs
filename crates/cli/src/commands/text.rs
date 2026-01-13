@@ -175,7 +175,15 @@ pub async fn execute_resolved(
         )
         .await?;
 
-    match execute_inner(&session, &args.target, &args.selector, format).await {
+    match execute_inner(
+        &session,
+        &args.target,
+        &args.selector,
+        format,
+        ctx.timeout_ms(),
+    )
+    .await
+    {
         Ok(()) => session.close().await,
         Err(e) => {
             let artifacts = session
@@ -201,8 +209,9 @@ async fn execute_inner(
     target: &ResolvedTarget,
     selector: &str,
     format: OutputFormat,
+    timeout_ms: Option<u64>,
 ) -> Result<()> {
-    session.goto_target(&target.target).await?;
+    session.goto_target(&target.target, timeout_ms).await?;
 
     let locator = session.page().locator(selector).await;
     let count = locator.count().await?;

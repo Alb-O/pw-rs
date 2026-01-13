@@ -101,7 +101,9 @@ pub async fn execute_resolved(
                 .with_preferred_url(preferred_url),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let wrapped_expr = format!("JSON.stringify({})", args.expression);
     let raw_result = session.page().evaluate_value(&wrapped_expr).await;

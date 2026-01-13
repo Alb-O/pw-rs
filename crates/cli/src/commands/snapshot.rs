@@ -410,7 +410,7 @@ pub async fn execute_resolved(
         )
         .await?;
 
-    match extract_snapshot(&session, args, format).await {
+    match extract_snapshot(&session, args, format, ctx.timeout_ms()).await {
         Ok(()) => session.close().await,
         Err(e) => {
             let artifacts = session
@@ -436,8 +436,9 @@ async fn extract_snapshot(
     session: &SessionHandle,
     args: &SnapshotResolved,
     format: OutputFormat,
+    timeout_ms: Option<u64>,
 ) -> Result<()> {
-    session.goto_target(&args.target.target).await?;
+    session.goto_target(&args.target.target, timeout_ms).await?;
 
     let meta_js = format!("JSON.stringify({})", EXTRACT_META_JS);
     let meta: PageMeta = serde_json::from_str(&session.page().evaluate_value(&meta_js).await?)?;

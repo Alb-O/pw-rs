@@ -140,12 +140,35 @@ async fn run_unix(
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: &mut watch::Receiver<bool>,
 ) -> Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigterm =
+        signal(SignalKind::terminate()).context("Failed to install SIGTERM handler")?;
+    let mut sigint = signal(SignalKind::interrupt()).context("Failed to install SIGINT handler")?;
+
     loop {
         tokio::select! {
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
+                    info!(target = "pw.daemon", "shutdown requested via message");
                     break;
                 }
+            }
+            _ = sigterm.recv() => {
+                info!(target = "pw.daemon", "received SIGTERM, shutting down");
+                let mut daemon = state.lock().await;
+                if let Err(e) = daemon.shutdown().await {
+                    warn!(target = "pw.daemon", error = %e, "error during shutdown");
+                }
+                break;
+            }
+            _ = sigint.recv() => {
+                info!(target = "pw.daemon", "received SIGINT, shutting down");
+                let mut daemon = state.lock().await;
+                if let Err(e) = daemon.shutdown().await {
+                    warn!(target = "pw.daemon", error = %e, "error during shutdown");
+                }
+                break;
             }
             accept = listener.accept() => {
                 let (stream, _) = accept.context("Daemon accept failed")?;
@@ -174,8 +197,17 @@ async fn run_tcp(
         tokio::select! {
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
+                    info!(target = "pw.daemon", "shutdown requested via message");
                     break;
                 }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!(target = "pw.daemon", "received Ctrl+C, shutting down");
+                let mut daemon = state.lock().await;
+                if let Err(e) = daemon.shutdown().await {
+                    warn!(target = "pw.daemon", error = %e, "error during shutdown");
+                }
+                break;
             }
             accept = listener.accept() => {
                 let (stream, _) = accept.context("Daemon accept failed")?;

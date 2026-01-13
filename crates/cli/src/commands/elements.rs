@@ -289,7 +289,7 @@ pub async fn execute_resolved(
         )
         .await?;
 
-    match extract_elements(&session, args, format).await {
+    match extract_elements(&session, args, format, ctx.timeout_ms()).await {
         Ok(()) => session.close().await,
         Err(e) => {
             let artifacts = session
@@ -315,8 +315,11 @@ async fn extract_elements(
     session: &SessionHandle,
     args: &ElementsResolved,
     format: OutputFormat,
+    nav_timeout_ms: Option<u64>,
 ) -> Result<()> {
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, nav_timeout_ms)
+        .await?;
 
     let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
 

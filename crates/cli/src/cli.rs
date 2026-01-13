@@ -143,6 +143,10 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "DIR")]
     pub downloads_dir: Option<PathBuf>,
 
+    /// Timeout for navigation and wait operations in milliseconds
+    #[arg(long, global = true, value_name = "MS")]
+    pub timeout: Option<u64>,
+
     #[command(subcommand)]
     pub command: Commands,
 }

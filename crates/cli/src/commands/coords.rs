@@ -132,7 +132,9 @@ pub async fn execute_single_resolved(
                 .with_preferred_url(args.preferred_url(last_url)),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let result_json = session
         .page()
@@ -203,7 +205,9 @@ pub async fn execute_all_resolved(
                 .with_preferred_url(args.preferred_url(last_url)),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let results_json = session
         .page()

@@ -311,6 +311,7 @@ The daemon spawns browsers on ports 9222-10221. Currently only Chromium is suppo
 | `--block <pattern>`| Block requests matching URL pattern |
 | `--block-file`     | Load block patterns from file       |
 | `--downloads-dir`  | Directory to save downloaded files  |
+| `--timeout <ms>`   | Timeout for navigation (ms)         |
 
 ## Batch Mode (for high-throughput agents)
 

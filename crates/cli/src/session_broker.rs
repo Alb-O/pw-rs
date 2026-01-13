@@ -379,14 +379,15 @@ pub struct SessionHandle {
 }
 
 impl SessionHandle {
-    pub async fn goto(&self, url: &str) -> Result<()> {
-        self.session.goto(url).await
+    /// Navigate to a URL with optional timeout.
+    pub async fn goto(&self, url: &str, timeout_ms: Option<u64>) -> Result<()> {
+        self.session.goto(url, timeout_ms).await
     }
 
     /// Navigate to URL only if not already on that page.
     ///
     /// Returns `true` if navigation was performed, `false` if already on the page.
-    pub async fn goto_if_needed(&self, url: &str) -> Result<bool> {
+    pub async fn goto_if_needed(&self, url: &str, timeout_ms: Option<u64>) -> Result<bool> {
         let current_url = self
             .page()
             .evaluate_value("window.location.href")
@@ -397,20 +398,20 @@ impl SessionHandle {
         if urls_match(current, url) {
             Ok(false)
         } else {
-            self.session.goto(url).await?;
+            self.session.goto(url, timeout_ms).await?;
             Ok(true)
         }
     }
 
-    /// Navigate based on a typed [`Target`].
+    /// Navigate based on a typed [`Target`] with optional timeout.
     ///
     /// For `Target::Navigate(url)`, navigates to the URL (if not already there).
     /// For `Target::CurrentPage`, does nothing (operates on current page).
     ///
     /// Returns `true` if navigation was performed, `false` if skipped.
-    pub async fn goto_target(&self, target: &Target) -> Result<bool> {
+    pub async fn goto_target(&self, target: &Target, timeout_ms: Option<u64>) -> Result<bool> {
         match target {
-            Target::Navigate(url) => self.goto_if_needed(url.as_str()).await,
+            Target::Navigate(url) => self.goto_if_needed(url.as_str(), timeout_ms).await,
             Target::CurrentPage => Ok(false),
         }
     }

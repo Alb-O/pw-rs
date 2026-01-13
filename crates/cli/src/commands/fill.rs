@@ -120,7 +120,9 @@ pub async fn execute_resolved(
         )
         .await?;
 
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let locator = session.page().locator(&args.selector).await;
     locator.fill(&args.text, None).await?;

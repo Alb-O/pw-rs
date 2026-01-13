@@ -108,7 +108,9 @@ pub async fn execute_resolved(
                 .with_preferred_url(preferred_url),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     if let Some(parent) = args.output.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {

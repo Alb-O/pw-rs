@@ -132,7 +132,9 @@ pub async fn execute_resolved(
         warn!(target = "pw.browser.console", error = %err, "failed to inject console capture");
     }
 
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     tokio::time::sleep(Duration::from_millis(args.timeout_ms)).await;
 

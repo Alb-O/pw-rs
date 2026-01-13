@@ -78,7 +78,9 @@ pub async fn execute_resolved(
     // Navigate based on target type
     match &args.target.target {
         Target::Navigate(url) => {
-            session.goto_if_needed(url.as_str()).await?;
+            session
+                .goto_if_needed(url.as_str(), ctx.timeout_ms())
+                .await?;
         }
         Target::CurrentPage => {
             // No navigation needed

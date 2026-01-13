@@ -161,7 +161,9 @@ pub async fn login_resolved(
                 .with_preferred_url(preferred_url),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     println!("Browser opened at: {url_display}");
     println!();
@@ -226,7 +228,9 @@ pub async fn cookies_resolved(
         )
         .await?;
 
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     // Get the actual URL for cookie filtering
     let cookie_url = match &args.target.target {

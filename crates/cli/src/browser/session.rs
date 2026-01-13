@@ -570,11 +570,18 @@ impl BrowserSession {
         })
     }
 
-    pub async fn goto(&self, url: &str) -> Result<()> {
-        let goto_opts = GotoOptions {
+    /// Navigate to a URL with optional timeout.
+    ///
+    /// If `timeout_ms` is `None`, uses Playwright's default timeout (30s).
+    pub async fn goto(&self, url: &str, timeout_ms: Option<u64>) -> Result<()> {
+        let mut goto_opts = GotoOptions {
             wait_until: Some(self.wait_until),
             ..Default::default()
         };
+
+        if let Some(ms) = timeout_ms {
+            goto_opts.timeout = Some(std::time::Duration::from_millis(ms));
+        }
 
         self.page
             .goto(url, Some(goto_opts))

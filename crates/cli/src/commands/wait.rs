@@ -120,7 +120,9 @@ pub async fn execute_resolved(
                 .with_preferred_url(args.preferred_url(last_url)),
         )
         .await?;
-    session.goto_target(&args.target.target).await?;
+    session
+        .goto_target(&args.target.target, ctx.timeout_ms())
+        .await?;
 
     let condition = &args.condition;
     let url_str = args.target.url_str();
