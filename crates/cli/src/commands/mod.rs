@@ -1,3 +1,4 @@
+mod agents;
 mod auth;
 mod click;
 mod connect;
@@ -21,7 +22,8 @@ mod text;
 mod wait;
 
 use crate::cli::{
-    AuthAction, Cli, Commands, DaemonAction, PageAction, ProtectAction, SessionAction, TabsAction,
+    AgentsAction, AuthAction, Cli, Commands, DaemonAction, PageAction, ProtectAction,
+    SessionAction, TabsAction,
 };
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate};
@@ -39,6 +41,20 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
         return relay::run_relay_server(host, port)
             .await
             .map_err(PwError::Anyhow);
+    }
+
+    // Handle agents docs - doesn't need runtime
+    if let Commands::Agents { ref action } = cli.command {
+        return match action {
+            None => agents::show_main(),
+            Some(AgentsAction::Pw) => agents::show_main(),
+            Some(AgentsAction::Auth) => agents::show_auth(),
+            Some(AgentsAction::Connect) => agents::show_connect(),
+            Some(AgentsAction::Daemon) => agents::show_daemon(),
+            Some(AgentsAction::Page) => agents::show_page(),
+            Some(AgentsAction::Protect) => agents::show_protect(),
+            Some(AgentsAction::Run) => agents::show_run(),
+        };
     }
 
     // Build runtime once (single source of truth for setup)
@@ -306,6 +322,7 @@ async fn dispatch_command_inner(
             ProtectAction::Remove { pattern } => protect::remove(ctx_state, format, &pattern),
             ProtectAction::List => protect::list(ctx_state, format),
         },
+        Commands::Agents { .. } => unreachable!("handled earlier"),
     }
 }
 
