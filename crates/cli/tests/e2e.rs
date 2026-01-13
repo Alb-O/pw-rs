@@ -31,8 +31,12 @@ fn clear_context_store() {
 fn run_pw(args: &[&str]) -> (bool, String, String) {
     clear_context_store();
 
+    // Use JSON format for tests since assertions expect JSON structure
+    let mut all_args = vec!["-f", "json"];
+    all_args.extend_from_slice(args);
+
     let output = Command::new(pw_binary())
-        .args(args)
+        .args(&all_args)
         .output()
         .expect("Failed to execute pw");
 
@@ -116,6 +120,7 @@ fn screenshot_with_complex_html() {
 #[ignore = "flaky on CI due to browser timeouts with data: URLs and full page HTML"]
 fn html_full_page() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "html",
         "data:text/html,<html><body><h1>Title</h1><p>Content</p></body></html>",
     ]);
@@ -132,6 +137,7 @@ fn html_full_page() {
 #[test]
 fn html_with_selector() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "html",
         "data:text/html,<div><span id='target'>Found me</span><span>Other</span></div>",
         "#target",
@@ -146,6 +152,7 @@ fn html_with_selector() {
 #[test]
 fn html_nested_elements() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "html",
         "data:text/html,<div class='wrapper'><ul><li>One</li><li>Two</li></ul></div>",
         ".wrapper",
@@ -163,8 +170,12 @@ fn html_nested_elements() {
 
 #[test]
 fn text_simple() {
-    let (success, stdout, stderr) =
-        run_pw(&["text", "data:text/html,<p id='msg'>Hello World</p>", "#msg"]);
+    let (success, stdout, stderr) = run_pw(&[
+        "page",
+        "text",
+        "data:text/html,<p id='msg'>Hello World</p>",
+        "#msg",
+    ]);
 
     assert!(success, "Command failed: {}", stderr);
     // JSON envelope contains the text
@@ -182,6 +193,7 @@ fn text_simple() {
 #[test]
 fn text_nested_content() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "text",
         "data:text/html,<div id='container'><span>First</span> <span>Second</span></div>",
         "#container",
@@ -195,6 +207,7 @@ fn text_nested_content() {
 #[test]
 fn text_with_whitespace() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "text",
         "data:text/html,<pre id='code'>  indented  </pre>",
         "#code",
@@ -211,7 +224,8 @@ fn text_with_whitespace() {
 
 #[test]
 fn eval_simple_expression() {
-    let (success, stdout, stderr) = run_pw(&["eval", "1 + 1", "data:text/html,<h1>Test</h1>"]);
+    let (success, stdout, stderr) =
+        run_pw(&["page", "eval", "1 + 1", "data:text/html,<h1>Test</h1>"]);
 
     assert!(success, "Command failed: {}", stderr);
     // JSON envelope contains result in data.result
@@ -222,6 +236,7 @@ fn eval_simple_expression() {
 #[test]
 fn eval_document_title() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "eval",
         "document.title",
         "data:text/html,<html><head><title>My Title</title></head></html>",
@@ -238,6 +253,7 @@ fn eval_document_title() {
 #[test]
 fn eval_query_selector() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "eval",
         "document.querySelector('#test').textContent",
         "data:text/html,<div id='test'>Content</div>",
@@ -254,6 +270,7 @@ fn eval_query_selector() {
 #[test]
 fn eval_returns_object() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "eval",
         "({a: 1, b: 'test'})",
         "data:text/html,<html></html>",
@@ -266,7 +283,8 @@ fn eval_returns_object() {
 
 #[test]
 fn eval_returns_array() {
-    let (success, stdout, stderr) = run_pw(&["eval", "[1, 2, 3]", "data:text/html,<html></html>"]);
+    let (success, stdout, stderr) =
+        run_pw(&["page", "eval", "[1, 2, 3]", "data:text/html,<html></html>"]);
 
     assert!(success, "Command failed: {}", stderr);
     assert!(stdout.contains("1"), "Expected 1 in output");
@@ -281,6 +299,7 @@ fn eval_returns_array() {
 #[test]
 fn coords_finds_element() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "coords",
         "data:text/html,<button id='btn' style='width:100px;height:50px'>Click</button>",
         "#btn",
@@ -296,6 +315,7 @@ fn coords_finds_element() {
 #[test]
 fn coords_includes_text() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "coords",
         "data:text/html,<span id='target'>Sample Text</span>",
         "#target",
@@ -311,6 +331,7 @@ fn coords_includes_text() {
 #[test]
 fn coords_includes_href() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "coords",
         "data:text/html,<a id='link' href='/page'>Link</a>",
         "#link",
@@ -323,6 +344,7 @@ fn coords_includes_href() {
 #[test]
 fn coords_element_not_found() {
     let (success, stdout, _stderr) = run_pw(&[
+        "page",
         "coords",
         "data:text/html,<div>No button here</div>",
         "#nonexistent",
@@ -344,6 +366,7 @@ fn coords_element_not_found() {
 #[test]
 fn coords_all_multiple_elements() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "coords-all",
         "data:text/html,<ul><li class='item'>One</li><li class='item'>Two</li><li class='item'>Three</li></ul>",
         ".item",
@@ -358,6 +381,7 @@ fn coords_all_multiple_elements() {
 #[test]
 fn coords_all_empty_result() {
     let (success, stdout, stderr) = run_pw(&[
+        "page",
         "coords-all",
         "data:text/html,<div>Nothing here</div>",
         ".nonexistent",
@@ -490,7 +514,7 @@ fn help_flag() {
     assert!(success, "Help should succeed");
     assert!(stdout.contains("Usage"), "Expected usage in help");
     assert!(stdout.contains("screenshot"), "Expected screenshot command");
-    assert!(stdout.contains("html"), "Expected html command");
+    assert!(stdout.contains("page"), "Expected page command");
 }
 
 #[test]

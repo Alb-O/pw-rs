@@ -146,8 +146,11 @@ const HTML_TAGS: &[&str] = &[
 /// assert!(!looks_like_selector("http://localhost:3000"));
 /// assert!(!looks_like_selector("ws://localhost/socket"));
 ///
-/// // Ambiguous/plain strings (not selectors)
-/// assert!(!looks_like_selector("example.com"));
+/// // Domain-like strings with dots ARE treated as selectors
+/// // (use explicit URL flag if you need domain without scheme)
+/// assert!(looks_like_selector("example.com"));
+///
+/// // Plain strings without selector chars (not selectors)
 /// assert!(!looks_like_selector("localhost"));
 /// ```
 pub fn looks_like_selector(s: &str) -> bool {

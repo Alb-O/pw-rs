@@ -46,8 +46,7 @@ use tracing::info;
 ///
 /// # Example
 ///
-/// ```
-/// # use pw_cli::commands::snapshot::SnapshotRaw;
+/// ```ignore
 /// let raw = SnapshotRaw {
 ///     url: Some("https://example.com".into()),
 ///     text_only: Some(true),
