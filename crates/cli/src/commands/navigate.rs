@@ -3,7 +3,8 @@
 use crate::context::CommandContext;
 use crate::error::Result;
 use crate::output::{
-    CommandInputs, DiagnosticLevel, NavigateData, OutputFormat, ResultBuilder, print_result,
+    CommandInputs, DiagnosticLevel, EffectiveConfig, NavigateData, OutputFormat, ResultBuilder,
+    print_result,
 };
 use crate::session_broker::{SessionBroker, SessionRequest};
 use crate::target::{Resolve, ResolveEnv, ResolvedTarget, Target, TargetPolicy};
@@ -116,6 +117,17 @@ pub async fn execute_resolved(
         None
     };
 
+    let effective_config = EffectiveConfig {
+        browser: ctx.browser.to_string(),
+        headless: true,
+        wait_until: Some("load".into()),
+        timeout_ms: ctx.timeout_ms(),
+        endpoint: session.cdp_endpoint().map(String::from),
+        cdp_endpoint_source: Some(ctx.cdp_endpoint_source()),
+        session_source: Some(session.source()),
+        target_source: Some(args.target.source.to_string()),
+    };
+
     let mut builder = ResultBuilder::new("navigate")
         .inputs(CommandInputs {
             url: args.target.url_str().map(String::from),
@@ -127,7 +139,8 @@ pub async fn execute_resolved(
             title,
             errors: errors.clone(),
             warnings: vec![],
-        });
+        })
+        .config(effective_config);
 
     for error in &errors {
         builder = builder.diagnostic_with_source(DiagnosticLevel::Error, error, "browser");

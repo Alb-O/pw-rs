@@ -10,6 +10,7 @@ use crate::cli::Cli;
 use crate::context::{BlockConfig, CommandContext, DownloadConfig, HarConfig};
 use crate::context_store::ContextState;
 use crate::error::Result;
+use crate::output::CdpEndpointSource;
 use crate::project::Project;
 use crate::types::BrowserKind;
 use pw::{HarContentPolicy, HarMode};
@@ -140,10 +141,13 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
     )?;
 
     // Step 3: Resolve CDP endpoint (CLI flag takes precedence over stored context)
-    let resolved_cdp = config
-        .cdp_endpoint
-        .clone()
-        .or_else(|| ctx_state.cdp_endpoint().map(String::from));
+    let (resolved_cdp, cdp_endpoint_source) = if let Some(ref endpoint) = config.cdp_endpoint {
+        (Some(endpoint.clone()), CdpEndpointSource::CliFlag)
+    } else if let Some(endpoint) = ctx_state.cdp_endpoint() {
+        (Some(endpoint.to_string()), CdpEndpointSource::Context)
+    } else {
+        (None, CdpEndpointSource::None)
+    };
 
     // Step 4: Build HAR configuration
     let har_config = HarConfig {
@@ -177,6 +181,7 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
         config.no_project,
         config.auth.clone(),
         resolved_cdp,
+        cdp_endpoint_source,
         config.launch_server,
         config.no_daemon,
         har_config,
@@ -252,5 +257,39 @@ mod tests {
 
         let result = build_runtime(&config);
         assert!(result.is_ok());
+        let rt = result.unwrap();
+        assert_eq!(rt.ctx.cdp_endpoint_source(), CdpEndpointSource::None);
+    }
+
+    #[test]
+    fn build_runtime_cdp_from_cli_flag() {
+        let config = RuntimeConfig {
+            auth: None,
+            browser: BrowserKind::Chromium,
+            cdp_endpoint: Some("ws://localhost:9222".into()),
+            launch_server: false,
+            no_daemon: false,
+            no_project: true,
+            context: None,
+            no_context: true,
+            no_save_context: true,
+            refresh_context: false,
+            base_url: None,
+            artifacts_dir: None,
+            har_path: None,
+            har_content_policy: None,
+            har_mode: None,
+            har_omit_content: false,
+            har_url_filter: None,
+            block_patterns: Vec::new(),
+            block_file: None,
+            downloads_dir: None,
+            timeout_ms: None,
+        };
+
+        let result = build_runtime(&config);
+        assert!(result.is_ok());
+        let rt = result.unwrap();
+        assert_eq!(rt.ctx.cdp_endpoint_source(), CdpEndpointSource::CliFlag);
     }
 }

@@ -291,6 +291,42 @@ pub enum DiagnosticLevel {
     Error,
 }
 
+/// Where the CDP endpoint was configured.
+///
+/// Used for diagnostics to help debug connection issues.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CdpEndpointSource {
+    /// Provided via `--cdp-endpoint` CLI flag.
+    CliFlag,
+    /// Loaded from stored context (previous [`pw connect`]).
+    Context,
+    /// No CDP endpoint configured.
+    #[default]
+    None,
+}
+
+/// How the browser session was acquired.
+///
+/// Tracks the session acquisition path for diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionSource {
+    /// From daemon-managed browser pool.
+    Daemon,
+    /// Reused via cached session descriptor.
+    CachedDescriptor,
+    /// Freshly launched browser process.
+    #[default]
+    Fresh,
+    /// Connected to existing browser via CDP.
+    CdpConnect,
+    /// Launched with persistent remote debugging port.
+    PersistentDebug,
+    /// Via browser server (`--launch-server` mode).
+    BrowserServer,
+}
+
 /// Effective configuration used for the command
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -309,9 +345,23 @@ pub struct EffectiveConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
 
-    /// CDP/WS endpoint connected to (if any)
+    /// CDP/WS endpoint connected to (if any).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+
+    /// Where the CDP endpoint was configured (for diagnostics).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cdp_endpoint_source: Option<CdpEndpointSource>,
+
+    /// How the browser session was acquired (for diagnostics).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_source: Option<SessionSource>,
+
+    /// Where the target URL came from (for diagnostics).
+    ///
+    /// Uses [`TargetSource`](crate::target::TargetSource) string representation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_source: Option<String>,
 }
 
 /// Builder for constructing command results

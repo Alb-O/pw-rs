@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::output::CdpEndpointSource;
 use crate::project::Project;
 use crate::types::BrowserKind;
 use pw::{HarContentPolicy, HarMode};
@@ -89,6 +90,8 @@ pub struct CommandContext {
     pub browser: BrowserKind,
     /// Optional CDP endpoint for connecting to a running browser
     cdp_endpoint: Option<String>,
+    /// Where the CDP endpoint came from (for diagnostics)
+    cdp_endpoint_source: CdpEndpointSource,
     /// Whether to launch a reusable browser server
     launch_server: bool,
     /// Whether daemon usage is disabled
@@ -122,6 +125,7 @@ impl CommandContext {
             no_project,
             auth_file,
             cdp_endpoint,
+            CdpEndpointSource::None,
             launch_server,
             no_daemon,
             HarConfig::default(),
@@ -146,6 +150,7 @@ impl CommandContext {
             no_project,
             auth_file,
             cdp_endpoint,
+            CdpEndpointSource::None,
             launch_server,
             no_daemon,
             har_config,
@@ -161,6 +166,7 @@ impl CommandContext {
         no_project: bool,
         auth_file: Option<PathBuf>,
         cdp_endpoint: Option<String>,
+        cdp_endpoint_source: CdpEndpointSource,
         launch_server: bool,
         no_daemon: bool,
         har_config: HarConfig,
@@ -212,6 +218,7 @@ impl CommandContext {
             project,
             browser,
             cdp_endpoint,
+            cdp_endpoint_source,
             launch_server,
             no_daemon,
             auth_file: resolved_auth,
@@ -231,6 +238,11 @@ impl CommandContext {
     /// Get the CDP endpoint URL if provided
     pub fn cdp_endpoint(&self) -> Option<&str> {
         self.cdp_endpoint.as_deref()
+    }
+
+    /// Get the source of the CDP endpoint (for diagnostics)
+    pub fn cdp_endpoint_source(&self) -> CdpEndpointSource {
+        self.cdp_endpoint_source
     }
 
     pub fn launch_server(&self) -> bool {

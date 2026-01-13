@@ -576,7 +576,7 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 
 **Goal:** Consolidate runtime setup, add helpers, prepare for typed target.
 
-**Status:** Mostly complete (5/6 tasks done)
+**Status:** Complete (6/6 tasks done)
 
 #### Tasks
 
@@ -605,12 +605,15 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
   - Single source of truth for project detection, context state, CDP resolution
   - **Acceptance:** Both batch and single-command paths use same setup
 
-- [ ] **P1-T6: Add decision diagnostics to output**
-  - Add to `EffectiveConfig` or new `Diagnostics` struct:
-    - `cdp_endpoint_source: Option<String>`
-    - `session_source: Option<String>`
-    - `target_source: Option<String>`
-  - **Acceptance:** Verbose output shows resolution decisions
+- [x] **P1-T6: Add decision diagnostics to output**
+  - Added `CdpEndpointSource` enum (CliFlag, Context, None) to track CDP endpoint origin
+  - Added `SessionSource` enum (Daemon, CachedDescriptor, Fresh, CdpConnect, etc.) to track session acquisition
+  - Extended `EffectiveConfig` with `cdp_endpoint_source`, `session_source`, `target_source` fields
+  - `CommandContext` stores and exposes `cdp_endpoint_source`
+  - `SessionHandle::source()` returns the session acquisition source
+  - `ResolvedTarget.source` (existing `TargetSource`) tracks URL resolution
+  - Navigate command demonstrates full diagnostics in output
+  - **Acceptance:** Command output includes resolution diagnostics in `config` field
 
 #### Phase 1 Gate
 

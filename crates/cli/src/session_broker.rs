@@ -6,6 +6,7 @@ use crate::browser::{BrowserSession, DownloadInfo};
 use crate::context::{BlockConfig, CommandContext, DownloadConfig, HarConfig};
 use crate::daemon;
 use crate::error::{PwError, Result};
+use crate::output::SessionSource;
 use crate::target::Target;
 use crate::types::BrowserKind;
 use pw::{StorageState, WaitUntil};
@@ -220,7 +221,10 @@ impl<'a> SessionBroker<'a> {
                             request.download_config,
                         )
                         .await?;
-                        return Ok(SessionHandle { session });
+                        return Ok(SessionHandle {
+                            session,
+                            source: SessionSource::CachedDescriptor,
+                        });
                     } else {
                         debug!(target = "pw.session", "descriptor lacks endpoint; ignoring");
                     }
@@ -264,7 +268,7 @@ impl<'a> SessionBroker<'a> {
             }
         }
 
-        let session = if let Some(endpoint) = daemon_endpoint.as_deref() {
+        let (session, source) = if let Some(endpoint) = daemon_endpoint.as_deref() {
             let mut s = BrowserSession::with_options(
                 request.wait_until,
                 storage_state.clone(),
@@ -281,7 +285,7 @@ impl<'a> SessionBroker<'a> {
             .await?;
             // Daemon manages the browser lifecycle - don't close it on session close
             s.set_keep_browser_running(true);
-            s
+            (s, SessionSource::Daemon)
         } else if let Some(port) = request.remote_debugging_port {
             // Persistent session with CDP debugging port (Chromium only)
             if request.browser != BrowserKind::Chromium {
@@ -289,24 +293,26 @@ impl<'a> SessionBroker<'a> {
                     "Persistent sessions with remote_debugging_port require Chromium".to_string(),
                 ));
             }
-            BrowserSession::launch_persistent(
+            let s = BrowserSession::launch_persistent(
                 request.wait_until,
                 storage_state,
                 request.headless,
                 port,
                 request.keep_browser_running,
             )
-            .await?
+            .await?;
+            (s, SessionSource::PersistentDebug)
         } else if request.launch_server {
-            BrowserSession::launch_server_session(
+            let s = BrowserSession::launch_server_session(
                 request.wait_until,
                 storage_state,
                 request.headless,
                 request.browser,
             )
-            .await?
+            .await?;
+            (s, SessionSource::BrowserServer)
         } else {
-            BrowserSession::with_options(
+            let s = BrowserSession::with_options(
                 request.wait_until,
                 storage_state,
                 request.headless,
@@ -319,7 +325,14 @@ impl<'a> SessionBroker<'a> {
                 request.block_config,
                 request.download_config,
             )
-            .await?
+            .await?;
+            // Determine source based on whether we connected via CDP or launched fresh
+            let src = if request.cdp_endpoint.is_some() {
+                SessionSource::CdpConnect
+            } else {
+                SessionSource::Fresh
+            };
+            (s, src)
         };
 
         // Auto-inject cookies from project auth files when using CDP without explicit auth
@@ -366,7 +379,7 @@ impl<'a> SessionBroker<'a> {
             }
         }
 
-        Ok(SessionHandle { session })
+        Ok(SessionHandle { session, source })
     }
 
     pub fn context(&self) -> &'a CommandContext {
@@ -376,9 +389,16 @@ impl<'a> SessionBroker<'a> {
 
 pub struct SessionHandle {
     session: BrowserSession,
+    /// Where this session came from (for diagnostics).
+    source: SessionSource,
 }
 
 impl SessionHandle {
+    /// Returns the source of this session (for diagnostics).
+    pub fn source(&self) -> SessionSource {
+        self.source
+    }
+
     /// Navigate to a URL with optional timeout.
     pub async fn goto(&self, url: &str, timeout_ms: Option<u64>) -> Result<()> {
         self.session.goto(url, timeout_ms).await
