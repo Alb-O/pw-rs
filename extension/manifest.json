@@ -4,7 +4,7 @@
   "description": "Export browser cookies to pw-cli for authenticated automation",
   "version": "0.1.0",
   "background": {
-    "service_worker": "dist/init.js",
+    "service_worker": "init.js",
     "type": "module"
   },
   "permissions": [
