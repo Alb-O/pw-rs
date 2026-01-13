@@ -71,7 +71,7 @@ fn selector_positional_with_context() {
     assert!(success, "Navigate failed: {}", stderr);
 
     // Now run text with just a selector - should use context URL
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", ".content"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", ".content"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Hello World"),
@@ -90,7 +90,7 @@ fn url_positional_treated_as_url() {
 
     // Run text with a data: URL - should navigate and get body text
     let url = "data:text/html,<body>Page Content</body>";
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", url, "-s", "body"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", url, "-s", "body"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Page Content"),
@@ -109,7 +109,7 @@ fn both_url_and_selector_positional() {
     clear_context_store();
 
     let url = "data:text/html,<h1>Title</h1><p class=\"para\">Paragraph</p>";
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", url, ".para"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", url, ".para"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Paragraph"),
@@ -133,7 +133,7 @@ fn explicit_selector_flag() {
     assert!(success, "Navigate failed: {}", stderr);
 
     // Use explicit -s flag
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", "-s", "#test"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "-s", "#test"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Test Text"),
@@ -155,7 +155,7 @@ fn id_selector_detection() {
     assert!(success, "Navigate failed: {}", stderr);
 
     // #main should be detected as selector
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", "#main"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "#main"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Main Content"),
@@ -177,7 +177,7 @@ fn complex_selector_detection() {
     assert!(success, "Navigate failed: {}", stderr);
 
     // Complex selector with combinator - use :first-child to match exactly one element
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", "li:first-child"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "li:first-child"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("First"),
@@ -222,7 +222,7 @@ fn html_with_selector_detection() {
 
     // article should work as tag selector (contains no special chars)
     // Let's use a more explicit selector
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "html", "-s", "article"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "html", "-s", "article"]);
     assert!(success, "HTML command failed: {}", stderr);
     assert!(
         stdout.contains("<p>Article content</p>"),

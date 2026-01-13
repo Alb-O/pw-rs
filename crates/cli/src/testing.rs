@@ -154,9 +154,8 @@ pub trait SessionLike: Send + Sync {
 /// page.set_url("https://example.com");
 /// page.set_text_for_selector("h1", "Welcome");
 ///
-/// // After running commands...
-/// let actions = page.actions();
-/// assert!(actions.iter().any(|a| matches!(a, MockAction::Click { .. })));
+/// // Actions are initially empty
+/// assert!(page.actions().is_empty());
 /// ```
 #[derive(Default)]
 pub struct MockPage {

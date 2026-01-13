@@ -21,7 +21,7 @@ mod text;
 mod wait;
 
 use crate::cli::{
-    AuthAction, Cli, Commands, DaemonAction, ProtectAction, SessionAction, TabsAction,
+    AuthAction, Cli, Commands, DaemonAction, PageAction, ProtectAction, SessionAction, TabsAction,
 };
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate};
@@ -110,107 +110,6 @@ async fn dispatch_command_inner(
             });
             Ok(())
         }
-        Commands::Console {
-            url,
-            timeout_ms,
-            url_flag,
-        } => {
-            let raw = console::ConsoleRaw::from_cli(url_flag.or(url), timeout_ms);
-            let env = ResolveEnv::new(ctx_state, has_cdp, "console");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome = console::execute_resolved(&resolved, ctx, broker, format, last_url).await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, None);
-            }
-            outcome
-        }
-        Commands::Eval {
-            expression,
-            url,
-            expression_flag,
-            file,
-            url_flag,
-        } => {
-            // Priority: --file > --expr > positional
-            let final_expr = if let Some(path) = file {
-                Some(std::fs::read_to_string(&path).map_err(|e| {
-                    PwError::Context(format!(
-                        "failed to read expression from {}: {}",
-                        path.display(),
-                        e
-                    ))
-                })?)
-            } else {
-                expression_flag.or(expression)
-            };
-            let raw = eval::EvalRaw::from_cli(url, url_flag, final_expr.clone(), None);
-            let env = ResolveEnv::new(ctx_state, has_cdp, "eval");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome = eval::execute_resolved(&resolved, ctx, broker, format, last_url).await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, None);
-            }
-            outcome
-        }
-        Commands::Html {
-            url,
-            selector,
-            url_flag,
-            selector_flag,
-        } => {
-            // Build raw args from CLI
-            let raw = html::HtmlRaw::from_cli(url, selector, url_flag, selector_flag);
-
-            // Resolve using typed target system
-            let env = ResolveEnv::new(ctx_state, has_cdp, "html");
-            let resolved = raw.resolve(&env)?;
-
-            // Execute with resolved args
-            let last_url = ctx_state.last_url();
-            let outcome = html::execute_resolved(&resolved, ctx, broker, format, last_url).await;
-
-            // Record context from typed target
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-            }
-            outcome
-        }
-        Commands::Coords {
-            url,
-            selector,
-            url_flag,
-            selector_flag,
-        } => {
-            let raw = coords::CoordsRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
-            let env = ResolveEnv::new(ctx_state, has_cdp, "coords");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome =
-                coords::execute_single_resolved(&resolved, ctx, broker, format, last_url).await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-            }
-            outcome
-        }
-        Commands::CoordsAll {
-            url,
-            selector,
-            url_flag,
-            selector_flag,
-        } => {
-            let raw = coords::CoordsAllRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
-            let env = ResolveEnv::new(ctx_state, has_cdp, "coords-all");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome =
-                coords::execute_all_resolved(&resolved, ctx, broker, format, last_url).await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-            }
-            outcome
-        }
         Commands::Screenshot {
             url,
             output,
@@ -262,24 +161,6 @@ async fn dispatch_command_inner(
             });
             Ok(())
         }
-        Commands::Text {
-            url,
-            selector,
-            url_flag,
-            selector_flag,
-        } => {
-            let raw = text::TextRaw::from_cli(url, selector, url_flag, selector_flag);
-            let env = ResolveEnv::new(ctx_state, has_cdp, "text");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome =
-                text::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
-                    .await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-            }
-            outcome
-        }
         Commands::Fill {
             text,
             selector,
@@ -292,65 +173,6 @@ async fn dispatch_command_inner(
             let outcome = fill::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-            }
-            outcome
-        }
-        Commands::Read {
-            url,
-            url_flag,
-            output_format,
-            metadata,
-        } => {
-            let raw = read::ReadRaw::from_cli(url_flag.or(url), output_format, metadata);
-            let env = ResolveEnv::new(ctx_state, has_cdp, "read");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome = read::execute_resolved(&resolved, ctx, broker, format, last_url).await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, None);
-            }
-            outcome
-        }
-        Commands::Elements {
-            url,
-            wait,
-            timeout_ms,
-            url_flag,
-        } => {
-            let raw = elements::ElementsRaw::from_cli(url_flag.or(url), wait, timeout_ms);
-            let env = ResolveEnv::new(ctx_state, has_cdp, "elements");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome =
-                elements::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
-                    .await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, None);
-            }
-            outcome
-        }
-        Commands::Snapshot {
-            url,
-            url_flag,
-            text_only,
-            full,
-            max_text_length,
-        } => {
-            let raw = snapshot::SnapshotRaw::from_cli(
-                url,
-                url_flag,
-                text_only,
-                full,
-                Some(max_text_length),
-            );
-            let env = ResolveEnv::new(ctx_state, has_cdp, "snapshot");
-            let resolved = raw.resolve(&env)?;
-            let last_url = ctx_state.last_url();
-            let outcome =
-                snapshot::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
-                    .await;
-            if outcome.is_ok() {
-                ctx_state.record_from_target(&resolved.target, None);
             }
             outcome
         }
@@ -368,6 +190,18 @@ async fn dispatch_command_inner(
                 ctx_state.record_from_target(&resolved.target, None);
             }
             outcome
+        }
+        Commands::Page(action) => {
+            dispatch_page_action(
+                action,
+                ctx,
+                ctx_state,
+                broker,
+                format,
+                artifacts_dir,
+                has_cdp,
+            )
+            .await
         }
         Commands::Auth { action } => match action {
             AuthAction::Login {
@@ -472,6 +306,190 @@ async fn dispatch_command_inner(
             ProtectAction::Remove { pattern } => protect::remove(ctx_state, format, &pattern),
             ProtectAction::List => protect::list(ctx_state, format),
         },
+    }
+}
+
+async fn dispatch_page_action(
+    action: PageAction,
+    ctx: &CommandContext,
+    ctx_state: &mut ContextState,
+    broker: &mut SessionBroker<'_>,
+    format: OutputFormat,
+    artifacts_dir: Option<&Path>,
+    has_cdp: bool,
+) -> Result<()> {
+    match action {
+        PageAction::Console {
+            url,
+            timeout_ms,
+            url_flag,
+        } => {
+            let raw = console::ConsoleRaw::from_cli(url_flag.or(url), timeout_ms);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "console");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome = console::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, None);
+            }
+            outcome
+        }
+        PageAction::Eval {
+            expression,
+            url,
+            expression_flag,
+            file,
+            url_flag,
+        } => {
+            // Priority: --file > --expr > positional
+            let final_expr = if let Some(path) = file {
+                Some(std::fs::read_to_string(&path).map_err(|e| {
+                    PwError::Context(format!(
+                        "failed to read expression from {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?)
+            } else {
+                expression_flag.or(expression)
+            };
+            let raw = eval::EvalRaw::from_cli(url, url_flag, final_expr.clone(), None);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "eval");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome = eval::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, None);
+            }
+            outcome
+        }
+        PageAction::Html {
+            url,
+            selector,
+            url_flag,
+            selector_flag,
+        } => {
+            let raw = html::HtmlRaw::from_cli(url, selector, url_flag, selector_flag);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "html");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome = html::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
+            }
+            outcome
+        }
+        PageAction::Coords {
+            url,
+            selector,
+            url_flag,
+            selector_flag,
+        } => {
+            let raw = coords::CoordsRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
+            let env = ResolveEnv::new(ctx_state, has_cdp, "coords");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                coords::execute_single_resolved(&resolved, ctx, broker, format, last_url).await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
+            }
+            outcome
+        }
+        PageAction::CoordsAll {
+            url,
+            selector,
+            url_flag,
+            selector_flag,
+        } => {
+            let raw = coords::CoordsAllRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
+            let env = ResolveEnv::new(ctx_state, has_cdp, "coords-all");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                coords::execute_all_resolved(&resolved, ctx, broker, format, last_url).await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
+            }
+            outcome
+        }
+        PageAction::Text {
+            url,
+            selector,
+            url_flag,
+            selector_flag,
+        } => {
+            let raw = text::TextRaw::from_cli(url, selector, url_flag, selector_flag);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "text");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                text::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
+                    .await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
+            }
+            outcome
+        }
+        PageAction::Read {
+            url,
+            url_flag,
+            output_format,
+            metadata,
+        } => {
+            let raw = read::ReadRaw::from_cli(url_flag.or(url), output_format, metadata);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "read");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome = read::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, None);
+            }
+            outcome
+        }
+        PageAction::Elements {
+            url,
+            wait,
+            timeout_ms,
+            url_flag,
+        } => {
+            let raw = elements::ElementsRaw::from_cli(url_flag.or(url), wait, timeout_ms);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "elements");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                elements::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
+                    .await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, None);
+            }
+            outcome
+        }
+        PageAction::Snapshot {
+            url,
+            url_flag,
+            text_only,
+            full,
+            max_text_length,
+        } => {
+            let raw = snapshot::SnapshotRaw::from_cli(
+                url,
+                url_flag,
+                text_only,
+                full,
+                Some(max_text_length),
+            );
+            let env = ResolveEnv::new(ctx_state, has_cdp, "snapshot");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                snapshot::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
+                    .await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, None);
+            }
+            outcome
+        }
     }
 }
 

@@ -10,8 +10,8 @@ pw daemon start
 
 # Navigate and extract content
 pw navigate https://example.com
-pw text -s "h1"                    # get heading text
-pw html -s "main"                  # get HTML content
+pw page text -s "h1"               # get heading text
+pw page html -s "main"             # get HTML content
 pw screenshot -o page.png          # capture screenshot
 
 # When done
@@ -27,34 +27,34 @@ Without the daemon, each `pw` command spawns a new Playwright driver (~200ms) an
 ### Extract page content
 
 ```bash
-pw text https://example.com -s "article"           # text content
-pw html https://example.com -s "article"           # HTML content
-pw eval https://example.com "document.title"       # run JavaScript
+pw page text https://example.com -s "article"           # text content
+pw page html https://example.com -s "article"           # HTML content
+pw page eval https://example.com "document.title"       # run JavaScript
 ```
 
 ### Extract readable content (articles, docs)
 
-Use `pw read` to extract the main content from a page, automatically removing ads, navigation, sidebars, and other clutter:
+Use `pw page read` to extract the main content from a page, automatically removing ads, navigation, sidebars, and other clutter:
 
 ```bash
-pw read https://example.com                        # markdown (default)
-pw read https://example.com -o text                # plain text
-pw read https://example.com -o html                # cleaned HTML
-pw read https://example.com -m                     # include metadata
-pw read https://example.com -f text                # output content directly (not JSON)
+pw page read https://example.com                        # markdown (default)
+pw page read https://example.com -o text                # plain text
+pw page read https://example.com -o html                # cleaned HTML
+pw page read https://example.com -m                     # include metadata
+pw -f text page read https://example.com                # output content directly (not JSON)
 ```
 
 This is ideal for reading articles, documentation, or any page where you want the content without the noise.
 
 ### Get full page context (snapshot)
 
-Use `pw snapshot` to get a comprehensive page model in one call - URL, title, interactive elements, and visible text:
+Use `pw page snapshot` to get a comprehensive page model in one call - URL, title, interactive elements, and visible text:
 
 ```bash
-pw snapshot https://example.com              # full page model
-pw snapshot --text-only                      # skip elements (faster)
-pw snapshot --full                           # include all text (not just visible)
-pw snapshot --max-text-length 10000          # increase text limit
+pw page snapshot https://example.com              # full page model
+pw page snapshot --text-only                      # skip elements (faster)
+pw page snapshot --full                           # include all text (not just visible)
+pw page snapshot --max-text-length 10000          # increase text limit
 ```
 
 This is ideal for AI agents that need full page context without multiple round-trips. The output includes:
@@ -68,7 +68,7 @@ This is ideal for AI agents that need full page context without multiple round-t
 ```bash
 pw navigate https://example.com
 pw click -s "button.accept"        # click element (uses cached URL)
-pw text -s ".result"               # read result
+pw page text -s ".result"          # read result
 ```
 
 ### Screenshots for visual verification
@@ -83,8 +83,8 @@ pw screenshot -o after.png
 
 ```bash
 pw navigate https://spa-app.com
-pw wait -s ".loaded-content"       # wait for selector
-pw text -s ".loaded-content"
+pw wait ".loaded-content"          # wait for selector
+pw page text -s ".loaded-content"
 ```
 
 ### Record network activity (HAR)
@@ -99,7 +99,7 @@ pw --har network.har navigate https://example.com
 pw --har network.har --har-content embed screenshot https://example.com
 
 # Minimal HAR with URL filter
-pw --har api.har --har-mode minimal --har-url-filter "*.api.example.com" text -s "h1"
+pw --har api.har --har-mode minimal --har-url-filter "*.api.example.com" page text -s "h1"
 
 # Omit request/response bodies for smaller files
 pw --har network.har --har-omit-content navigate https://example.com
@@ -186,7 +186,7 @@ pw auth login https://app.example.com -o auth.json
 
 # Subsequent commands use saved session
 pw --auth auth.json navigate https://app.example.com/dashboard
-pw --auth auth.json text -s ".user-name"
+pw --auth auth.json page text -s ".user-name"
 ```
 
 ### Connect to your real browser
@@ -199,7 +199,7 @@ pw connect --launch
 
 # All commands now use your real browser
 pw navigate https://chatgpt.com
-pw text -s "h1"
+pw page text -s "h1"
 pw screenshot -o page.png
 ```
 
@@ -277,8 +277,8 @@ The CLI caches `last_url`, `last_selector`, and `last_output` between invocation
 
 ```bash
 pw navigate https://example.com    # caches URL
-pw text -s h1                      # uses cached URL, caches selector
-pw text                            # uses cached URL and selector
+pw page text -s h1                 # uses cached URL, caches selector
+pw page text                       # uses cached URL and selector
 pw screenshot -o page.png          # uses cached URL
 ```
 

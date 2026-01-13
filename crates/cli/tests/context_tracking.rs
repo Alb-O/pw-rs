@@ -158,7 +158,7 @@ fn subsequent_command_uses_context_url() {
     assert!(success, "First navigate failed: {}", stderr);
 
     // Now run text command without URL - should use context
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", "-s", "h1"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "-s", "h1"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Title"),

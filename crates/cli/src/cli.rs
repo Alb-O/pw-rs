@@ -163,81 +163,6 @@ pub enum Commands {
         url_flag: Option<String>,
     },
 
-    /// Capture console messages and errors
-    #[command(alias = "con")]
-    Console {
-        /// Target URL (positional, uses context when omitted)
-        url: Option<String>,
-        /// Time to wait for console messages (ms)
-        #[arg(default_value = "3000")]
-        timeout_ms: u64,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-    },
-
-    /// Evaluate JavaScript and return result
-    ///
-    /// The expression can be provided positionally, via --expr/-e, or read from a file.
-    /// When using named flags, the order doesn't matter.
-    Eval {
-        /// JavaScript expression (positional). Required unless --expr or --file is used.
-        expression: Option<String>,
-        /// Target URL (positional, uses context when omitted)
-        url: Option<String>,
-        /// JavaScript expression (named alternative to positional)
-        #[arg(long = "expr", short = 'e', value_name = "EXPRESSION")]
-        expression_flag: Option<String>,
-        /// Read JavaScript expression from file (avoids shell argument limits for large scripts)
-        #[arg(long = "file", short = 'F', value_name = "FILE")]
-        file: Option<PathBuf>,
-        /// Target URL (named alternative to positional)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-    },
-
-    /// Get HTML content (full page or specific selector)
-    Html {
-        /// Target URL (positional, uses context when omitted)
-        url: Option<String>,
-        /// CSS selector (positional, uses last selector or defaults to html)
-        selector: Option<String>,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-        /// CSS selector (named alternative)
-        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
-        selector_flag: Option<String>,
-    },
-
-    /// Get coordinates for first matching element
-    Coords {
-        /// Target URL (positional)
-        url: Option<String>,
-        /// CSS selector (positional)
-        selector: Option<String>,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-        /// CSS selector (named alternative)
-        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
-        selector_flag: Option<String>,
-    },
-
-    /// Get coordinates and info for all matching elements
-    CoordsAll {
-        /// Target URL (positional)
-        url: Option<String>,
-        /// CSS selector (positional)
-        selector: Option<String>,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-        /// CSS selector (named alternative)
-        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
-        selector_flag: Option<String>,
-    },
-
     /// Take screenshot
     #[command(alias = "ss")]
     Screenshot {
@@ -271,20 +196,6 @@ pub enum Commands {
         wait_ms: u64,
     },
 
-    /// Get text content of element
-    Text {
-        /// Target URL (positional)
-        url: Option<String>,
-        /// CSS selector (positional)
-        selector: Option<String>,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-        /// CSS selector (named alternative)
-        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
-        selector_flag: Option<String>,
-    },
-
     /// Fill text into an input field (works with React and other frameworks)
     Fill {
         /// Text to fill into the input
@@ -295,63 +206,6 @@ pub enum Commands {
         /// Target URL (named alternative)
         #[arg(long = "url", short = 'u', value_name = "URL")]
         url: Option<String>,
-    },
-
-    /// Extract readable content from a web page
-    ///
-    /// Removes clutter (ads, navigation, sidebars) and extracts the main article content.
-    /// Useful for reading articles, blog posts, and documentation.
-    Read {
-        /// Target URL (positional)
-        url: Option<String>,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-        /// Output format: markdown (default), text, or html
-        #[arg(long, short = 'o', default_value = "markdown", value_enum)]
-        output_format: ReadOutputFormat,
-        /// Include metadata (title, author, etc.) in output
-        #[arg(long, short = 'm')]
-        metadata: bool,
-    },
-
-    /// List interactive elements (buttons, links, inputs, selects)
-    #[command(alias = "els")]
-    Elements {
-        /// Target URL (positional)
-        url: Option<String>,
-        /// Wait for elements with polling (useful for dynamic pages)
-        #[arg(long)]
-        wait: bool,
-        /// Timeout in milliseconds for --wait mode (default: 10000)
-        #[arg(long, default_value = "10000")]
-        timeout_ms: u64,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-    },
-
-    /// Get a comprehensive page model (URL, title, elements, text) in one call
-    ///
-    /// Returns structured page state that gives AI agents full context without
-    /// multiple round-trips. Includes interactive elements with stable selectors
-    /// and visible text content.
-    #[command(alias = "snap")]
-    Snapshot {
-        /// Target URL (positional)
-        url: Option<String>,
-        /// Target URL (named alternative)
-        #[arg(long = "url", short = 'u', value_name = "URL")]
-        url_flag: Option<String>,
-        /// Skip interactive element extraction (faster, text-focused)
-        #[arg(long)]
-        text_only: bool,
-        /// Include full page text instead of just visible content
-        #[arg(long)]
-        full: bool,
-        /// Maximum text length to extract (default: 5000)
-        #[arg(long, default_value = "5000")]
-        max_text_length: usize,
     },
 
     /// Wait for condition (selector, timeout, or load state)
@@ -365,6 +219,10 @@ pub enum Commands {
         #[arg(long = "url", short = 'u', value_name = "URL")]
         url_flag: Option<String>,
     },
+
+    /// Page content extraction commands (text, html, snapshot, elements, etc.)
+    #[command(subcommand)]
+    Page(PageAction),
 
     /// Authentication and session management
     Auth {
@@ -503,6 +361,156 @@ pub enum ReadOutputFormat {
     /// Markdown (default)
     #[default]
     Markdown,
+}
+
+/// Page content extraction commands
+#[derive(Subcommand, Debug)]
+pub enum PageAction {
+    /// Capture console messages and errors
+    #[command(alias = "con")]
+    Console {
+        /// Target URL (positional, uses context when omitted)
+        url: Option<String>,
+        /// Time to wait for console messages (ms)
+        #[arg(default_value = "3000")]
+        timeout_ms: u64,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+    },
+
+    /// Evaluate JavaScript and return result
+    ///
+    /// The expression can be provided positionally, via --expr/-e, or read from a file.
+    /// When using named flags, the order doesn't matter.
+    Eval {
+        /// JavaScript expression (positional). Required unless --expr or --file is used.
+        expression: Option<String>,
+        /// Target URL (positional, uses context when omitted)
+        url: Option<String>,
+        /// JavaScript expression (named alternative to positional)
+        #[arg(long = "expr", short = 'e', value_name = "EXPRESSION")]
+        expression_flag: Option<String>,
+        /// Read JavaScript expression from file (avoids shell argument limits for large scripts)
+        #[arg(long = "file", short = 'F', value_name = "FILE")]
+        file: Option<PathBuf>,
+        /// Target URL (named alternative to positional)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+    },
+
+    /// Get HTML content (full page or specific selector)
+    Html {
+        /// Target URL (positional, uses context when omitted)
+        url: Option<String>,
+        /// CSS selector (positional, uses last selector or defaults to html)
+        selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
+    },
+
+    /// Get coordinates for first matching element
+    Coords {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// CSS selector (positional)
+        selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
+    },
+
+    /// Get coordinates and info for all matching elements
+    CoordsAll {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// CSS selector (positional)
+        selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
+    },
+
+    /// Get text content of element
+    Text {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// CSS selector (positional)
+        selector: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// CSS selector (named alternative)
+        #[arg(long = "selector", short = 's', value_name = "SELECTOR")]
+        selector_flag: Option<String>,
+    },
+
+    /// Extract readable content from a web page
+    ///
+    /// Removes clutter (ads, navigation, sidebars) and extracts the main article content.
+    /// Useful for reading articles, blog posts, and documentation.
+    Read {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// Output format: markdown (default), text, or html
+        #[arg(long, short = 'o', default_value = "markdown", value_enum)]
+        output_format: ReadOutputFormat,
+        /// Include metadata (title, author, etc.) in output
+        #[arg(long, short = 'm')]
+        metadata: bool,
+    },
+
+    /// List interactive elements (buttons, links, inputs, selects)
+    #[command(alias = "els")]
+    Elements {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// Wait for elements with polling (useful for dynamic pages)
+        #[arg(long)]
+        wait: bool,
+        /// Timeout in milliseconds for --wait mode (default: 10000)
+        #[arg(long, default_value = "10000")]
+        timeout_ms: u64,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+    },
+
+    /// Get a comprehensive page model (URL, title, elements, text) in one call
+    ///
+    /// Returns structured page state that gives AI agents full context without
+    /// multiple round-trips. Includes interactive elements with stable selectors
+    /// and visible text content.
+    #[command(alias = "snap")]
+    Snapshot {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// Skip interactive element extraction (faster, text-focused)
+        #[arg(long)]
+        text_only: bool,
+        /// Include full page text instead of just visible content
+        #[arg(long)]
+        full: bool,
+        /// Maximum text length to extract (default: 5000)
+        #[arg(long, default_value = "5000")]
+        max_text_length: usize,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -665,16 +673,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_html_command() {
-        let args = vec!["pw", "html", "https://example.com", "div.content"];
+    fn parse_page_html_command() {
+        let args = vec!["pw", "page", "html", "https://example.com", "div.content"];
         let cli = Cli::try_parse_from(args).unwrap();
 
         match cli.command {
-            Commands::Html { url, selector, .. } => {
+            Commands::Page(PageAction::Html { url, selector, .. }) => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(selector.as_deref(), Some("div.content"));
             }
-            _ => panic!("Expected Html command"),
+            _ => panic!("Expected Page Html command"),
         }
     }
 
@@ -775,10 +783,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_eval_with_named_flags() {
+    fn parse_page_eval_with_named_flags() {
         // Test eval with --expr and --url flags (order-independent)
         let args = vec![
             "pw",
+            "page",
             "eval",
             "--url",
             "https://example.com",
@@ -788,19 +797,19 @@ mod tests {
         let cli = Cli::try_parse_from(args).unwrap();
 
         match cli.command {
-            Commands::Eval {
+            Commands::Page(PageAction::Eval {
                 expression,
                 url,
                 expression_flag,
                 url_flag,
                 ..
-            } => {
+            }) => {
                 assert!(expression.is_none());
                 assert!(url.is_none());
                 assert_eq!(expression_flag.as_deref(), Some("document.title"));
                 assert_eq!(url_flag.as_deref(), Some("https://example.com"));
             }
-            _ => panic!("Expected Eval command"),
+            _ => panic!("Expected Page Eval command"),
         }
     }
 

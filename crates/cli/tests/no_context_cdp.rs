@@ -66,7 +66,8 @@ fn no_context_without_cdp_requires_url() {
     clear_context_store();
 
     // Run text command with --no-context but without URL or CDP
-    let (success, stdout, _stderr) = run_pw(&["-f", "json", "--no-context", "text", "-s", "body"]);
+    let (success, stdout, _stderr) =
+        run_pw(&["-f", "json", "--no-context", "page", "text", "-s", "body"]);
 
     // Should fail because no URL provided and no CDP endpoint
     assert!(
@@ -94,7 +95,7 @@ fn normal_mode_uses_cached_url() {
     assert!(success, "Navigate failed: {}", stderr);
 
     // Now run text without URL - should use context
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "text", "-s", "h1"]);
+    let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "-s", "h1"]);
     assert!(success, "Text command failed: {}", stderr);
     assert!(
         stdout.contains("Cached Test"),
@@ -118,7 +119,8 @@ fn no_context_ignores_cached_url() {
 
     // Now run text with --no-context but without URL
     // Should fail even though context has a URL
-    let (success, stdout, _stderr) = run_pw(&["-f", "json", "--no-context", "text", "-s", "h1"]);
+    let (success, stdout, _stderr) =
+        run_pw(&["-f", "json", "--no-context", "page", "text", "-s", "h1"]);
 
     assert!(!success, "Expected failure with --no-context and no URL");
     assert!(
@@ -137,7 +139,8 @@ fn no_context_with_explicit_url_works() {
     clear_context_store();
 
     let url = "data:text/html,<p>Explicit URL Test</p>";
-    let (success, stdout, stderr) = run_pw(&["-f", "json", "--no-context", "text", url, "-s", "p"]);
+    let (success, stdout, stderr) =
+        run_pw(&["-f", "json", "--no-context", "page", "text", url, "-s", "p"]);
 
     assert!(success, "Text command failed: {}", stderr);
     assert!(
