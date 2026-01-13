@@ -5,6 +5,47 @@ use crate::output::OutputFormat;
 use crate::styles::cli_styles;
 use crate::types::BrowserKind;
 
+/// HAR content policy (CLI wrapper for pw::HarContentPolicy)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum CliHarContentPolicy {
+    /// Include content inline (base64)
+    Embed,
+    /// Store content in separate files
+    #[default]
+    Attach,
+    /// Omit content entirely
+    Omit,
+}
+
+impl From<CliHarContentPolicy> for pw::HarContentPolicy {
+    fn from(policy: CliHarContentPolicy) -> Self {
+        match policy {
+            CliHarContentPolicy::Embed => pw::HarContentPolicy::Embed,
+            CliHarContentPolicy::Attach => pw::HarContentPolicy::Attach,
+            CliHarContentPolicy::Omit => pw::HarContentPolicy::Omit,
+        }
+    }
+}
+
+/// HAR recording mode (CLI wrapper for pw::HarMode)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum CliHarMode {
+    /// Store all content
+    #[default]
+    Full,
+    /// Store only essential content for replay
+    Minimal,
+}
+
+impl From<CliHarMode> for pw::HarMode {
+    fn from(mode: CliHarMode) -> Self {
+        match mode {
+            CliHarMode::Full => pw::HarMode::Full,
+            CliHarMode::Minimal => pw::HarMode::Minimal,
+        }
+    }
+}
+
 // Re-export OutputFormat for backwards compatibility
 pub use crate::output::OutputFormat as CliOutputFormat;
 
@@ -69,6 +110,26 @@ pub struct Cli {
     /// Directory to save artifacts (screenshot, HTML) on command failure
     #[arg(long, global = true, value_name = "DIR")]
     pub artifacts_dir: Option<std::path::PathBuf>,
+
+    /// Record network activity to HAR (HTTP Archive) file
+    #[arg(long, global = true, value_name = "FILE")]
+    pub har: Option<PathBuf>,
+
+    /// HAR content policy: embed (inline base64), attach (separate files), or omit
+    #[arg(long, global = true, value_enum, default_value = "attach")]
+    pub har_content: CliHarContentPolicy,
+
+    /// HAR recording mode: full (all content) or minimal (essential for replay)
+    #[arg(long, global = true, value_enum, default_value = "full")]
+    pub har_mode: CliHarMode,
+
+    /// Omit request/response content from HAR recording
+    #[arg(long, global = true)]
+    pub har_omit_content: bool,
+
+    /// URL pattern filter for HAR recording (glob pattern)
+    #[arg(long, global = true, value_name = "PATTERN")]
+    pub har_url_filter: Option<String>,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -725,5 +786,45 @@ mod tests {
             }
             _ => panic!("Expected Eval command"),
         }
+    }
+
+    #[test]
+    fn parse_har_flags() {
+        let args = vec![
+            "pw",
+            "--har",
+            "network.har",
+            "--har-content",
+            "embed",
+            "--har-mode",
+            "minimal",
+            "--har-omit-content",
+            "--har-url-filter",
+            "*.api.example.com",
+            "navigate",
+            "https://example.com",
+        ];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert_eq!(
+            cli.har.as_deref(),
+            Some(std::path::Path::new("network.har"))
+        );
+        assert_eq!(cli.har_content, CliHarContentPolicy::Embed);
+        assert_eq!(cli.har_mode, CliHarMode::Minimal);
+        assert!(cli.har_omit_content);
+        assert_eq!(cli.har_url_filter.as_deref(), Some("*.api.example.com"));
+    }
+
+    #[test]
+    fn parse_har_defaults() {
+        let args = vec!["pw", "navigate", "https://example.com"];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert!(cli.har.is_none());
+        assert_eq!(cli.har_content, CliHarContentPolicy::Attach);
+        assert_eq!(cli.har_mode, CliHarMode::Full);
+        assert!(!cli.har_omit_content);
+        assert!(cli.har_url_filter.is_none());
     }
 }

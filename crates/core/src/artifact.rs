@@ -37,6 +37,35 @@ impl Artifact {
 
         Ok(Self { base })
     }
+
+    /// Save the artifact to a local file.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The local path to save the artifact to
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the artifact cannot be saved.
+    pub async fn save_as(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        let params = serde_json::json!({
+            "path": path.as_ref().to_string_lossy()
+        });
+        self.channel().send_no_result("saveAs", params).await
+    }
+
+    /// Delete the artifact from the server.
+    ///
+    /// This should be called after saving the artifact locally.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the artifact cannot be deleted.
+    pub async fn delete(&self) -> Result<()> {
+        self.channel()
+            .send_no_result("delete", serde_json::json!({}))
+            .await
+    }
 }
 
 impl pw_runtime::channel_owner::private::Sealed for Artifact {}

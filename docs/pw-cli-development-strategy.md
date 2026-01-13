@@ -727,7 +727,7 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
 
 **Goal:** Add features that reduce agent tool-chaining.
 
-**Status:** In progress (1/4 tasks complete)
+**Status:** In progress (2/4 tasks complete)
 
 #### Tasks
 
@@ -738,9 +738,10 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
   - Works in both CLI and batch mode
   - **Acceptance:** Single command gives agent full page context
 
-- [ ] **P3-T2: HAR capture toggle**
-  - Flag: `--har <output.har>`
-  - Captures network activity during command
+- [x] **P3-T2: HAR capture toggle**
+  - Global flags: `--har <output.har>`, `--har-content`, `--har-mode`, `--har-omit-content`, `--har-url-filter`
+  - Captures network activity during command execution
+  - Integrated into browser context creation via Playwright's HAR recording
   - **Acceptance:** HAR file written with request/response data
 
 - [ ] **P3-T3: Request interception**
@@ -756,7 +757,7 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
 
 **Must be true before proceeding:**
 - [x] Page model command provides actionable element list
-- [ ] Network capture works without breaking existing commands
+- [x] Network capture works without breaking existing commands
 
 **Verification:**
 - Integration: page model on complex page returns useful structure

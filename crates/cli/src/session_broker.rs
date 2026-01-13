@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
 use crate::browser::BrowserSession;
-use crate::context::CommandContext;
+use crate::context::{CommandContext, HarConfig};
 use crate::daemon;
 use crate::error::{PwError, Result};
 use crate::target::Target;
@@ -100,6 +100,8 @@ pub struct SessionRequest<'a> {
     /// Preferred URL to match when selecting which page to reuse.
     /// When set, pages matching this URL are preferred over other non-protected pages.
     pub preferred_url: Option<&'a str>,
+    /// HAR recording configuration
+    pub har_config: &'a HarConfig,
 }
 
 impl<'a> SessionRequest<'a> {
@@ -115,6 +117,7 @@ impl<'a> SessionRequest<'a> {
             keep_browser_running: false,
             protected_urls: &[],
             preferred_url: None,
+            har_config: ctx.har_config(),
         }
     }
 
@@ -206,6 +209,7 @@ impl<'a> SessionBroker<'a> {
                             false,
                             request.protected_urls,
                             request.preferred_url,
+                            request.har_config,
                         )
                         .await?;
                         return Ok(SessionHandle { session });
@@ -262,6 +266,7 @@ impl<'a> SessionBroker<'a> {
                 false,
                 request.protected_urls,
                 request.preferred_url,
+                request.har_config,
             )
             .await?;
             // Daemon manages the browser lifecycle - don't close it on session close
@@ -300,6 +305,7 @@ impl<'a> SessionBroker<'a> {
                 false,
                 request.protected_urls,
                 request.preferred_url,
+                request.har_config,
             )
             .await?
         };
@@ -467,6 +473,15 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    // Default HAR config for tests
+    static DEFAULT_HAR_CONFIG: HarConfig = HarConfig {
+        path: None,
+        content_policy: None,
+        mode: None,
+        omit_content: false,
+        url_filter: None,
+    };
+
     #[test]
     fn descriptor_round_trip_and_match() {
         let dir = tempdir().unwrap();
@@ -497,6 +512,7 @@ mod tests {
             keep_browser_running: false,
             protected_urls: &[],
             preferred_url: None,
+            har_config: &DEFAULT_HAR_CONFIG,
         };
         assert!(loaded.matches(&req, Some(DRIVER_HASH)));
     }
@@ -524,6 +540,7 @@ mod tests {
             keep_browser_running: false,
             protected_urls: &[],
             preferred_url: None,
+            har_config: &DEFAULT_HAR_CONFIG,
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));
@@ -552,6 +569,7 @@ mod tests {
             keep_browser_running: false,
             protected_urls: &[],
             preferred_url: None,
+            har_config: &DEFAULT_HAR_CONFIG,
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));

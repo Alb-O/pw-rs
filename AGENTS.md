@@ -87,6 +87,31 @@ pw wait -s ".loaded-content"       # wait for selector
 pw text -s ".loaded-content"
 ```
 
+### Record network activity (HAR)
+
+Use `--har` to capture all network activity during command execution:
+
+```bash
+# Record HAR during navigation
+pw --har network.har navigate https://example.com
+
+# Record with custom content policy
+pw --har network.har --har-content embed screenshot https://example.com
+
+# Minimal HAR with URL filter
+pw --har api.har --har-mode minimal --har-url-filter "*.api.example.com" text -s "h1"
+
+# Omit request/response bodies for smaller files
+pw --har network.har --har-omit-content navigate https://example.com
+```
+
+HAR options:
+- `--har <FILE>` - Path to save HAR file
+- `--har-content <POLICY>` - Content policy: `embed` (inline base64), `attach` (separate files), `omit` (default: attach)
+- `--har-mode <MODE>` - Recording mode: `full` (all content) or `minimal` (essential for replay) (default: full)
+- `--har-omit-content` - Omit request/response bodies entirely
+- `--har-url-filter <PATTERN>` - Only record requests matching this glob pattern
+
 ### Authenticated sessions
 
 ```bash
@@ -214,6 +239,9 @@ The daemon spawns browsers on ports 9222-10221. Currently only Chromium is suppo
 | `--headful`        | Run browser with visible window     |
 | `--browser <kind>` | chromium (default), firefox, webkit |
 | `-v` / `-vv`       | Verbose / debug output              |
+| `--har <file>`     | Record network activity to HAR file |
+| `--har-content`    | HAR content: embed, attach, omit    |
+| `--har-mode`       | HAR mode: full, minimal             |
 
 ## Batch Mode (for high-throughput agents)
 

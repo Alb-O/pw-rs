@@ -551,6 +551,125 @@ impl BrowserContext {
             .find(|child| child.guid() == tracing_guid)
             .and_then(|child| child.downcast_ref::<Tracing>().cloned())
     }
+
+    /// Start HAR (HTTP Archive) recording for this context.
+    ///
+    /// This method begins capturing network traffic. Call [`har_export`] before
+    /// closing the context to save the HAR file.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Options for HAR recording (content policy, URL filter, mode)
+    ///
+    /// # Returns
+    ///
+    /// Returns a HAR ID that must be passed to [`har_export`] to save the recording.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Start recording
+    /// let har_id = context.har_start(HarStartOptions {
+    ///     content: Some(HarContentPolicy::Attach),
+    ///     mode: Some(HarMode::Full),
+    ///     ..Default::default()
+    /// }).await?;
+    ///
+    /// // Perform navigation and actions
+    /// page.goto("https://example.com", None).await?;
+    ///
+    /// // Export HAR before closing
+    /// context.har_export(&har_id, "network.har").await?;
+    /// context.close().await?;
+    /// ```
+    ///
+    /// [`har_export`]: Self::har_export
+    pub async fn har_start(&self, options: HarStartOptions) -> Result<String> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct HarStartResponse {
+            har_id: String,
+        }
+
+        let mut params = serde_json::json!({});
+
+        // Build options object
+        let mut opts = serde_json::Map::new();
+        if let Some(content) = options.content {
+            opts.insert("content".to_string(), serde_json::to_value(content)?);
+        }
+        if let Some(mode) = options.mode {
+            opts.insert("mode".to_string(), serde_json::to_value(mode)?);
+        }
+        if let Some(url_glob) = options.url_glob {
+            opts.insert("urlGlob".to_string(), serde_json::json!(url_glob));
+        }
+
+        params["options"] = serde_json::Value::Object(opts);
+
+        let response: HarStartResponse = self.channel().send("harStart", params).await?;
+        Ok(response.har_id)
+    }
+
+    /// Export and save a HAR recording to a file.
+    ///
+    /// This method exports the network traffic captured since [`har_start`] was called
+    /// and saves it to the specified path.
+    ///
+    /// # Arguments
+    ///
+    /// * `har_id` - The HAR ID returned by [`har_start`]
+    /// * `path` - Path to save the HAR file (use `.zip` extension for compressed output)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let har_id = context.har_start(Default::default()).await?;
+    /// // ... perform actions ...
+    /// context.har_export(&har_id, "network.har").await?;
+    /// ```
+    ///
+    /// [`har_start`]: Self::har_start
+    pub async fn har_export(&self, har_id: &str, path: impl AsRef<std::path::Path>) -> Result<()> {
+        use crate::artifact::Artifact;
+
+        #[derive(serde::Deserialize)]
+        struct HarExportResponse {
+            artifact: ArtifactRef,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct ArtifactRef {
+            #[serde(deserialize_with = "pw_runtime::connection::deserialize_arc_str")]
+            guid: std::sync::Arc<str>,
+        }
+
+        let params = serde_json::json!({
+            "harId": har_id
+        });
+
+        let response: HarExportResponse = self.channel().send("harExport", params).await?;
+
+        // Get the artifact object
+        let artifact_arc = self
+            .connection()
+            .get_object(&response.artifact.guid)
+            .await?;
+        let artifact = artifact_arc.downcast_ref::<Artifact>().ok_or_else(|| {
+            pw_runtime::Error::ProtocolError(format!(
+                "Expected Artifact object, got {}",
+                artifact_arc.type_name()
+            ))
+        })?;
+
+        // Save the artifact to the path
+        artifact.save_as(path.as_ref()).await?;
+
+        // Delete the server-side artifact
+        artifact.delete().await?;
+
+        Ok(())
+    }
 }
 
 impl pw_runtime::channel_owner::private::Sealed for BrowserContext {}
@@ -708,6 +827,17 @@ pub enum HarMode {
     Full,
     /// Store only essential content to replay the HAR.
     Minimal,
+}
+
+/// Options for starting HAR recording via [`BrowserContext::har_start`].
+#[derive(Debug, Clone, Default)]
+pub struct HarStartOptions {
+    /// Content policy for HAR recording.
+    pub content: Option<HarContentPolicy>,
+    /// Recording mode (full or minimal).
+    pub mode: Option<HarMode>,
+    /// URL glob pattern to filter recorded requests.
+    pub url_glob: Option<String>,
 }
 
 /// Options for creating a new browser context.

@@ -7,11 +7,12 @@
 use std::path::PathBuf;
 
 use crate::cli::Cli;
-use crate::context::CommandContext;
+use crate::context::{CommandContext, HarConfig};
 use crate::context_store::ContextState;
 use crate::error::Result;
 use crate::project::Project;
 use crate::types::BrowserKind;
+use pw::{HarContentPolicy, HarMode};
 
 /// Bundled runtime context for executing CLI commands.
 ///
@@ -43,10 +44,23 @@ pub struct RuntimeConfig {
     pub refresh_context: bool,
     pub base_url: Option<String>,
     pub artifacts_dir: Option<PathBuf>,
+    // HAR recording configuration
+    pub har_path: Option<PathBuf>,
+    pub har_content_policy: Option<HarContentPolicy>,
+    pub har_mode: Option<HarMode>,
+    pub har_omit_content: bool,
+    pub har_url_filter: Option<String>,
 }
 
 impl From<&Cli> for RuntimeConfig {
     fn from(cli: &Cli) -> Self {
+        // Only set HAR options if path is provided
+        let (har_content_policy, har_mode) = if cli.har.is_some() {
+            (Some(cli.har_content.into()), Some(cli.har_mode.into()))
+        } else {
+            (None, None)
+        };
+
         Self {
             auth: cli.auth.clone(),
             browser: cli.browser,
@@ -60,6 +74,11 @@ impl From<&Cli> for RuntimeConfig {
             refresh_context: cli.refresh_context,
             base_url: cli.base_url.clone(),
             artifacts_dir: cli.artifacts_dir.clone(),
+            har_path: cli.har.clone(),
+            har_content_policy,
+            har_mode,
+            har_omit_content: cli.har_omit_content,
+            har_url_filter: cli.har_url_filter.clone(),
         }
     }
 }
@@ -115,14 +134,24 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
         .clone()
         .or_else(|| ctx_state.cdp_endpoint().map(String::from));
 
-    // Step 4: Create command context
-    let ctx = CommandContext::new(
+    // Step 4: Build HAR configuration
+    let har_config = HarConfig {
+        path: config.har_path.clone(),
+        content_policy: config.har_content_policy,
+        mode: config.har_mode,
+        omit_content: config.har_omit_content,
+        url_filter: config.har_url_filter.clone(),
+    };
+
+    // Step 5: Create command context with HAR config
+    let ctx = CommandContext::with_har(
         config.browser,
         config.no_project,
         config.auth.clone(),
         resolved_cdp,
         config.launch_server,
         config.no_daemon,
+        har_config,
     );
 
     Ok(RuntimeContext { ctx, ctx_state })
@@ -148,6 +177,11 @@ mod tests {
             refresh_context: false,
             base_url: None,
             artifacts_dir: None,
+            har_path: None,
+            har_content_policy: None,
+            har_mode: None,
+            har_omit_content: false,
+            har_url_filter: None,
         };
 
         assert!(config.no_project);
@@ -170,6 +204,11 @@ mod tests {
             refresh_context: false,
             base_url: None,
             artifacts_dir: None,
+            har_path: None,
+            har_content_policy: None,
+            har_mode: None,
+            har_omit_content: false,
+            har_url_filter: None,
         };
 
         let result = build_runtime(&config);

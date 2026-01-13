@@ -2,8 +2,53 @@ use pw::{BrowserContextOptions, GotoOptions, Playwright, StorageState, WaitUntil
 use std::path::Path;
 use tracing::debug;
 
+use crate::context::HarConfig;
 use crate::error::{PwError, Result};
 use crate::types::BrowserKind;
+
+/// Build BrowserContextOptions with optional HAR configuration
+fn build_context_options(
+    storage_state: Option<StorageState>,
+    har_config: &HarConfig,
+) -> BrowserContextOptions {
+    let mut builder = BrowserContextOptions::builder();
+
+    if let Some(state) = storage_state {
+        builder = builder.storage_state(state);
+    }
+
+    // Apply HAR configuration if enabled
+    if let Some(ref path) = har_config.path {
+        debug!(
+            target = "pw",
+            har_path = %path.display(),
+            "configuring HAR recording"
+        );
+        builder = builder.record_har_path(path.to_string_lossy());
+        if let Some(policy) = har_config.content_policy {
+            builder = builder.record_har_content(policy);
+        }
+        if let Some(mode) = har_config.mode {
+            builder = builder.record_har_mode(mode);
+        }
+        if har_config.omit_content {
+            builder = builder.record_har_omit_content(true);
+        }
+        if let Some(ref filter) = har_config.url_filter {
+            builder = builder.record_har_url_filter(filter);
+        }
+    }
+
+    builder.build()
+}
+
+/// Active HAR recording state
+struct HarRecording {
+    /// HAR ID returned by har_start
+    id: String,
+    /// Path to save the HAR file
+    path: std::path::PathBuf,
+}
 
 pub struct BrowserSession {
     _playwright: Playwright,
@@ -16,6 +61,8 @@ pub struct BrowserSession {
     launched_server: Option<pw::LaunchedServer>,
     keep_server_running: bool,
     keep_browser_running: bool,
+    /// Active HAR recording, if any
+    har_recording: Option<HarRecording>,
 }
 
 impl BrowserSession {
@@ -29,6 +76,7 @@ impl BrowserSession {
             false,
             &[],
             None,
+            &HarConfig::default(),
         )
         .await
     }
@@ -64,6 +112,7 @@ impl BrowserSession {
                     false,
                     &[],
                     None,
+                    &HarConfig::default(),
                 )
                 .await
             }
@@ -80,6 +129,7 @@ impl BrowserSession {
         launch_server: bool,
         protected_urls: &[String],
         preferred_url: Option<&str>,
+        har_config: &HarConfig,
     ) -> Result<Self> {
         debug!(
             target = "pw",
@@ -116,10 +166,8 @@ impl BrowserSession {
                 .map_err(|e| PwError::BrowserLaunch(e.to_string()))?;
 
             let browser = connect_result.browser;
-            let context = if let Some(state) = storage_state {
-                let options = BrowserContextOptions::builder()
-                    .storage_state(state)
-                    .build();
+            let context = if storage_state.is_some() || har_config.is_enabled() {
+                let options = build_context_options(storage_state.clone(), har_config);
                 browser.new_context_with_options(options).await?
             } else if let Some(default_ctx) = connect_result.default_context {
                 // Reuse existing pages when using default context from CDP
@@ -161,10 +209,8 @@ impl BrowserSession {
             launched_server = Some(launched.clone());
 
             let browser = launched.browser().clone();
-            let context = if let Some(state) = storage_state {
-                let options = BrowserContextOptions::builder()
-                    .storage_state(state)
-                    .build();
+            let context = if storage_state.is_some() || har_config.is_enabled() {
+                let options = build_context_options(storage_state.clone(), har_config);
                 browser.new_context_with_options(options).await?
             } else {
                 browser.new_context().await?
@@ -199,11 +245,9 @@ impl BrowserSession {
                 }
             };
 
-            // Create context with optional storage state
-            let context = if let Some(state) = storage_state {
-                let options = BrowserContextOptions::builder()
-                    .storage_state(state)
-                    .build();
+            // Create context with optional storage state and HAR config
+            let context = if storage_state.is_some() || har_config.is_enabled() {
+                let options = build_context_options(storage_state, har_config);
                 browser.new_context_with_options(options).await?
             } else {
                 browser.new_context().await?
@@ -263,6 +307,29 @@ impl BrowserSession {
             context.new_page().await?
         };
 
+        // Start HAR recording if configured
+        let har_recording = if let Some(ref path) = har_config.path {
+            debug!(
+                target = "pw",
+                har_path = %path.display(),
+                "starting HAR recording"
+            );
+            let options = pw::HarStartOptions {
+                content: har_config.content_policy,
+                mode: har_config.mode,
+                url_glob: har_config.url_filter.clone(),
+            };
+            let har_id = context.har_start(options).await.map_err(|e| {
+                PwError::BrowserLaunch(format!("Failed to start HAR recording: {}", e))
+            })?;
+            Some(HarRecording {
+                id: har_id,
+                path: path.clone(),
+            })
+        } else {
+            None
+        };
+
         Ok(Self {
             _playwright: playwright,
             browser,
@@ -274,6 +341,7 @@ impl BrowserSession {
             launched_server,
             keep_server_running,
             keep_browser_running: false,
+            har_recording,
         })
     }
 
@@ -300,6 +368,7 @@ impl BrowserSession {
             false,
             &[],
             None,
+            &HarConfig::default(),
         )
         .await
     }
@@ -319,6 +388,7 @@ impl BrowserSession {
             true,
             &[],
             None,
+            &HarConfig::default(),
         )
         .await
     }
@@ -389,6 +459,7 @@ impl BrowserSession {
             launched_server: None,
             keep_server_running: keep_browser_running,
             keep_browser_running,
+            har_recording: None, // HAR not supported in persistent sessions
         })
     }
 
@@ -463,9 +534,27 @@ impl BrowserSession {
     }
 
     pub async fn close(self) -> Result<()> {
+        // Export HAR recording if active
+        if let Some(har) = &self.har_recording {
+            debug!(
+                target = "pw",
+                har_path = %har.path.display(),
+                "exporting HAR recording"
+            );
+            if let Err(e) = self.context.har_export(&har.id, &har.path).await {
+                debug!(
+                    target = "pw",
+                    error = %e,
+                    "failed to export HAR recording"
+                );
+            }
+        }
+
+        // Close the context
+        let _ = self.context.close().await;
+
         if self.keep_browser_running || self.launched_server.is_some() {
-            // Close the context/page but keep the browser running for reuse
-            let _ = self.context.close().await;
+            // Keep the browser running for reuse
             return Ok(());
         }
 

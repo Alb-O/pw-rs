@@ -194,7 +194,7 @@ pub use action_options::{
 pub use browser::Browser;
 pub use browser_context::{
     BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder, Geolocation,
-    HarContentPolicy, HarMode, HarNotFound, RouteFromHarOptions, Viewport,
+    HarContentPolicy, HarMode, HarNotFound, HarStartOptions, RouteFromHarOptions, Viewport,
 };
 pub use browser_type::{BrowserType, ConnectOverCDPResult, LaunchedServer};
 pub use click::{ClickOptions, KeyboardModifier, MouseButton, Position};

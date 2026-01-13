@@ -6,6 +6,29 @@ use std::path::{Path, PathBuf};
 
 use crate::project::Project;
 use crate::types::BrowserKind;
+use pw::{HarContentPolicy, HarMode};
+
+/// HAR recording configuration
+#[derive(Debug, Clone, Default)]
+pub struct HarConfig {
+    /// Path to save HAR file
+    pub path: Option<PathBuf>,
+    /// Content policy (embed, attach, omit)
+    pub content_policy: Option<HarContentPolicy>,
+    /// Recording mode (full, minimal)
+    pub mode: Option<HarMode>,
+    /// Whether to omit request/response content
+    pub omit_content: bool,
+    /// URL filter pattern
+    pub url_filter: Option<String>,
+}
+
+impl HarConfig {
+    /// Returns true if HAR recording is enabled (path is set)
+    pub fn is_enabled(&self) -> bool {
+        self.path.is_some()
+    }
+}
 
 /// Context passed to all pw-cli commands
 #[derive(Debug, Clone)]
@@ -24,6 +47,8 @@ pub struct CommandContext {
     auth_file: Option<PathBuf>,
     /// Whether project detection is disabled
     pub no_project: bool,
+    /// HAR recording configuration
+    har_config: HarConfig,
 }
 
 impl CommandContext {
@@ -35,6 +60,27 @@ impl CommandContext {
         cdp_endpoint: Option<String>,
         launch_server: bool,
         no_daemon: bool,
+    ) -> Self {
+        Self::with_har(
+            browser,
+            no_project,
+            auth_file,
+            cdp_endpoint,
+            launch_server,
+            no_daemon,
+            HarConfig::default(),
+        )
+    }
+
+    /// Create a new command context with HAR configuration
+    pub fn with_har(
+        browser: BrowserKind,
+        no_project: bool,
+        auth_file: Option<PathBuf>,
+        cdp_endpoint: Option<String>,
+        launch_server: bool,
+        no_daemon: bool,
+        har_config: HarConfig,
     ) -> Self {
         let project = if no_project { None } else { Project::detect() };
 
@@ -50,6 +96,20 @@ impl CommandContext {
             }
         });
 
+        // Resolve HAR path based on project
+        let resolved_har_config = HarConfig {
+            path: har_config.path.map(|path| {
+                if path.is_absolute() {
+                    path
+                } else if let Some(ref proj) = project {
+                    proj.paths.root.join(&path)
+                } else {
+                    path
+                }
+            }),
+            ..har_config
+        };
+
         Self {
             project,
             browser,
@@ -58,6 +118,7 @@ impl CommandContext {
             no_daemon,
             auth_file: resolved_auth,
             no_project,
+            har_config: resolved_har_config,
         }
     }
 
@@ -77,6 +138,11 @@ impl CommandContext {
 
     pub fn no_daemon(&self) -> bool {
         self.no_daemon
+    }
+
+    /// Get the HAR configuration
+    pub fn har_config(&self) -> &HarConfig {
+        &self.har_config
     }
 
     /// Get the screenshot output path, using project paths if available
