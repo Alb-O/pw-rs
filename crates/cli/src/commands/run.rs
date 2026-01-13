@@ -35,24 +35,31 @@
 //!
 //! ## Supported Commands
 //!
+//! ### Top-level Commands
+//!
 //! | Command | Args | Description |
 //! |---------|------|-------------|
 //! | `navigate` | `url` | Navigate to URL |
 //! | `click` | `url?`, `selector`, `wait_ms?` | Click element |
-//! | `text` | `url?`, `selector` | Get element text |
-//! | `html` | `url?`, `selector?` | Get element HTML |
 //! | `screenshot` | `url?`, `output?`, `full_page?` | Capture screenshot |
-//! | `eval` | `url?`, `expression` | Evaluate JavaScript |
 //! | `fill` | `url?`, `selector`, `text` | Fill input field |
 //! | `wait` | `url?`, `condition?` | Wait for condition |
-//! | `elements` | `url?`, `wait?`, `timeout_ms?` | List interactive elements |
-//! | `snapshot` | `url?`, `text_only?`, `full?`, `max_text_length?` | Get full page model |
-//! | `console` | `url?`, `timeout_ms?` | Capture console messages |
-//! | `read` | `url?`, `output_format?`, `metadata?` | Extract readable content |
-//! | `coords` | `url?`, `selector` | Get element coordinates |
-//! | `coords_all` | `url?`, `selector` | Get all matching coordinates |
 //! | `ping` | - | Health check |
 //! | `quit` | - | Exit batch mode |
+//!
+//! ### Page Commands (page.*)
+//!
+//! | Command | Args | Description |
+//! |---------|------|-------------|
+//! | `page.text` | `url?`, `selector` | Get element text |
+//! | `page.html` | `url?`, `selector?` | Get element HTML |
+//! | `page.eval` | `url?`, `expression` | Evaluate JavaScript |
+//! | `page.elements` | `url?`, `wait?`, `timeout_ms?` | List interactive elements |
+//! | `page.snapshot` | `url?`, `text_only?`, `full?`, `max_text_length?` | Get full page model |
+//! | `page.console` | `url?`, `timeout_ms?` | Capture console messages |
+//! | `page.read` | `url?`, `output_format?`, `metadata?` | Extract readable content |
+//! | `page.coords` | `url?`, `selector` | Get element coordinates |
+//! | `page.coords_all` | `url?`, `selector` | Get all matching coordinates |
 //!
 //! # Example Session
 //!
@@ -60,8 +67,10 @@
 //! $ pw run
 //! {"id":"1","command":"navigate","args":{"url":"https://example.com"}}
 //! {"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
-//! {"id":"2","command":"screenshot","args":{"output":"page.png"}}
-//! {"id":"2","ok":true,"command":"screenshot","data":{"path":"page.png"}}
+//! {"id":"2","command":"page.text","args":{"selector":"h1"}}
+//! {"id":"2","ok":true,"command":"page.text"}
+//! {"id":"3","command":"screenshot","args":{"output":"page.png"}}
+//! {"id":"3","ok":true,"command":"screenshot","data":{"path":"page.png"}}
 //! {"command":"quit"}
 //! {"ok":true,"command":"quit"}
 //! ```
@@ -394,16 +403,20 @@ async fn execute_batch_command(
             }
         }
 
-        "text" => {
+        "page.text" => {
             let raw: text::TextRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
-                Err(e) => return BatchResponse::error(id, "text", "INVALID_INPUT", &e.to_string()),
+                Err(e) => {
+                    return BatchResponse::error(id, "page.text", "INVALID_INPUT", &e.to_string());
+                }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "text");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.text");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
-                Err(e) => return BatchResponse::error(id, "text", "INVALID_INPUT", &e.to_string()),
+                Err(e) => {
+                    return BatchResponse::error(id, "page.text", "INVALID_INPUT", &e.to_string());
+                }
             };
 
             let last_url = ctx_state.last_url();
@@ -419,27 +432,27 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-                    BatchResponse::success_empty(id, "text")
+                    BatchResponse::success_empty(id, "page.text")
                 }
-                Err(e) => BatchResponse::error(id, "text", "TEXT_FAILED", &e.to_string()),
+                Err(e) => BatchResponse::error(id, "page.text", "TEXT_FAILED", &e.to_string()),
             }
         }
 
-        "html" => {
+        "page.html" => {
             // Deserialize raw args from JSON
             let raw: html::HtmlRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "html", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(id, "page.html", "INVALID_INPUT", &e.to_string());
                 }
             };
 
             // Resolve using typed target system
-            let env = ResolveEnv::new(ctx_state, has_cdp, "html");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.html");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "html", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(id, "page.html", "INVALID_INPUT", &e.to_string());
                 }
             };
 
@@ -451,9 +464,9 @@ async fn execute_batch_command(
                 Ok(()) => {
                     // Record context from typed target
                     ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-                    BatchResponse::success_empty(id, "html")
+                    BatchResponse::success_empty(id, "page.html")
                 }
-                Err(e) => BatchResponse::error(id, "html", "HTML_FAILED", &e.to_string()),
+                Err(e) => BatchResponse::error(id, "page.html", "HTML_FAILED", &e.to_string()),
             }
         }
 
@@ -507,16 +520,20 @@ async fn execute_batch_command(
             }
         }
 
-        "eval" => {
+        "page.eval" => {
             let raw: eval::EvalRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
-                Err(e) => return BatchResponse::error(id, "eval", "INVALID_INPUT", &e.to_string()),
+                Err(e) => {
+                    return BatchResponse::error(id, "page.eval", "INVALID_INPUT", &e.to_string());
+                }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "eval");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.eval");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
-                Err(e) => return BatchResponse::error(id, "eval", "INVALID_INPUT", &e.to_string()),
+                Err(e) => {
+                    return BatchResponse::error(id, "page.eval", "INVALID_INPUT", &e.to_string());
+                }
             };
 
             let last_url = ctx_state.last_url();
@@ -525,9 +542,9 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
-                    BatchResponse::success_empty(id, "eval")
+                    BatchResponse::success_empty(id, "page.eval")
                 }
-                Err(e) => BatchResponse::error(id, "eval", "EVAL_FAILED", &e.to_string()),
+                Err(e) => BatchResponse::error(id, "page.eval", "EVAL_FAILED", &e.to_string()),
             }
         }
 
@@ -579,19 +596,29 @@ async fn execute_batch_command(
             }
         }
 
-        "elements" | "els" => {
+        "page.elements" | "page.els" => {
             let raw: elements::ElementsRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "elements", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.elements",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "elements");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.elements");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "elements", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.elements",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
@@ -608,25 +635,37 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
-                    BatchResponse::success_empty(id, "elements")
+                    BatchResponse::success_empty(id, "page.elements")
                 }
-                Err(e) => BatchResponse::error(id, "elements", "ELEMENTS_FAILED", &e.to_string()),
+                Err(e) => {
+                    BatchResponse::error(id, "page.elements", "ELEMENTS_FAILED", &e.to_string())
+                }
             }
         }
 
-        "snapshot" | "snap" => {
+        "page.snapshot" | "page.snap" => {
             let raw: snapshot::SnapshotRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "snapshot", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.snapshot",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "snapshot");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.snapshot");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "snapshot", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.snapshot",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
@@ -643,25 +682,37 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
-                    BatchResponse::success_empty(id, "snapshot")
+                    BatchResponse::success_empty(id, "page.snapshot")
                 }
-                Err(e) => BatchResponse::error(id, "snapshot", "SNAPSHOT_FAILED", &e.to_string()),
+                Err(e) => {
+                    BatchResponse::error(id, "page.snapshot", "SNAPSHOT_FAILED", &e.to_string())
+                }
             }
         }
 
-        "console" | "con" => {
+        "page.console" | "page.con" => {
             let raw: console::ConsoleRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "console", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.console",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "console");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.console");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "console", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.console",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
@@ -671,22 +722,28 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
-                    BatchResponse::success_empty(id, "console")
+                    BatchResponse::success_empty(id, "page.console")
                 }
-                Err(e) => BatchResponse::error(id, "console", "CONSOLE_FAILED", &e.to_string()),
+                Err(e) => {
+                    BatchResponse::error(id, "page.console", "CONSOLE_FAILED", &e.to_string())
+                }
             }
         }
 
-        "read" => {
+        "page.read" => {
             let raw: read::ReadRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
-                Err(e) => return BatchResponse::error(id, "read", "INVALID_INPUT", &e.to_string()),
+                Err(e) => {
+                    return BatchResponse::error(id, "page.read", "INVALID_INPUT", &e.to_string());
+                }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "read");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.read");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
-                Err(e) => return BatchResponse::error(id, "read", "INVALID_INPUT", &e.to_string()),
+                Err(e) => {
+                    return BatchResponse::error(id, "page.read", "INVALID_INPUT", &e.to_string());
+                }
             };
 
             let last_url = ctx_state.last_url();
@@ -695,25 +752,35 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
-                    BatchResponse::success_empty(id, "read")
+                    BatchResponse::success_empty(id, "page.read")
                 }
-                Err(e) => BatchResponse::error(id, "read", "READ_FAILED", &e.to_string()),
+                Err(e) => BatchResponse::error(id, "page.read", "READ_FAILED", &e.to_string()),
             }
         }
 
-        "coords" => {
+        "page.coords" => {
             let raw: coords::CoordsRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "coords", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.coords",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "coords");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.coords");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "coords", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.coords",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
@@ -729,25 +796,35 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-                    BatchResponse::success_empty(id, "coords")
+                    BatchResponse::success_empty(id, "page.coords")
                 }
-                Err(e) => BatchResponse::error(id, "coords", "COORDS_FAILED", &e.to_string()),
+                Err(e) => BatchResponse::error(id, "page.coords", "COORDS_FAILED", &e.to_string()),
             }
         }
 
-        "coords_all" => {
+        "page.coords_all" => {
             let raw: coords::CoordsAllRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "coords_all", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.coords_all",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
-            let env = ResolveEnv::new(ctx_state, has_cdp, "coords_all");
+            let env = ResolveEnv::new(ctx_state, has_cdp, "page.coords_all");
             let resolved = match raw.resolve(&env) {
                 Ok(r) => r,
                 Err(e) => {
-                    return BatchResponse::error(id, "coords_all", "INVALID_INPUT", &e.to_string());
+                    return BatchResponse::error(
+                        id,
+                        "page.coords_all",
+                        "INVALID_INPUT",
+                        &e.to_string(),
+                    );
                 }
             };
 
@@ -763,9 +840,11 @@ async fn execute_batch_command(
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
-                    BatchResponse::success_empty(id, "coords_all")
+                    BatchResponse::success_empty(id, "page.coords_all")
                 }
-                Err(e) => BatchResponse::error(id, "coords_all", "COORDS_FAILED", &e.to_string()),
+                Err(e) => {
+                    BatchResponse::error(id, "page.coords_all", "COORDS_FAILED", &e.to_string())
+                }
             }
         }
 

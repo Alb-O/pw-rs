@@ -325,7 +325,7 @@ This reads NDJSON commands from stdin and streams responses to stdout. Each comm
 
 ```json
 {"id":"1","command":"navigate","args":{"url":"https://example.com"}}
-{"id":"2","command":"text","args":{"selector":"h1"}}
+{"id":"2","command":"page.text","args":{"selector":"h1"}}
 {"id":"3","command":"screenshot","args":{"output":"page.png"}}
 ```
 
@@ -333,26 +333,29 @@ Responses are streamed as NDJSON with request ID correlation:
 
 ```json
 {"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
-{"id":"2","ok":true,"command":"text"}
+{"id":"2","ok":true,"command":"page.text"}
 {"id":"3","ok":true,"command":"screenshot","data":{"path":"page.png"}}
 ```
 
-### Supported commands
+### Top-level commands
 
 - `navigate` - args: `url`
 - `click` - args: `url`, `selector`, `wait_ms`
-- `text` - args: `url`, `selector`
-- `html` - args: `url`, `selector`
 - `screenshot` - args: `url`, `output`, `full_page`
-- `eval` - args: `url`, `expression`
 - `fill` - args: `url`, `selector`, `text`
 - `wait` - args: `url`, `condition`
-- `elements` - args: `url`, `wait`, `timeout_ms`
-- `snapshot` - args: `url`, `text_only`, `full`, `max_text_length`
-- `console` - args: `url`, `timeout_ms`
-- `read` - args: `url`, `output_format`, `metadata`
-- `coords` - args: `url`, `selector`
-- `coords_all` - args: `url`, `selector`
+
+### Page commands (page.*)
+
+- `page.text` - args: `url`, `selector`
+- `page.html` - args: `url`, `selector`
+- `page.eval` - args: `url`, `expression`
+- `page.elements` - args: `url`, `wait`, `timeout_ms`
+- `page.snapshot` - args: `url`, `text_only`, `full`, `max_text_length`
+- `page.console` - args: `url`, `timeout_ms`
+- `page.read` - args: `url`, `output_format`, `metadata`
+- `page.coords` - args: `url`, `selector`
+- `page.coords_all` - args: `url`, `selector`
 
 ### Special commands
 
