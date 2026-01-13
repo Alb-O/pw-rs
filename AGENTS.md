@@ -18,50 +18,7 @@ pw screenshot -o page.png          # capture screenshot
 pw daemon stop
 ```
 
-## Why Use the Daemon?
-
-Without the daemon, each `pw` command spawns a new Playwright driver (~200ms) and launches a new browser (~300ms). With the daemon running, commands connect via Unix socket (~5ms) and reuse the existing browser instance.
-
 ## Common Patterns
-
-### Extract page content
-
-```bash
-pw page text https://example.com -s "article"           # text content
-pw page html https://example.com -s "article"           # HTML content
-pw page eval https://example.com "document.title"       # run JavaScript
-```
-
-### Extract readable content (articles, docs)
-
-Use `pw page read` to extract the main content from a page, automatically removing ads, navigation, sidebars, and other clutter:
-
-```bash
-pw page read https://example.com                        # markdown (default)
-pw page read https://example.com -o text                # plain text
-pw page read https://example.com -o html                # cleaned HTML
-pw page read https://example.com -m                     # include metadata
-pw -f text page read https://example.com                # output content directly (not JSON)
-```
-
-This is ideal for reading articles, documentation, or any page where you want the content without the noise.
-
-### Get full page context (snapshot)
-
-Use `pw page snapshot` to get a comprehensive page model in one call - URL, title, interactive elements, and visible text:
-
-```bash
-pw page snapshot https://example.com              # full page model
-pw page snapshot --text-only                      # skip elements (faster)
-pw page snapshot --full                           # include all text (not just visible)
-pw page snapshot --max-text-length 10000          # increase text limit
-```
-
-This is ideal for AI agents that need full page context without multiple round-trips. The output includes:
-- Page URL and title
-- Viewport dimensions
-- All interactive elements (buttons, links, inputs) with stable selectors
-- Visible text content
 
 ### Navigate and interact
 
@@ -178,73 +135,6 @@ When downloads are tracked, the `click` command includes download information in
 Download options:
 - `--downloads-dir <DIR>` - Directory to save downloaded files (enables download tracking)
 
-### Authenticated sessions
-
-```bash
-# One-time: open browser and log in manually
-pw auth login https://app.example.com -o auth.json
-
-# Subsequent commands use saved session
-pw --auth auth.json navigate https://app.example.com/dashboard
-pw --auth auth.json page text -s ".user-name"
-```
-
-### Connect to your real browser
-
-Use `pw connect --launch` to launch your real browser with remote debugging. This bypasses bot detection and uses real fingerprint, cookies, and extensions:
-
-```bash
-# Launch your browser with debugging enabled (auto-discovers Chrome/Brave/Helium)
-pw connect --launch
-
-# All commands now use your real browser
-pw navigate https://chatgpt.com
-pw page text -s "h1"
-pw screenshot -o page.png
-```
-
-If you already have a browser running with debugging enabled:
-
-```bash
-# Auto-discover and connect to existing browser
-pw connect --discover
-
-# Or manually specify an endpoint
-pw connect "ws://127.0.0.1:9222/devtools/browser/..."
-```
-
-Options:
-- `--launch` - Launch Chrome/Brave/Helium with remote debugging
-- `--discover` - Find and connect to existing browser with debugging
-- `--kill` - Kill Chrome process on the debugging port
-- `--port <PORT>` - Use specific debugging port (default: 9222)
-- `--profile <NAME>` - Use specific Chrome profile directory
-- `--clear` - Disconnect from browser
-
-### Protect tabs from CLI access
-
-When connecting to an existing browser, you may have tabs open (like Discord, Slack, or other PWAs) that you don't want the CLI to accidentally navigate or close. Use `pw protect` to mark URL patterns as protected:
-
-```bash
-# Add patterns to protect (substring match, case-insensitive)
-pw protect add discord.com
-
-# List protected patterns
-pw protect list
-
-# Remove a pattern
-pw protect remove slack.com
-```
-
-Protected tabs:
-
-- Are marked with `"protected": true` in `pw tabs list` output
-- Cannot be switched to or closed via `pw tabs switch/close`
-- Are skipped when the CLI selects which existing tab to reuse
-- Can still be seen in `pw tabs list` (for awareness)
-
-This prevents agents from accidentally navigating away from your important apps.
-
 ## Output Format
 
 All commands output TOON (Token-Oriented Object Notation) by default, a compact format optimized for LLM token efficiency:
@@ -284,17 +174,6 @@ pw screenshot -o page.png          # uses cached URL
 
 Disable caching with `--no-context` for isolated commands.
 
-## Daemon Management
-
-```bash
-pw daemon start              # start background daemon
-pw daemon start --foreground # run in foreground (for debugging)
-pw daemon status             # show running browsers
-pw daemon stop               # graceful shutdown
-```
-
-The daemon spawns browsers on ports 9222-10221. Currently only Chromium is supported for daemon-managed browsers.
-
 ## Flags Reference
 
 | Flag               | Description                         |
@@ -313,63 +192,11 @@ The daemon spawns browsers on ports 9222-10221. Currently only Chromium is suppo
 | `--downloads-dir`  | Directory to save downloaded files  |
 | `--timeout <ms>`   | Timeout for navigation (ms)         |
 
-## Batch Mode (for high-throughput agents)
-
-For agents that need to execute many commands with minimal overhead, use `pw run` to run in batch mode:
-
-```bash
-pw run
-```
-
-This reads NDJSON commands from stdin and streams responses to stdout. Each command is a JSON object:
-
-```json
-{"id":"1","command":"navigate","args":{"url":"https://example.com"}}
-{"id":"2","command":"page.text","args":{"selector":"h1"}}
-{"id":"3","command":"screenshot","args":{"output":"page.png"}}
-```
-
-Responses are streamed as NDJSON with request ID correlation:
-
-```json
-{"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
-{"id":"2","ok":true,"command":"page.text"}
-{"id":"3","ok":true,"command":"screenshot","data":{"path":"page.png"}}
-```
-
-### Top-level commands
-
-- `navigate` - args: `url`
-- `click` - args: `url`, `selector`, `wait_ms`
-- `screenshot` - args: `url`, `output`, `full_page`
-- `fill` - args: `url`, `selector`, `text`
-- `wait` - args: `url`, `condition`
-
-### Page commands (page.*)
-
-- `page.text` - args: `url`, `selector`
-- `page.html` - args: `url`, `selector`
-- `page.eval` - args: `url`, `expression`
-- `page.elements` - args: `url`, `wait`, `timeout_ms`
-- `page.snapshot` - args: `url`, `text_only`, `full`, `max_text_length`
-- `page.console` - args: `url`, `timeout_ms`
-- `page.read` - args: `url`, `output_format`, `metadata`
-- `page.coords` - args: `url`, `selector`
-- `page.coords_all` - args: `url`, `selector`
-
-### Special commands
-
-- `{"command":"ping"}` - Health check, returns `{"ok":true,"command":"ping"}`
-- `{"command":"quit"}` - Exit batch mode gracefully
-
 ## Best Practices for Agents
 
-1. **Use batch mode for high-throughput**: Run `pw run` once, stream commands via stdin
-1. **Start daemon at session begin**: Run `pw daemon start` once, then make many commands
 1. **Use context caching**: Let URLs and selectors carry over between related commands
-1. **Parse JSON output**: All commands return structured JSON for reliable parsing
-1. **Handle errors gracefully**: Check `ok` field before accessing `data`
-1. **Stop daemon when done**: Run `pw daemon stop` to clean up browser processes
+2. **Parse JSON output**: All commands return structured JSON for reliable parsing
+3. **Handle errors gracefully**: Check `ok` field before accessing `data`
 
 # DEV NOTES
 
