@@ -699,6 +699,26 @@ pub struct InteractiveElement {
     pub height: i32,
 }
 
+/// Result data for snapshot command (page model for agents)
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotData {
+    /// Current page URL (may differ from requested due to redirects).
+    pub url: String,
+    /// Page title.
+    pub title: String,
+    /// Viewport width in pixels.
+    pub viewport_width: i32,
+    /// Viewport height in pixels.
+    pub viewport_height: i32,
+    /// Visible text content (truncated to max_text_length).
+    pub text: String,
+    /// Interactive elements (buttons, links, inputs, etc.).
+    pub elements: Vec<InteractiveElement>,
+    /// Number of interactive elements found.
+    pub element_count: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

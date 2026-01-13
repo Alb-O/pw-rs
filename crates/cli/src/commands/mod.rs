@@ -15,6 +15,7 @@ mod read;
 mod run;
 mod screenshot;
 mod session;
+mod snapshot;
 mod tabs;
 mod text;
 mod wait;
@@ -322,6 +323,31 @@ async fn dispatch_command_inner(
             let last_url = ctx_state.last_url();
             let outcome =
                 elements::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
+                    .await;
+            if outcome.is_ok() {
+                ctx_state.record_from_target(&resolved.target, None);
+            }
+            outcome
+        }
+        Commands::Snapshot {
+            url,
+            url_flag,
+            text_only,
+            full,
+            max_text_length,
+        } => {
+            let raw = snapshot::SnapshotRaw::from_cli(
+                url,
+                url_flag,
+                text_only,
+                full,
+                Some(max_text_length),
+            );
+            let env = ResolveEnv::new(ctx_state, has_cdp, "snapshot");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                snapshot::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
                     .await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, None);

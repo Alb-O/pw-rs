@@ -727,11 +727,15 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
 
 **Goal:** Add features that reduce agent tool-chaining.
 
+**Status:** In progress (1/4 tasks complete)
+
 #### Tasks
 
-- [ ] **P3-T1: Page model command**
-  - New command: `pw snapshot` or `pw model`
-  - Returns structured page state: interactive elements, visible text, URL, title
+- [x] **P3-T1: Page model command**
+  - Created `pw snapshot` command (alias: `pw snap`)
+  - Returns structured page state: URL, title, viewport size, interactive elements, visible text
+  - Options: `--text-only` (skip elements), `--full` (include all text), `--max-text-length`
+  - Works in both CLI and batch mode
   - **Acceptance:** Single command gives agent full page context
 
 - [ ] **P3-T2: HAR capture toggle**
@@ -751,7 +755,7 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
 #### Phase 3 Gate
 
 **Must be true before proceeding:**
-- [ ] Page model command provides actionable element list
+- [x] Page model command provides actionable element list
 - [ ] Network capture works without breaking existing commands
 
 **Verification:**

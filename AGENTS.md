@@ -46,6 +46,23 @@ pw read https://example.com -f text                # output content directly (no
 
 This is ideal for reading articles, documentation, or any page where you want the content without the noise.
 
+### Get full page context (snapshot)
+
+Use `pw snapshot` to get a comprehensive page model in one call - URL, title, interactive elements, and visible text:
+
+```bash
+pw snapshot https://example.com              # full page model
+pw snapshot --text-only                      # skip elements (faster)
+pw snapshot --full                           # include all text (not just visible)
+pw snapshot --max-text-length 10000          # increase text limit
+```
+
+This is ideal for AI agents that need full page context without multiple round-trips. The output includes:
+- Page URL and title
+- Viewport dimensions
+- All interactive elements (buttons, links, inputs) with stable selectors
+- Visible text content
+
 ### Navigate and interact
 
 ```bash
@@ -233,6 +250,7 @@ Responses are streamed as NDJSON with request ID correlation:
 - `fill` - args: `url`, `selector`, `text`
 - `wait` - args: `url`, `condition`
 - `elements` - args: `url`, `wait`, `timeout_ms`
+- `snapshot` - args: `url`, `text_only`, `full`, `max_text_length`
 - `console` - args: `url`, `timeout_ms`
 - `read` - args: `url`, `output_format`, `metadata`
 - `coords` - args: `url`, `selector`

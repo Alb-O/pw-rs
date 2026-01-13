@@ -254,6 +254,29 @@ pub enum Commands {
         url_flag: Option<String>,
     },
 
+    /// Get a comprehensive page model (URL, title, elements, text) in one call
+    ///
+    /// Returns structured page state that gives AI agents full context without
+    /// multiple round-trips. Includes interactive elements with stable selectors
+    /// and visible text content.
+    #[command(alias = "snap")]
+    Snapshot {
+        /// Target URL (positional)
+        url: Option<String>,
+        /// Target URL (named alternative)
+        #[arg(long = "url", short = 'u', value_name = "URL")]
+        url_flag: Option<String>,
+        /// Skip interactive element extraction (faster, text-focused)
+        #[arg(long)]
+        text_only: bool,
+        /// Include full page text instead of just visible content
+        #[arg(long)]
+        full: bool,
+        /// Maximum text length to extract (default: 5000)
+        #[arg(long, default_value = "5000")]
+        max_text_length: usize,
+    },
+
     /// Wait for condition (selector, timeout, or load state)
     Wait {
         /// Target URL (positional)

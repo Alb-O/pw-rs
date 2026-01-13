@@ -46,6 +46,7 @@
 //! | `fill` | `url?`, `selector`, `text` | Fill input field |
 //! | `wait` | `url?`, `condition?` | Wait for condition |
 //! | `elements` | `url?`, `wait?`, `timeout_ms?` | List interactive elements |
+//! | `snapshot` | `url?`, `text_only?`, `full?`, `max_text_length?` | Get full page model |
 //! | `console` | `url?`, `timeout_ms?` | Capture console messages |
 //! | `read` | `url?`, `output_format?`, `metadata?` | Extract readable content |
 //! | `coords` | `url?`, `selector` | Get element coordinates |
@@ -77,7 +78,8 @@ use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::{
-    click, console, coords, elements, eval, fill, html, navigate, read, screenshot, text, wait,
+    click, console, coords, elements, eval, fill, html, navigate, read, screenshot, snapshot, text,
+    wait,
 };
 
 /// A batch request parsed from stdin.
@@ -609,6 +611,41 @@ async fn execute_batch_command(
                     BatchResponse::success_empty(id, "elements")
                 }
                 Err(e) => BatchResponse::error(id, "elements", "ELEMENTS_FAILED", &e.to_string()),
+            }
+        }
+
+        "snapshot" | "snap" => {
+            let raw: snapshot::SnapshotRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "snapshot", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let env = ResolveEnv::new(ctx_state, has_cdp, "snapshot");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "snapshot", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match snapshot::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                OutputFormat::Ndjson,
+                None,
+                last_url,
+            )
+            .await
+            {
+                Ok(()) => {
+                    ctx_state.record_from_target(&resolved.target, None);
+                    BatchResponse::success_empty(id, "snapshot")
+                }
+                Err(e) => BatchResponse::error(id, "snapshot", "SNAPSHOT_FAILED", &e.to_string()),
             }
         }
 
