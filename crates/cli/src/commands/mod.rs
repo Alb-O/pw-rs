@@ -23,7 +23,7 @@ use crate::cli::{
     AuthAction, Cli, Commands, DaemonAction, ProtectAction, SessionAction, TabsAction,
 };
 use crate::context::CommandContext;
-use crate::context_store::{ContextState, ContextUpdate, is_current_page_sentinel};
+use crate::context_store::{ContextState, ContextUpdate};
 use crate::error::{PwError, Result};
 use crate::output::OutputFormat;
 use crate::relay;
@@ -83,16 +83,6 @@ async fn dispatch_command(
     dispatch_command_inner(command, ctx, ctx_state, broker, format, artifacts_dir).await
 }
 
-/// Compute the preferred_url for page selection.
-/// When the resolved URL is the sentinel (__CURRENT_PAGE__), fall back to last_url from context.
-fn compute_preferred_url<'a>(final_url: &'a str, ctx_state: &'a ContextState) -> Option<&'a str> {
-    if is_current_page_sentinel(final_url) {
-        ctx_state.last_url()
-    } else {
-        Some(final_url)
-    }
-}
-
 async fn dispatch_command_inner(
     command: Commands,
     ctx: &CommandContext,
@@ -106,10 +96,12 @@ async fn dispatch_command_inner(
 
     match command {
         Commands::Navigate { url, url_flag } => {
-            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
-            let preferred_url = compute_preferred_url(&final_url, ctx_state);
+            let raw = navigate::NavigateRaw::from_cli(url, url_flag);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "navigate");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
             let actual_url =
-                navigate::execute(&final_url, ctx, broker, format, preferred_url).await?;
+                navigate::execute_resolved(&resolved, ctx, broker, format, last_url).await?;
             // Record the actual browser URL (may differ from input due to redirects)
             ctx_state.record(ContextUpdate {
                 url: Some(&actual_url),
@@ -141,34 +133,23 @@ async fn dispatch_command_inner(
         } => {
             // Priority: --file > --expr > positional
             let final_expr = if let Some(path) = file {
-                std::fs::read_to_string(&path).map_err(|e| {
+                Some(std::fs::read_to_string(&path).map_err(|e| {
                     PwError::Context(format!(
                         "failed to read expression from {}: {}",
                         path.display(),
                         e
                     ))
-                })?
+                })?)
             } else {
-                expression_flag.or(expression).ok_or_else(|| {
-                    PwError::Context(
-                        "expression is required (provide positionally, via --expr, or via --file)"
-                            .into(),
-                    )
-                })?
+                expression_flag.or(expression)
             };
-            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
-            let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome =
-                eval::execute(&final_url, &final_expr, ctx, broker, format, preferred_url).await;
+            let raw = eval::EvalRaw::from_cli(url, url_flag, final_expr.clone(), None);
+            let env = ResolveEnv::new(ctx_state, has_cdp, "eval");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome = eval::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
-                ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) {
-                        None
-                    } else {
-                        Some(&final_url)
-                    },
-                    ..Default::default()
-                });
+                ctx_state.record_from_target(&resolved.target, None);
             }
             outcome
         }
@@ -235,26 +216,22 @@ async fn dispatch_command_inner(
             full_page,
             url_flag,
         } => {
-            let final_url = ctx_state.resolve_url_with_cdp(url_flag.or(url), has_cdp)?;
+            // Resolve output path with project context
             let resolved_output = ctx_state.resolve_output(ctx, output);
-            let preferred_url = compute_preferred_url(&final_url, ctx_state);
-            let outcome = screenshot::execute(
-                &final_url,
-                &resolved_output,
+            let raw = screenshot::ScreenshotRaw::from_cli(
+                url,
+                url_flag,
+                Some(resolved_output.clone()),
                 full_page,
-                ctx,
-                broker,
-                format,
-                preferred_url,
-            )
-            .await;
+            );
+            let env = ResolveEnv::new(ctx_state, has_cdp, "screenshot");
+            let resolved = raw.resolve(&env)?;
+            let last_url = ctx_state.last_url();
+            let outcome =
+                screenshot::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record(ContextUpdate {
-                    url: if is_current_page_sentinel(&final_url) {
-                        None
-                    } else {
-                        Some(&final_url)
-                    },
+                    url: resolved.target.url_str(),
                     output: Some(&resolved_output),
                     ..Default::default()
                 });
@@ -372,25 +349,16 @@ async fn dispatch_command_inner(
                 output,
                 timeout,
             } => {
-                let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
+                // Resolve output path with project context
                 let resolved_output = resolve_auth_output(ctx, &output);
-                let preferred_url = compute_preferred_url(&final_url, ctx_state);
-                let outcome = auth::login(
-                    &final_url,
-                    &resolved_output,
-                    timeout,
-                    ctx,
-                    broker,
-                    preferred_url,
-                )
-                .await;
+                let raw = auth::LoginRaw::from_cli(url, resolved_output.clone(), timeout);
+                let env = ResolveEnv::new(ctx_state, has_cdp, "auth-login");
+                let resolved = raw.resolve(&env)?;
+                let last_url = ctx_state.last_url();
+                let outcome = auth::login_resolved(&resolved, ctx, broker, last_url).await;
                 if outcome.is_ok() {
                     ctx_state.record(ContextUpdate {
-                        url: if is_current_page_sentinel(&final_url) {
-                            None
-                        } else {
-                            Some(&final_url)
-                        },
+                        url: resolved.target.url_str(),
                         output: Some(&resolved_output),
                         ..Default::default()
                     });
@@ -401,19 +369,13 @@ async fn dispatch_command_inner(
                 url,
                 format: cookie_format,
             } => {
-                let final_url = ctx_state.resolve_url_with_cdp(url, has_cdp)?;
-                let preferred_url = compute_preferred_url(&final_url, ctx_state);
-                let outcome =
-                    auth::cookies(&final_url, &cookie_format, ctx, broker, preferred_url).await;
+                let raw = auth::CookiesRaw::from_cli(url, cookie_format);
+                let env = ResolveEnv::new(ctx_state, has_cdp, "auth-cookies");
+                let resolved = raw.resolve(&env)?;
+                let last_url = ctx_state.last_url();
+                let outcome = auth::cookies_resolved(&resolved, ctx, broker, last_url).await;
                 if outcome.is_ok() {
-                    ctx_state.record(ContextUpdate {
-                        url: if is_current_page_sentinel(&final_url) {
-                            None
-                        } else {
-                            Some(&final_url)
-                        },
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, None);
                 }
                 outcome
             }

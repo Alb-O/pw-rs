@@ -66,7 +66,7 @@
 //! ```
 
 use crate::context::CommandContext;
-use crate::context_store::{ContextState, ContextUpdate, is_current_page_sentinel};
+use crate::context_store::{ContextState, ContextUpdate};
 use crate::error::Result;
 use crate::output::{CommandInputs, OutputFormat, SCHEMA_VERSION};
 use crate::session_broker::SessionBroker;
@@ -292,31 +292,6 @@ fn output_response(stdout: &mut std::io::Stdout, response: &BatchResponse) {
     }
 }
 
-/// Returns the URL to use for page selection, falling back to cached URL for sentinels.
-///
-/// When connecting to an existing browser via CDP, the sentinel `__CURRENT_PAGE__`
-/// means "use the currently active tab". For page selection, we need to resolve
-/// this to the actual last known URL from context state.
-fn preferred_url<'a>(final_url: &'a str, ctx_state: &'a ContextState) -> Option<&'a str> {
-    if is_current_page_sentinel(final_url) {
-        ctx_state.last_url()
-    } else {
-        Some(final_url)
-    }
-}
-
-/// Returns the URL to record in context state, or `None` for sentinel values.
-///
-/// Sentinel values like `__CURRENT_PAGE__` should not be persisted to context
-/// since they don't represent actual URLs.
-fn record_url(final_url: &str) -> Option<&str> {
-    if is_current_page_sentinel(final_url) {
-        None
-    } else {
-        Some(final_url)
-    }
-}
-
 /// Dispatches a single batch command and returns the response.
 ///
 /// This handles URL/selector resolution from context state, delegates to the
@@ -336,22 +311,24 @@ async fn execute_batch_command(
 
     match command {
         "navigate" | "nav" => {
-            let url = get_str("url");
-            let final_url = match ctx_state.resolve_url_with_cdp(url, has_cdp) {
-                Ok(u) => u,
+            let raw: navigate::NavigateRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "navigate", "INVALID_INPUT", &e.to_string());
                 }
             };
 
-            match navigate::execute(
-                &final_url,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            let env = ResolveEnv::new(ctx_state, has_cdp, "navigate");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "navigate", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match navigate::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(actual_url) => {
                     ctx_state.record(ContextUpdate {
@@ -360,7 +337,7 @@ async fn execute_batch_command(
                     });
                     BatchResponse::success(id, "navigate", serde_json::json!({ "url": actual_url }))
                         .with_inputs(CommandInputs {
-                            url: Some(final_url),
+                            url: resolved.target.url_str().map(String::from),
                             ..Default::default()
                         })
                 }
@@ -479,33 +456,40 @@ async fn execute_batch_command(
         }
 
         "screenshot" | "ss" => {
-            let full_page = args
-                .get("full_page")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
+            // Resolve output path with project context first
+            let resolved_output =
+                ctx_state.resolve_output(ctx, get_str("output").map(PathBuf::from));
+
+            let mut raw: screenshot::ScreenshotRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "screenshot", "INVALID_INPUT", &e.to_string());
                 }
             };
-            let resolved_output =
-                ctx_state.resolve_output(ctx, get_str("output").map(PathBuf::from));
+            // Override output with resolved path
+            raw.output = Some(resolved_output.clone());
 
-            match screenshot::execute(
-                &final_url,
-                &resolved_output,
-                full_page,
+            let env = ResolveEnv::new(ctx_state, has_cdp, "screenshot");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "screenshot", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match screenshot::execute_resolved(
+                &resolved,
                 ctx,
                 broker,
                 OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
+                last_url,
             )
             .await
             {
                 Ok(()) => {
                     ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
+                        url: resolved.target.url_str(),
                         output: Some(&resolved_output),
                         ..Default::default()
                     });
@@ -522,37 +506,23 @@ async fn execute_batch_command(
         }
 
         "eval" => {
-            let expr = match get_str("expression").or_else(|| get_str("expr")) {
-                Some(e) => e,
-                None => {
-                    return BatchResponse::error(
-                        id,
-                        "eval",
-                        "INVALID_INPUT",
-                        "expression is required",
-                    );
-                }
-            };
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
+            let raw: eval::EvalRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => return BatchResponse::error(id, "eval", "INVALID_INPUT", &e.to_string()),
             };
 
-            match eval::execute(
-                &final_url,
-                &expr,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            let env = ResolveEnv::new(ctx_state, has_cdp, "eval");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => return BatchResponse::error(id, "eval", "INVALID_INPUT", &e.to_string()),
+            };
+
+            let last_url = ctx_state.last_url();
+            match eval::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, None);
                     BatchResponse::success_empty(id, "eval")
                 }
                 Err(e) => BatchResponse::error(id, "eval", "EVAL_FAILED", &e.to_string()),

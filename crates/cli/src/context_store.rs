@@ -14,18 +14,6 @@ const CONTEXT_SCHEMA_VERSION: u32 = 1;
 /// the session is considered stale and context is automatically refreshed.
 const SESSION_TIMEOUT_SECS: u64 = 3600;
 
-/// Sentinel URL value indicating the command should operate on the current browser page
-/// without navigating. This is returned by `resolve_url()` when `--no-context` is used
-/// with a CDP connection and no explicit URL is provided.
-pub const CURRENT_PAGE_SENTINEL: &str = "__CURRENT_PAGE__";
-
-/// Returns true if the URL is the "current page" sentinel.
-///
-/// Commands should check this before navigating to avoid unnecessary page loads.
-pub fn is_current_page_sentinel(url: &str) -> bool {
-    url == CURRENT_PAGE_SENTINEL
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ContextScope {
@@ -270,72 +258,6 @@ impl ContextState {
         }
 
         false
-    }
-
-    /// Resolve a URL from the provided value, context, or return a sentinel for CDP mode.
-    ///
-    /// When `has_cdp_endpoint` is true and no URL is available, returns
-    /// [`CURRENT_PAGE_SENTINEL`] to indicate the command should operate on the
-    /// current browser page without navigating.
-    pub fn resolve_url(&self, provided: Option<String>) -> Result<String> {
-        self.resolve_url_with_cdp(provided, false)
-    }
-
-    /// Resolve URL with knowledge of whether a CDP endpoint is active.
-    ///
-    /// When a CDP connection is active and no URL is explicitly provided, returns
-    /// [`CURRENT_PAGE_SENTINEL`] to operate on the current browser page. This avoids
-    /// navigating away from whatever page the user has open in the connected browser.
-    ///
-    /// The stored `last_url` is only used when launching a fresh browser (non-CDP mode).
-    pub fn resolve_url_with_cdp(
-        &self,
-        provided: Option<String>,
-        has_cdp_endpoint: bool,
-    ) -> Result<String> {
-        if let Some(url) = provided {
-            return Ok(apply_base_url(url, self.base_url()));
-        }
-
-        // CDP mode: operate on current page when no URL explicitly provided
-        if has_cdp_endpoint {
-            return Ok(CURRENT_PAGE_SENTINEL.to_string());
-        }
-
-        if self.no_context {
-            return Err(PwError::Context(
-                "URL is required when context usage is disabled. \
-                 Use `pw --url <url>` to specify a URL, or remove `--no-context` to use cached context."
-                    .into(),
-            ));
-        }
-
-        let Some(selected) = &self.selected else {
-            return Err(PwError::Context(
-                "No active context available. Use `pw navigate <url>` first to set up context."
-                    .into(),
-            ));
-        };
-
-        let source_url = if self.refresh {
-            None
-        } else {
-            selected.data.last_url.clone()
-        };
-
-        if let Some(url) = source_url {
-            return Ok(apply_base_url(url, self.base_url()));
-        }
-
-        if let Some(base) = self.base_url() {
-            return Ok(base.to_string());
-        }
-
-        Err(PwError::Context(
-            "No URL provided and no URL in context. \
-             Use `pw navigate <url>` first to set context, or provide a URL explicitly."
-                .into(),
-        ))
     }
 
     pub fn resolve_selector(
@@ -638,25 +560,6 @@ fn resolve_context_by_name(
         scope: ContextScope::Global,
         data: ctx,
     }
-}
-
-fn apply_base_url(url: String, base: Option<&str>) -> String {
-    if is_absolute(&url) || base.is_none() {
-        return url;
-    }
-
-    let base = base.unwrap();
-    let mut joined = base.trim_end_matches('/').to_string();
-    joined.push('/');
-    joined.push_str(url.trim_start_matches('/'));
-    joined
-}
-
-fn is_absolute(url: &str) -> bool {
-    url.starts_with("http://")
-        || url.starts_with("https://")
-        || url.starts_with("ws://")
-        || url.starts_with("wss://")
 }
 
 fn global_store_path() -> PathBuf {

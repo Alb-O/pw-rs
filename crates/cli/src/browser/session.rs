@@ -2,7 +2,6 @@ use pw::{BrowserContextOptions, GotoOptions, Playwright, StorageState, WaitUntil
 use std::path::Path;
 use tracing::debug;
 
-use crate::context_store::is_current_page_sentinel;
 use crate::error::{PwError, Result};
 use crate::types::BrowserKind;
 
@@ -232,12 +231,11 @@ impl BrowserSession {
                     continue;
                 }
 
-                // Check if this page matches the preferred URL (skip if sentinel)
+                // Check if this page matches the preferred URL
                 if let Some(pref) = preferred_url {
-                    if !is_current_page_sentinel(pref)
-                        && (url.starts_with(pref)
-                            || pref.starts_with(&url)
-                            || urls_match_loosely(&url, pref))
+                    if url.starts_with(pref)
+                        || pref.starts_with(&url)
+                        || urls_match_loosely(&url, pref)
                     {
                         debug!(target = "pw", url = %url, preferred = %pref, "found preferred page");
                         preferred_page = Some(page);

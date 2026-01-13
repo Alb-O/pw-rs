@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
 use crate::browser::BrowserSession;
 use crate::context::CommandContext;
-use crate::context_store::is_current_page_sentinel;
 use crate::daemon;
 use crate::error::{PwError, Result};
 use crate::target::Target;
@@ -383,20 +382,6 @@ impl SessionHandle {
             self.session.goto(url).await?;
             Ok(true)
         }
-    }
-
-    /// Navigate to URL unless it's the "current page" sentinel.
-    ///
-    /// When the URL is `__CURRENT_PAGE__` (the sentinel returned by `resolve_url_with_cdp`
-    /// when `--no-context` is used with a CDP connection), this method does nothing,
-    /// allowing commands to operate on whatever page is currently active in the browser.
-    ///
-    /// Returns `true` if navigation was performed, `false` if skipped (sentinel or same URL).
-    pub async fn goto_unless_current(&self, url: &str) -> Result<bool> {
-        if is_current_page_sentinel(url) {
-            return Ok(false);
-        }
-        self.goto_if_needed(url).await
     }
 
     /// Navigate based on a typed [`Target`].

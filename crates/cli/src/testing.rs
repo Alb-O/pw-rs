@@ -124,8 +124,13 @@ pub trait SessionLike: Send + Sync {
     /// Navigates to `url` only if not already there. Returns `true` if navigation occurred.
     async fn goto_if_needed(&self, url: &str) -> Result<bool>;
 
-    /// Navigates to `url` unless it equals `__CURRENT_PAGE__`. Returns `true` if navigation occurred.
-    async fn goto_unless_current(&self, url: &str) -> Result<bool>;
+    /// Navigate based on a typed [`Target`].
+    ///
+    /// For `Target::Navigate(url)`, navigates to the URL (if not already there).
+    /// For `Target::CurrentPage`, does nothing (operates on current page).
+    ///
+    /// Returns `true` if navigation was performed, `false` if skipped.
+    async fn goto_target(&self, target: &crate::target::Target) -> Result<bool>;
 
     /// Returns a reference to the underlying [`PageLike`].
     fn page(&self) -> &dyn PageLike;
@@ -513,11 +518,11 @@ impl SessionLike for MockSession {
         }
     }
 
-    async fn goto_unless_current(&self, url: &str) -> Result<bool> {
-        if url == "__CURRENT_PAGE__" {
-            return Ok(false);
+    async fn goto_target(&self, target: &crate::target::Target) -> Result<bool> {
+        match target {
+            crate::target::Target::Navigate(url) => self.goto_if_needed(url.as_str()).await,
+            crate::target::Target::CurrentPage => Ok(false),
         }
-        self.goto_if_needed(url).await
     }
 
     fn page(&self) -> &dyn PageLike {
@@ -596,17 +601,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_session_current_page_sentinel() {
+    async fn mock_session_current_page_target() {
+        use crate::target::Target;
+
         let session = MockSession::default_session();
         session.goto("https://example.com").await.unwrap();
 
-        assert!(
-            !session
-                .goto_unless_current("__CURRENT_PAGE__")
-                .await
-                .unwrap()
-        );
+        // CurrentPage target should not navigate
+        assert!(!session.goto_target(&Target::CurrentPage).await.unwrap());
         assert_eq!(session.page().url(), "https://example.com");
+
+        // Navigate target should navigate
+        let url = url::Url::parse("https://other.com").unwrap();
+        assert!(session.goto_target(&Target::Navigate(url)).await.unwrap());
+        // Url::parse normalizes to add trailing slash
+        assert_eq!(session.page().url(), "https://other.com/");
     }
 
     #[tokio::test]

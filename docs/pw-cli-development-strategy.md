@@ -630,7 +630,7 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 
 **Goal:** Replace sentinel string with typed `Target` enum.
 
-**Status:** Complete (all 9 tasks done)
+**Status:** Complete (all 9 core tasks + 11 command migrations done)
 
 #### Tasks
 
@@ -694,26 +694,32 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 
 ### Milestone: Ship Refactored Commands
 
-After Phase 2, migrate remaining commands incrementally:
+**Status:** Complete - All browser commands migrated to typed target system.
 
-- [ ] **P2-M1: Migrate `text` command** (similar to html)
-- [ ] **P2-M2: Migrate `click` command** (has `wait_ms`)
-- [ ] **P2-M3: Migrate `screenshot` command** (has `output`, `full_page`)
-- [ ] **P2-M4: Migrate `eval` command** (has `expression`)
-- [ ] **P2-M5: Migrate `navigate` command** (simplest case)
-- [ ] **P2-M6: Migrate `fill` command**
-- [ ] **P2-M7: Migrate `wait` command**
-- [ ] **P2-M8: Migrate `elements` command**
-- [ ] **P2-M9: Migrate `read` command**
-- [ ] **P2-M10: Migrate `coords`/`coords_all` commands**
-- [ ] **P2-M11: Migrate `console` command**
+All commands now use the typed dispatch pattern:
 
-Each migration follows same pattern:
+- [x] **P2-M1: Migrate `text` command** (similar to html)
+- [x] **P2-M2: Migrate `click` command** (has `wait_ms`)
+- [x] **P2-M3: Migrate `screenshot` command** (has `output`, `full_page`)
+- [x] **P2-M4: Migrate `eval` command** (has `expression`)
+- [x] **P2-M5: Migrate `navigate` command** (simplest case)
+- [x] **P2-M6: Migrate `fill` command**
+- [x] **P2-M7: Migrate `wait` command**
+- [x] **P2-M8: Migrate `elements` command**
+- [x] **P2-M9: Migrate `read` command**
+- [x] **P2-M10: Migrate `coords`/`coords_all` commands**
+- [x] **P2-M11: Migrate `console` command**
+
+Each migration followed the same pattern:
 1. Define `*Raw` and `*Resolved` structs
 2. Implement `Resolve` trait
 3. Update executor to take resolved args
 4. Update CLI dispatch
 5. Update batch dispatch
+
+**Bonus:** Auth commands (`auth login`, `auth cookies`) were also migrated to the typed target
+system using the same pattern. The legacy `compute_preferred_url()` helper and
+`is_current_page_sentinel` import have been removed from the CLI dispatch module.
 
 ---
 

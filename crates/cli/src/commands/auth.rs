@@ -7,7 +7,7 @@
 //! - [`show`] - Inspect a saved auth file
 //! - [`listen`] - Receive cookies from browser extension
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Router;
@@ -17,18 +17,123 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use futures::SinkExt;
 use futures::stream::StreamExt;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::context::CommandContext;
 use crate::error::{PwError, Result};
 use crate::session_broker::{SessionBroker, SessionRequest};
+use crate::target::{Resolve, ResolveEnv, ResolvedTarget, Target, TargetPolicy};
 use pw::{StorageState, WaitUntil};
 use pw_protocol::{ExtensionMessage, ServerMessage};
 
+// ---------------------------------------------------------------------------
+// Raw and Resolved Types
+// ---------------------------------------------------------------------------
+
+/// Raw inputs for `auth login` from CLI or batch JSON.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginRaw {
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub output: Option<PathBuf>,
+    #[serde(default, alias = "timeout_secs")]
+    pub timeout_secs: Option<u64>,
+}
+
+impl LoginRaw {
+    pub fn from_cli(url: Option<String>, output: PathBuf, timeout_secs: u64) -> Self {
+        Self {
+            url,
+            output: Some(output),
+            timeout_secs: Some(timeout_secs),
+        }
+    }
+}
+
+/// Resolved inputs for `auth login` ready for execution.
+#[derive(Debug, Clone)]
+pub struct LoginResolved {
+    pub target: ResolvedTarget,
+    pub output: PathBuf,
+    pub timeout_secs: u64,
+}
+
+impl LoginResolved {
+    pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
+        self.target.preferred_url(last_url)
+    }
+}
+
+impl Resolve for LoginRaw {
+    type Output = LoginResolved;
+
+    fn resolve(self, env: &ResolveEnv<'_>) -> Result<LoginResolved> {
+        let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
+        let output = self.output.unwrap_or_else(|| PathBuf::from("auth.json"));
+        let timeout_secs = self.timeout_secs.unwrap_or(300);
+
+        Ok(LoginResolved {
+            target,
+            output,
+            timeout_secs,
+        })
+    }
+}
+
+/// Raw inputs for `auth cookies` from CLI or batch JSON.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CookiesRaw {
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+impl CookiesRaw {
+    pub fn from_cli(url: Option<String>, format: String) -> Self {
+        Self {
+            url,
+            format: Some(format),
+        }
+    }
+}
+
+/// Resolved inputs for `auth cookies` ready for execution.
+#[derive(Debug, Clone)]
+pub struct CookiesResolved {
+    pub target: ResolvedTarget,
+    pub format: String,
+}
+
+impl CookiesResolved {
+    pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
+        self.target.preferred_url(last_url)
+    }
+}
+
+impl Resolve for CookiesRaw {
+    type Output = CookiesResolved;
+
+    fn resolve(self, env: &ResolveEnv<'_>) -> Result<CookiesResolved> {
+        let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
+        let format = self.format.unwrap_or_else(|| "table".to_string());
+
+        Ok(CookiesResolved { target, format })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Execution
+// ---------------------------------------------------------------------------
+
 /// Opens a browser for manual login and saves the resulting session state.
 ///
-/// Launches a headed (visible) browser, navigates to `url`, and waits for the user
+/// Launches a headed (visible) browser, navigates to the target URL, and waits for the user
 /// to complete authentication. The session is saved when the user presses Enter
 /// or after `timeout_secs` elapses.
 ///
@@ -38,18 +143,16 @@ use pw_protocol::{ExtensionMessage, ServerMessage};
 /// - Browser launch fails
 /// - Navigation fails
 /// - File I/O fails when saving the auth state
-pub async fn login(
-    url: &str,
-    output: &Path,
-    timeout_secs: u64,
+pub async fn login_resolved(
+    args: &LoginResolved,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
-    preferred_url: Option<&str>,
+    last_url: Option<&str>,
 ) -> Result<()> {
-    let output = resolve_output_path(output, ctx);
+    let url_display = args.target.url_str().unwrap_or("<current page>");
+    info!(target = "pw", url = %url_display, path = %args.output.display(), browser = %ctx.browser, "starting interactive login");
 
-    info!(target = "pw", %url, path = %output.display(), browser = %ctx.browser, "starting interactive login");
-
+    let preferred_url = args.preferred_url(last_url);
     let session = broker
         .session(
             SessionRequest::from_context(WaitUntil::Load, ctx)
@@ -58,18 +161,18 @@ pub async fn login(
                 .with_preferred_url(preferred_url),
         )
         .await?;
-    session.goto_unless_current(url).await?;
+    session.goto_target(&args.target.target).await?;
 
-    println!("Browser opened at: {url}");
+    println!("Browser opened at: {url_display}");
     println!();
     println!("Log in manually, then press Enter to save session.");
-    println!("(Or wait {timeout_secs} seconds for auto-save)");
+    println!("(Or wait {} seconds for auto-save)", args.timeout_secs);
 
     let stdin_future = tokio::task::spawn_blocking(|| {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input).ok();
     });
-    let timeout_future = tokio::time::sleep(tokio::time::Duration::from_secs(timeout_secs));
+    let timeout_future = tokio::time::sleep(tokio::time::Duration::from_secs(args.timeout_secs));
 
     tokio::select! {
         _ = stdin_future => println!("Saving session..."),
@@ -78,67 +181,64 @@ pub async fn login(
 
     let state = session.context().storage_state(None).await?;
 
-    if let Some(parent) = output.parent() {
+    if let Some(parent) = args.output.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
     }
 
-    state.to_file(&output)?;
+    state.to_file(&args.output)?;
 
     println!();
-    println!("Authentication state saved to: {}", output.display());
+    println!("Authentication state saved to: {}", args.output.display());
     println!("  Cookies: {}", state.cookies.len());
     println!("  Origins with localStorage: {}", state.origins.len());
     println!();
     println!(
         "Use with other commands: pw --auth {} <command>",
-        output.display()
+        args.output.display()
     );
 
     session.close().await
 }
 
-fn resolve_output_path(output: &Path, ctx: &CommandContext) -> std::path::PathBuf {
-    if output.is_absolute() || output.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
-        output.to_path_buf()
-    } else if let Some(ref proj) = ctx.project {
-        proj.paths.auth_file(output.to_string_lossy().as_ref())
-    } else {
-        output.to_path_buf()
-    }
-}
-
 /// Displays cookies for a URL in the specified format.
 ///
-/// Navigates to `url` and retrieves all cookies, displaying them as either
+/// Navigates to the target URL and retrieves all cookies, displaying them as either
 /// JSON or a human-readable table.
 ///
 /// # Errors
 ///
 /// Returns an error if browser launch or navigation fails.
-pub async fn cookies(
-    url: &str,
-    format: &str,
+pub async fn cookies_resolved(
+    args: &CookiesResolved,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
-    preferred_url: Option<&str>,
+    last_url: Option<&str>,
 ) -> Result<()> {
-    info!(target = "pw", %url, browser = %ctx.browser, "fetching cookies");
+    let url_display = args.target.url_str().unwrap_or("<current page>");
+    info!(target = "pw", url = %url_display, browser = %ctx.browser, "fetching cookies");
 
+    let preferred_url = args.preferred_url(last_url);
     let session = broker
         .session(
             SessionRequest::from_context(WaitUntil::Load, ctx).with_preferred_url(preferred_url),
         )
         .await?;
 
-    session.goto_unless_current(url).await?;
+    session.goto_target(&args.target.target).await?;
 
-    let cookies = session.context().cookies(Some(vec![url])).await?;
+    // Get the actual URL for cookie filtering
+    let cookie_url = match &args.target.target {
+        Target::Navigate(url) => url.as_str().to_string(),
+        Target::CurrentPage => session.page().url(),
+    };
 
-    match format {
+    let cookies = session.context().cookies(Some(vec![&cookie_url])).await?;
+
+    match args.format.as_str() {
         "json" => println!("{}", serde_json::to_string_pretty(&cookies)?),
-        _ => print_cookies_table(&cookies, url),
+        _ => print_cookies_table(&cookies, &cookie_url),
     }
 
     session.close().await
