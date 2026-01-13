@@ -70,11 +70,12 @@ use crate::cli::ReadOutputFormat;
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate, is_current_page_sentinel};
 use crate::error::Result;
-use crate::output::{CommandInputs, OutputFormat};
+use crate::output::{CommandInputs, OutputFormat, SCHEMA_VERSION};
 use crate::session_broker::SessionBroker;
 use serde::{Deserialize, Serialize};
-use std::io::{self, BufRead, Write};
+use std::io::Write;
 use std::path::PathBuf;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::{
     click, console, coords, elements, eval, fill, html, navigate, read, screenshot, text, wait,
@@ -109,11 +110,16 @@ pub struct BatchRequest {
 /// # Wire Format
 ///
 /// ```json
-/// {"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"}}
-/// {"id":"2","ok":false,"command":"click","error":{"code":"ELEMENT_NOT_FOUND","message":"..."}}
+/// {"id":"1","ok":true,"command":"navigate","data":{"url":"https://example.com"},"schemaVersion":1}
+/// {"id":"2","ok":false,"command":"click","error":{"code":"ELEMENT_NOT_FOUND","message":"..."},"schemaVersion":1}
 /// ```
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchResponse {
+    /// Schema version for output format compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+
     /// Request ID echoed from [`BatchRequest::id`] for correlation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -160,6 +166,7 @@ pub struct BatchError {
 impl BatchResponse {
     fn success(id: Option<String>, command: &str, data: serde_json::Value) -> Self {
         Self {
+            schema_version: Some(SCHEMA_VERSION),
             id,
             ok: true,
             command: command.to_string(),
@@ -171,6 +178,7 @@ impl BatchResponse {
 
     fn success_empty(id: Option<String>, command: &str) -> Self {
         Self {
+            schema_version: Some(SCHEMA_VERSION),
             id,
             ok: true,
             command: command.to_string(),
@@ -182,6 +190,7 @@ impl BatchResponse {
 
     fn error(id: Option<String>, command: &str, code: &str, message: &str) -> Self {
         Self {
+            schema_version: Some(SCHEMA_VERSION),
             id,
             ok: false,
             command: command.to_string(),
@@ -202,9 +211,9 @@ impl BatchResponse {
 
 /// Runs batch mode, reading NDJSON commands from stdin and streaming responses.
 ///
-/// This is the main entry point for `pw run`. It blocks on stdin, parsing each
-/// line as a [`BatchRequest`], executing the command, and writing the
-/// [`BatchResponse`] to stdout.
+/// This is the main entry point for `pw run`. It reads from stdin asynchronously,
+/// parsing each line as a [`BatchRequest`], executing the command, and writing
+/// the [`BatchResponse`] to stdout.
 ///
 /// # Special Commands
 ///
@@ -220,17 +229,21 @@ pub async fn execute(
     ctx_state: &mut ContextState,
     broker: &mut SessionBroker<'_>,
 ) -> Result<()> {
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut stdout = std::io::stdout();
+    let mut line = String::new();
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
             Err(e) => {
                 tracing::error!(error = %e, "stdin read failed");
                 break;
             }
-        };
+        }
 
         let line = line.trim();
         if line.is_empty() {
@@ -273,7 +286,7 @@ pub async fn execute(
     Ok(())
 }
 
-fn output_response(stdout: &mut io::Stdout, response: &BatchResponse) {
+fn output_response(stdout: &mut std::io::Stdout, response: &BatchResponse) {
     if let Ok(json) = serde_json::to_string(response) {
         let _ = writeln!(stdout, "{json}");
         let _ = stdout.flush();

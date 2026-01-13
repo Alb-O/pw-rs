@@ -3,6 +3,9 @@
 //! This module provides heuristics for distinguishing CSS selectors from URLs
 //! when the user provides a single positional argument. This allows commands like
 //! `pw text ".selector"` to work without requiring the explicit `-s` flag.
+//!
+//! Also provides the [`choose`] helper for resolving positional vs flag arguments
+//! with conflict detection.
 
 /// Characters that strongly indicate a CSS selector.
 const SELECTOR_CHARS: &[char] = &['.', '#', '>', '~', '+', ':', '[', ']', '*'];
@@ -233,6 +236,73 @@ pub fn resolve_url_and_selector(
             url: Some(pos),
             selector: None,
         }
+    }
+}
+
+/// Error type for argument conflicts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArgConflict {
+    /// Name of the argument that has a conflict.
+    pub name: &'static str,
+}
+
+impl std::fmt::Display for ArgConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "provide {} either positionally or via flag, not both",
+            self.name
+        )
+    }
+}
+
+impl std::error::Error for ArgConflict {}
+
+/// Chooses between a positional argument and a named flag.
+///
+/// This helper prevents the subtle bug where a user provides the same argument
+/// both positionally and via a named flag, which would silently pick one and
+/// ignore the other.
+///
+/// # Errors
+///
+/// Returns [`ArgConflict`] if both `positional` and `flag` are `Some`.
+///
+/// # Examples
+///
+/// ```
+/// use pw_cli::args::choose;
+///
+/// // Only positional provided
+/// assert_eq!(
+///     choose(Some("https://example.com".to_string()), None, "url").unwrap(),
+///     Some("https://example.com".to_string())
+/// );
+///
+/// // Only flag provided
+/// assert_eq!(
+///     choose(None, Some("https://example.com".to_string()), "url").unwrap(),
+///     Some("https://example.com".to_string())
+/// );
+///
+/// // Neither provided
+/// assert_eq!(choose::<String>(None, None, "url").unwrap(), None);
+///
+/// // Both provided - error
+/// assert!(choose(
+///     Some("https://a.com".to_string()),
+///     Some("https://b.com".to_string()),
+///     "url"
+/// ).is_err());
+/// ```
+pub fn choose<T>(
+    positional: Option<T>,
+    flag: Option<T>,
+    name: &'static str,
+) -> Result<Option<T>, ArgConflict> {
+    match (positional, flag) {
+        (Some(_), Some(_)) => Err(ArgConflict { name }),
+        (a, b) => Ok(a.or(b)),
     }
 }
 
@@ -494,5 +564,33 @@ mod tests {
         let r = resolve_url_and_selector(Some("https://x.com".into()), None, Some(".c".into()));
         assert_eq!(r.url, Some("https://x.com".into()));
         assert_eq!(r.selector, Some(".c".into()));
+    }
+
+    #[test]
+    fn test_choose_positional_only() {
+        let result = choose(Some("value".to_string()), None, "arg");
+        assert_eq!(result.unwrap(), Some("value".to_string()));
+    }
+
+    #[test]
+    fn test_choose_flag_only() {
+        let result = choose(None, Some("value".to_string()), "arg");
+        assert_eq!(result.unwrap(), Some("value".to_string()));
+    }
+
+    #[test]
+    fn test_choose_neither() {
+        let result = choose::<String>(None, None, "arg");
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_choose_both_errors() {
+        let result = choose(Some("a".to_string()), Some("b".to_string()), "url");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.name, "url");
+        assert!(err.to_string().contains("url"));
+        assert!(err.to_string().contains("not both"));
     }
 }

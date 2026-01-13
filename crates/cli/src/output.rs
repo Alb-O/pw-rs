@@ -35,8 +35,16 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// Output format for CLI results
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Current schema version for command output.
+///
+/// Increment this when making breaking changes to the output structure.
+/// Agents can use this to detect incompatible CLI versions.
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// Output format for CLI results.
+///
+/// Used both for clap argument parsing and internal formatting.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
     /// TOON output (default, token-efficient for LLMs)
     #[default]
@@ -78,6 +86,13 @@ impl std::fmt::Display for OutputFormat {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandResult<T: Serialize> {
+    /// Schema version for output format compatibility.
+    ///
+    /// Agents can use this to detect incompatible CLI versions.
+    /// Currently always [`SCHEMA_VERSION`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+
     /// Whether the command succeeded
     pub ok: bool,
 
@@ -300,6 +315,7 @@ pub struct EffectiveConfig {
 
 /// Builder for constructing command results
 pub struct ResultBuilder<T: Serialize> {
+    schema_version: Option<u32>,
     command: String,
     inputs: Option<CommandInputs>,
     data: Option<T>,
@@ -312,9 +328,12 @@ pub struct ResultBuilder<T: Serialize> {
 }
 
 impl<T: Serialize> ResultBuilder<T> {
-    /// Create a new result builder for the given command
+    /// Create a new result builder for the given command.
+    ///
+    /// The schema version is automatically set to [`SCHEMA_VERSION`].
     pub fn new(command: impl Into<String>) -> Self {
         Self {
+            schema_version: Some(SCHEMA_VERSION),
             command: command.into(),
             inputs: None,
             data: None,
@@ -325,6 +344,18 @@ impl<T: Serialize> ResultBuilder<T> {
             diagnostics: Vec::new(),
             config: None,
         }
+    }
+
+    /// Override the schema version (useful for testing or compatibility).
+    pub fn schema_version(mut self, version: u32) -> Self {
+        self.schema_version = Some(version);
+        self
+    }
+
+    /// Disable schema version in output (for backwards compatibility).
+    pub fn no_schema_version(mut self) -> Self {
+        self.schema_version = None;
+        self
     }
 
     /// Set the inputs used for this command
@@ -416,6 +447,7 @@ impl<T: Serialize> ResultBuilder<T> {
             .or_else(|| self.start_time.map(|start| Timings::from(start.elapsed())));
 
         CommandResult {
+            schema_version: self.schema_version,
             ok,
             command: self.command,
             inputs: self.inputs,
@@ -551,6 +583,7 @@ pub fn print_failure_with_artifacts(
     // We need to manually add artifacts since ResultBuilder doesn't support
     // adding artifacts to error results. Create a modified result.
     let result_with_artifacts = CommandResult {
+        schema_version: result.schema_version,
         ok: false,
         command: result.command,
         inputs: result.inputs,

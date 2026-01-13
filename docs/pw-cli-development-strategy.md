@@ -563,12 +563,12 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 
 ### Quick Wins (Do Anytime)
 
-| Task | Impact | Notes |
-|------|--------|-------|
-| **P1-T1** Add `choose()` helper | Medium | Prevents subtle per-command drift immediately |
-| **P1-T2** Collapse output format enums | Low | Prevents future drift; trivial change |
-| **P1-T3** Add `schema_version` to output | Low | Future-proofs integrations; near-zero risk |
-| **P1-T4** Async stdin in batch mode | Medium | Prevents stalls in async runtime |
+| Task | Impact | Notes | Status |
+|------|--------|-------|--------|
+| **P1-T1** Add `choose()` helper | Medium | Prevents subtle per-command drift immediately | Done |
+| **P1-T2** Collapse output format enums | Low | Prevents future drift; trivial change | Done |
+| **P1-T3** Add `schema_version` to output | Low | Future-proofs integrations; near-zero risk | Done |
+| **P1-T4** Async stdin in batch mode | Medium | Prevents stalls in async runtime | Done |
 
 ---
 
@@ -576,30 +576,33 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 
 **Goal:** Consolidate runtime setup, add helpers, prepare for typed target.
 
+**Status:** Mostly complete (5/6 tasks done)
+
 #### Tasks
 
-- [ ] **P1-T1: Add `choose()` helper for positional vs flag**
+- [x] **P1-T1: Add `choose()` helper for positional vs flag**
   - Single function: `fn choose<T>(pos: Option<T>, flag: Option<T>, name: &str) -> Result<Option<T>>`
-  - Use in existing per-command resolution
+  - Added to `args.rs` with `ArgConflict` error type
   - **Acceptance:** No command allows both positional and flag for same arg
 
-- [ ] **P1-T2: Collapse `CliOutputFormat` and `OutputFormat`**
-  - Keep single enum with both `clap` and `serde` derives
-  - Or implement `From<CliOutputFormat>`
+- [x] **P1-T2: Collapse `CliOutputFormat` and `OutputFormat`**
+  - Added `clap::ValueEnum` derive to `OutputFormat`
+  - Removed duplicate `CliOutputFormat` enum
   - **Acceptance:** Only one output format type in codebase
 
-- [ ] **P1-T3: Add `schema_version` to `CommandResult`**
-  - Add field: `schema_version: u32`
-  - Start at version 1
+- [x] **P1-T3: Add `schema_version` to `CommandResult`**
+  - Added `SCHEMA_VERSION: u32 = 1` constant
+  - Added field to `CommandResult` and `BatchResponse`
+  - Extended `ResultBuilder` with `.schema_version()` method
   - **Acceptance:** All outputs include version field
 
-- [ ] **P1-T4: Switch batch stdin to async**
-  - Use `tokio::io::BufReader::lines()`
+- [x] **P1-T4: Switch batch stdin to async**
+  - Changed from `stdin.lock().lines()` to `tokio::io::BufReader`
   - **Acceptance:** Batch mode doesn't block async runtime
 
-- [ ] **P1-T5: Implement `build_runtime()` function**
-  - Extract shared setup from dispatch
-  - Returns `Runtime { ctx, ctx_state, broker }`
+- [x] **P1-T5: Implement `build_runtime()` function**
+  - Created `runtime.rs` module with `RuntimeConfig` and `RuntimeContext`
+  - Single source of truth for project detection, context state, CDP resolution
   - **Acceptance:** Both batch and single-command paths use same setup
 
 - [ ] **P1-T6: Add decision diagnostics to output**
@@ -612,10 +615,10 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 #### Phase 1 Gate
 
 **Must be true before proceeding:**
-- [ ] `choose()` helper used for all positional/flag args
-- [ ] Single output format enum
-- [ ] `build_runtime()` consolidates dispatch setup
-- [ ] Batch mode uses async stdin
+- [x] `choose()` helper used for all positional/flag args
+- [x] Single output format enum
+- [x] `build_runtime()` consolidates dispatch setup
+- [x] Batch mode uses async stdin
 
 **Verification:**
 - Unit test: `choose()` errors on both provided
@@ -925,6 +928,7 @@ Phase 4: Resilience (parallel)
 | Browser session | `crates/cli/src/browser/session.rs` |
 | Daemon protocol | `crates/cli/src/daemon/` |
 | Arg resolution helpers | `crates/cli/src/args.rs` |
+| Runtime setup | `crates/cli/src/runtime.rs` |
 
 ---
 
