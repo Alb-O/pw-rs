@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use crate::cli::Cli;
-use crate::context::{CommandContext, HarConfig};
+use crate::context::{BlockConfig, CommandContext, DownloadConfig, HarConfig};
 use crate::context_store::ContextState;
 use crate::error::Result;
 use crate::project::Project;
@@ -50,6 +50,11 @@ pub struct RuntimeConfig {
     pub har_mode: Option<HarMode>,
     pub har_omit_content: bool,
     pub har_url_filter: Option<String>,
+    // Request blocking configuration
+    pub block_patterns: Vec<String>,
+    pub block_file: Option<PathBuf>,
+    // Download management configuration
+    pub downloads_dir: Option<PathBuf>,
 }
 
 impl From<&Cli> for RuntimeConfig {
@@ -79,6 +84,9 @@ impl From<&Cli> for RuntimeConfig {
             har_mode,
             har_omit_content: cli.har_omit_content,
             har_url_filter: cli.har_url_filter.clone(),
+            block_patterns: cli.block.clone(),
+            block_file: cli.block_file.clone(),
+            downloads_dir: cli.downloads_dir.clone(),
         }
     }
 }
@@ -143,8 +151,25 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
         url_filter: config.har_url_filter.clone(),
     };
 
-    // Step 5: Create command context with HAR config
-    let ctx = CommandContext::with_har(
+    // Step 5: Build block configuration (CLI patterns + optional file)
+    let mut block_patterns = config.block_patterns.clone();
+    if let Some(ref path) = config.block_file {
+        match BlockConfig::load_from_file(path) {
+            Ok(patterns) => block_patterns.extend(patterns),
+            Err(e) => tracing::warn!(target = "pw", %e, "failed to load block file"),
+        }
+    }
+    let block_config = BlockConfig {
+        patterns: block_patterns,
+    };
+
+    // Step 6: Build download configuration
+    let download_config = DownloadConfig {
+        dir: config.downloads_dir.clone(),
+    };
+
+    // Step 7: Create command context
+    let ctx = CommandContext::with_config(
         config.browser,
         config.no_project,
         config.auth.clone(),
@@ -152,6 +177,8 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
         config.launch_server,
         config.no_daemon,
         har_config,
+        block_config,
+        download_config,
     );
 
     Ok(RuntimeContext { ctx, ctx_state })
@@ -182,6 +209,9 @@ mod tests {
             har_mode: None,
             har_omit_content: false,
             har_url_filter: None,
+            block_patterns: Vec::new(),
+            block_file: None,
+            downloads_dir: None,
         };
 
         assert!(config.no_project);
@@ -209,6 +239,9 @@ mod tests {
             har_mode: None,
             har_omit_content: false,
             har_url_filter: None,
+            block_patterns: Vec::new(),
+            block_file: None,
+            downloads_dir: None,
         };
 
         let result = build_runtime(&config);

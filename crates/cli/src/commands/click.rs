@@ -7,7 +7,7 @@ use crate::args;
 use crate::context::CommandContext;
 use crate::error::{PwError, Result};
 use crate::output::{
-    ClickData, CommandInputs, FailureWithArtifacts, OutputFormat, ResultBuilder,
+    ClickData, CommandInputs, DownloadedFile, FailureWithArtifacts, OutputFormat, ResultBuilder,
     print_failure_with_artifacts, print_result,
 };
 use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
@@ -167,6 +167,17 @@ async fn execute_inner(
         .unwrap_or_else(|_| session.page().url());
     let navigated = before_url != after_url;
 
+    // Collect any downloads that occurred during the click
+    let downloads: Vec<DownloadedFile> = session
+        .downloads()
+        .into_iter()
+        .map(|d| DownloadedFile {
+            url: d.url,
+            suggested_filename: d.suggested_filename,
+            path: d.path,
+        })
+        .collect();
+
     let result = ResultBuilder::new("click")
         .inputs(CommandInputs {
             url: target.url_str().map(String::from),
@@ -178,6 +189,7 @@ async fn execute_inner(
             after_url: after_url.clone(),
             navigated,
             selector: selector.to_string(),
+            downloads,
         })
         .build();
 

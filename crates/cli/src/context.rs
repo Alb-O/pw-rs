@@ -30,6 +30,56 @@ impl HarConfig {
     }
 }
 
+/// Configuration for request blocking via [`Page::route`].
+///
+/// Patterns use glob syntax matching against full URLs:
+/// - `**/*.png` - block all PNG images
+/// - `*://ads.*/**` - block ad domains
+/// - `*://google-analytics.com/**` - block analytics
+///
+/// [`Page::route`]: pw::Page::route
+#[derive(Debug, Clone, Default)]
+pub struct BlockConfig {
+    /// URL glob patterns to block.
+    pub patterns: Vec<String>,
+}
+
+impl BlockConfig {
+    /// Returns `true` if any blocking patterns are configured.
+    pub fn is_enabled(&self) -> bool {
+        !self.patterns.is_empty()
+    }
+
+    /// Loads patterns from `path`, one per line.
+    ///
+    /// Empty lines and lines starting with `#` are ignored.
+    pub fn load_from_file(path: &Path) -> std::io::Result<Vec<String>> {
+        let content = std::fs::read_to_string(path)?;
+        Ok(content
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(str::to_string)
+            .collect())
+    }
+}
+
+/// Configuration for download management.
+///
+/// When `dir` is set, downloads are automatically saved and tracked.
+#[derive(Debug, Clone, Default)]
+pub struct DownloadConfig {
+    /// Directory to save downloaded files.
+    pub dir: Option<PathBuf>,
+}
+
+impl DownloadConfig {
+    /// Returns `true` if download tracking is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.dir.is_some()
+    }
+}
+
 /// Context passed to all pw-cli commands
 #[derive(Debug, Clone)]
 pub struct CommandContext {
@@ -49,6 +99,10 @@ pub struct CommandContext {
     pub no_project: bool,
     /// HAR recording configuration
     har_config: HarConfig,
+    /// Request blocking configuration
+    block_config: BlockConfig,
+    /// Download management configuration
+    download_config: DownloadConfig,
 }
 
 impl CommandContext {
@@ -61,7 +115,7 @@ impl CommandContext {
         launch_server: bool,
         no_daemon: bool,
     ) -> Self {
-        Self::with_har(
+        Self::with_config(
             browser,
             no_project,
             auth_file,
@@ -69,6 +123,8 @@ impl CommandContext {
             launch_server,
             no_daemon,
             HarConfig::default(),
+            BlockConfig::default(),
+            DownloadConfig::default(),
         )
     }
 
@@ -82,6 +138,31 @@ impl CommandContext {
         no_daemon: bool,
         har_config: HarConfig,
     ) -> Self {
+        Self::with_config(
+            browser,
+            no_project,
+            auth_file,
+            cdp_endpoint,
+            launch_server,
+            no_daemon,
+            har_config,
+            BlockConfig::default(),
+            DownloadConfig::default(),
+        )
+    }
+
+    /// Create a new command context with all configuration options
+    pub fn with_config(
+        browser: BrowserKind,
+        no_project: bool,
+        auth_file: Option<PathBuf>,
+        cdp_endpoint: Option<String>,
+        launch_server: bool,
+        no_daemon: bool,
+        har_config: HarConfig,
+        block_config: BlockConfig,
+        download_config: DownloadConfig,
+    ) -> Self {
         let project = if no_project { None } else { Project::detect() };
 
         // Resolve auth file path based on project
@@ -89,7 +170,6 @@ impl CommandContext {
             if auth.is_absolute() {
                 auth
             } else if let Some(ref proj) = project {
-                // If relative and in a project, resolve relative to project root
                 proj.paths.root.join(&auth)
             } else {
                 auth
@@ -110,6 +190,19 @@ impl CommandContext {
             ..har_config
         };
 
+        // Resolve download dir based on project
+        let resolved_download_config = DownloadConfig {
+            dir: download_config.dir.map(|dir| {
+                if dir.is_absolute() {
+                    dir
+                } else if let Some(ref proj) = project {
+                    proj.paths.root.join(&dir)
+                } else {
+                    dir
+                }
+            }),
+        };
+
         Self {
             project,
             browser,
@@ -119,6 +212,8 @@ impl CommandContext {
             auth_file: resolved_auth,
             no_project,
             har_config: resolved_har_config,
+            block_config,
+            download_config: resolved_download_config,
         }
     }
 
@@ -143,6 +238,16 @@ impl CommandContext {
     /// Get the HAR configuration
     pub fn har_config(&self) -> &HarConfig {
         &self.har_config
+    }
+
+    /// Get the request blocking configuration
+    pub fn block_config(&self) -> &BlockConfig {
+        &self.block_config
+    }
+
+    /// Get the download management configuration
+    pub fn download_config(&self) -> &DownloadConfig {
+        &self.download_config
     }
 
     /// Get the screenshot output path, using project paths if available

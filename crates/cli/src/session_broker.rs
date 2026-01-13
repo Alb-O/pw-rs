@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
-use crate::browser::BrowserSession;
-use crate::context::{CommandContext, HarConfig};
+use crate::browser::{BrowserSession, DownloadInfo};
+use crate::context::{BlockConfig, CommandContext, DownloadConfig, HarConfig};
 use crate::daemon;
 use crate::error::{PwError, Result};
 use crate::target::Target;
@@ -102,6 +102,10 @@ pub struct SessionRequest<'a> {
     pub preferred_url: Option<&'a str>,
     /// HAR recording configuration
     pub har_config: &'a HarConfig,
+    /// Request blocking configuration
+    pub block_config: &'a BlockConfig,
+    /// Download management configuration
+    pub download_config: &'a DownloadConfig,
 }
 
 impl<'a> SessionRequest<'a> {
@@ -118,6 +122,8 @@ impl<'a> SessionRequest<'a> {
             protected_urls: &[],
             preferred_url: None,
             har_config: ctx.har_config(),
+            block_config: ctx.block_config(),
+            download_config: ctx.download_config(),
         }
     }
 
@@ -210,6 +216,8 @@ impl<'a> SessionBroker<'a> {
                             request.protected_urls,
                             request.preferred_url,
                             request.har_config,
+                            request.block_config,
+                            request.download_config,
                         )
                         .await?;
                         return Ok(SessionHandle { session });
@@ -267,6 +275,8 @@ impl<'a> SessionBroker<'a> {
                 request.protected_urls,
                 request.preferred_url,
                 request.har_config,
+                request.block_config,
+                request.download_config,
             )
             .await?;
             // Daemon manages the browser lifecycle - don't close it on session close
@@ -306,6 +316,8 @@ impl<'a> SessionBroker<'a> {
                 request.protected_urls,
                 request.preferred_url,
                 request.har_config,
+                request.block_config,
+                request.download_config,
             )
             .await?
         };
@@ -423,6 +435,11 @@ impl SessionHandle {
         self.session.browser()
     }
 
+    /// Returns downloads collected during this session.
+    pub fn downloads(&self) -> Vec<DownloadInfo> {
+        self.session.downloads()
+    }
+
     pub async fn close(self) -> Result<()> {
         self.session.close().await
     }
@@ -482,6 +499,14 @@ mod tests {
         url_filter: None,
     };
 
+    // Default block config for tests
+    static DEFAULT_BLOCK_CONFIG: BlockConfig = BlockConfig {
+        patterns: Vec::new(),
+    };
+
+    // Default download config for tests
+    static DEFAULT_DOWNLOAD_CONFIG: DownloadConfig = DownloadConfig { dir: None };
+
     #[test]
     fn descriptor_round_trip_and_match() {
         let dir = tempdir().unwrap();
@@ -513,6 +538,8 @@ mod tests {
             protected_urls: &[],
             preferred_url: None,
             har_config: &DEFAULT_HAR_CONFIG,
+            block_config: &DEFAULT_BLOCK_CONFIG,
+            download_config: &DEFAULT_DOWNLOAD_CONFIG,
         };
         assert!(loaded.matches(&req, Some(DRIVER_HASH)));
     }
@@ -541,6 +568,8 @@ mod tests {
             protected_urls: &[],
             preferred_url: None,
             har_config: &DEFAULT_HAR_CONFIG,
+            block_config: &DEFAULT_BLOCK_CONFIG,
+            download_config: &DEFAULT_DOWNLOAD_CONFIG,
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));
@@ -570,6 +599,8 @@ mod tests {
             protected_urls: &[],
             preferred_url: None,
             har_config: &DEFAULT_HAR_CONFIG,
+            block_config: &DEFAULT_BLOCK_CONFIG,
+            download_config: &DEFAULT_DOWNLOAD_CONFIG,
         };
 
         assert!(!desc.matches(&req, Some(DRIVER_HASH)));

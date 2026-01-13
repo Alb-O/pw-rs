@@ -264,6 +264,7 @@ pub enum ArtifactType {
     Auth,
     Trace,
     Video,
+    Download,
 }
 
 /// Diagnostic messages (warnings, info, etc.)
@@ -622,6 +623,21 @@ pub struct ClickData {
     pub after_url: String,
     pub navigated: bool,
     pub selector: String,
+    /// Files downloaded during the click action.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub downloads: Vec<DownloadedFile>,
+}
+
+/// Information about a downloaded file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedFile {
+    /// URL the download was initiated from.
+    pub url: String,
+    /// Suggested filename from the server.
+    pub suggested_filename: String,
+    /// Path where the file was saved.
+    pub path: PathBuf,
 }
 
 /// Result data for screenshot command
@@ -788,6 +804,7 @@ mod tests {
                 after_url: "https://example.com/page".into(),
                 navigated: true,
                 selector: "a.link".into(),
+                downloads: Vec::new(),
             })
             .build();
 

@@ -1,20 +1,38 @@
-use pw::{BrowserContextOptions, GotoOptions, Playwright, StorageState, WaitUntil};
-use std::path::Path;
+use pw::{BrowserContextOptions, GotoOptions, Playwright, StorageState, Subscription, WaitUntil};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use tracing::debug;
 
-use crate::context::HarConfig;
+use crate::context::{BlockConfig, DownloadConfig, HarConfig};
 use crate::error::{PwError, Result};
 use crate::types::BrowserKind;
 
-/// Build BrowserContextOptions with optional HAR configuration
+/// Information about a completed download.
+#[derive(Debug, Clone)]
+pub struct DownloadInfo {
+    /// URL the download was initiated from.
+    pub url: String,
+    /// Suggested filename from the server.
+    pub suggested_filename: String,
+    /// Path where the file was saved.
+    pub path: PathBuf,
+}
+
+/// Build BrowserContextOptions with optional HAR and download configuration
 fn build_context_options(
     storage_state: Option<StorageState>,
     har_config: &HarConfig,
+    download_config: &DownloadConfig,
 ) -> BrowserContextOptions {
     let mut builder = BrowserContextOptions::builder();
 
     if let Some(state) = storage_state {
         builder = builder.storage_state(state);
+    }
+
+    // Enable downloads if tracking is configured
+    if download_config.is_enabled() {
+        builder = builder.accept_downloads(true);
     }
 
     // Apply HAR configuration if enabled
@@ -63,6 +81,14 @@ pub struct BrowserSession {
     keep_browser_running: bool,
     /// Active HAR recording, if any
     har_recording: Option<HarRecording>,
+    /// Route subscriptions for request blocking; held to keep handlers alive.
+    #[allow(dead_code)]
+    route_subscriptions: Vec<Subscription>,
+    /// Download handler subscription; held to keep handler alive.
+    #[allow(dead_code)]
+    download_subscription: Option<Subscription>,
+    /// Collected download information (shared with download handler).
+    downloads: Arc<Mutex<Vec<DownloadInfo>>>,
 }
 
 impl BrowserSession {
@@ -77,6 +103,8 @@ impl BrowserSession {
             &[],
             None,
             &HarConfig::default(),
+            &BlockConfig::default(),
+            &DownloadConfig::default(),
         )
         .await
     }
@@ -113,6 +141,8 @@ impl BrowserSession {
                     &[],
                     None,
                     &HarConfig::default(),
+                    &BlockConfig::default(),
+                    &DownloadConfig::default(),
                 )
                 .await
             }
@@ -130,6 +160,8 @@ impl BrowserSession {
         protected_urls: &[String],
         preferred_url: Option<&str>,
         har_config: &HarConfig,
+        block_config: &BlockConfig,
+        download_config: &DownloadConfig,
     ) -> Result<Self> {
         debug!(
             target = "pw",
@@ -166,8 +198,11 @@ impl BrowserSession {
                 .map_err(|e| PwError::BrowserLaunch(e.to_string()))?;
 
             let browser = connect_result.browser;
-            let context = if storage_state.is_some() || har_config.is_enabled() {
-                let options = build_context_options(storage_state.clone(), har_config);
+            let needs_custom_context =
+                storage_state.is_some() || har_config.is_enabled() || download_config.is_enabled();
+            let context = if needs_custom_context {
+                let options =
+                    build_context_options(storage_state.clone(), har_config, download_config);
                 browser.new_context_with_options(options).await?
             } else if let Some(default_ctx) = connect_result.default_context {
                 // Reuse existing pages when using default context from CDP
@@ -209,8 +244,11 @@ impl BrowserSession {
             launched_server = Some(launched.clone());
 
             let browser = launched.browser().clone();
-            let context = if storage_state.is_some() || har_config.is_enabled() {
-                let options = build_context_options(storage_state.clone(), har_config);
+            let needs_custom_context =
+                storage_state.is_some() || har_config.is_enabled() || download_config.is_enabled();
+            let context = if needs_custom_context {
+                let options =
+                    build_context_options(storage_state.clone(), har_config, download_config);
                 browser.new_context_with_options(options).await?
             } else {
                 browser.new_context().await?
@@ -245,9 +283,11 @@ impl BrowserSession {
                 }
             };
 
-            // Create context with optional storage state and HAR config
-            let context = if storage_state.is_some() || har_config.is_enabled() {
-                let options = build_context_options(storage_state, har_config);
+            // Create context with optional storage state, HAR, or download config
+            let needs_custom_context =
+                storage_state.is_some() || har_config.is_enabled() || download_config.is_enabled();
+            let context = if needs_custom_context {
+                let options = build_context_options(storage_state, har_config, download_config);
                 browser.new_context_with_options(options).await?
             } else {
                 browser.new_context().await?
@@ -330,6 +370,63 @@ impl BrowserSession {
             None
         };
 
+        // Set up request blocking routes
+        let mut route_subscriptions = Vec::with_capacity(block_config.patterns.len());
+        for pattern in &block_config.patterns {
+            debug!(target = "pw", %pattern, "blocking pattern");
+            let sub = page
+                .route(pattern, |route| async move { route.abort(None).await })
+                .await
+                .map_err(|e| PwError::BrowserLaunch(format!("route setup failed: {e}")))?;
+            route_subscriptions.push(sub);
+        }
+
+        // Set up download handler if tracking is enabled
+        let downloads: Arc<Mutex<Vec<DownloadInfo>>> = Arc::new(Mutex::new(Vec::new()));
+        let download_subscription = if let Some(ref dir) = download_config.dir {
+            let downloads_dir = dir.clone();
+            let downloads_ref = Arc::clone(&downloads);
+            debug!(target = "pw", dir = %downloads_dir.display(), "download tracking enabled");
+
+            // Ensure downloads directory exists
+            if let Err(e) = std::fs::create_dir_all(&downloads_dir) {
+                return Err(PwError::BrowserLaunch(format!(
+                    "failed to create downloads dir: {e}"
+                )));
+            }
+
+            let sub = page.on_download(move |download| {
+                let downloads_dir = downloads_dir.clone();
+                let downloads_ref = Arc::clone(&downloads_ref);
+                async move {
+                    let url = download.url().to_string();
+                    let suggested = download.suggested_filename().to_string();
+                    let save_path = downloads_dir.join(&suggested);
+
+                    debug!(
+                        target = "pw",
+                        url = %url,
+                        filename = %suggested,
+                        path = %save_path.display(),
+                        "saving download"
+                    );
+
+                    download.save_as(&save_path).await?;
+
+                    let info = DownloadInfo {
+                        url,
+                        suggested_filename: suggested,
+                        path: save_path,
+                    };
+                    downloads_ref.lock().unwrap().push(info);
+                    Ok(())
+                }
+            });
+            Some(sub)
+        } else {
+            None
+        };
+
         Ok(Self {
             _playwright: playwright,
             browser,
@@ -342,6 +439,9 @@ impl BrowserSession {
             keep_server_running,
             keep_browser_running: false,
             har_recording,
+            route_subscriptions,
+            download_subscription,
+            downloads,
         })
     }
 
@@ -369,6 +469,8 @@ impl BrowserSession {
             &[],
             None,
             &HarConfig::default(),
+            &BlockConfig::default(),
+            &DownloadConfig::default(),
         )
         .await
     }
@@ -389,6 +491,8 @@ impl BrowserSession {
             &[],
             None,
             &HarConfig::default(),
+            &BlockConfig::default(),
+            &DownloadConfig::default(),
         )
         .await
     }
@@ -459,7 +563,10 @@ impl BrowserSession {
             launched_server: None,
             keep_server_running: keep_browser_running,
             keep_browser_running,
-            har_recording: None, // HAR not supported in persistent sessions
+            har_recording: None,
+            route_subscriptions: Vec::new(),
+            download_subscription: None,
+            downloads: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -497,6 +604,11 @@ impl BrowserSession {
 
     pub fn browser(&self) -> &pw::Browser {
         &self.browser
+    }
+
+    /// Returns downloads collected during this session.
+    pub fn downloads(&self) -> Vec<DownloadInfo> {
+        self.downloads.lock().unwrap().clone()
     }
 
     /// Set whether to keep the browser running after close()

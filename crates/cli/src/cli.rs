@@ -131,6 +131,18 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATTERN")]
     pub har_url_filter: Option<String>,
 
+    /// Block requests matching URL pattern (glob, can be used multiple times)
+    #[arg(long, global = true, value_name = "PATTERN", action = clap::ArgAction::Append)]
+    pub block: Vec<String>,
+
+    /// Load request blocking patterns from file (one pattern per line)
+    #[arg(long, global = true, value_name = "FILE")]
+    pub block_file: Option<PathBuf>,
+
+    /// Directory to save downloaded files (enables download tracking)
+    #[arg(long, global = true, value_name = "DIR")]
+    pub downloads_dir: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Commands,
 }

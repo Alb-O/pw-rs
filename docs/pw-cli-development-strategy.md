@@ -727,7 +727,7 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
 
 **Goal:** Add features that reduce agent tool-chaining.
 
-**Status:** In progress (2/4 tasks complete)
+**Status:** Complete (4/4 tasks done)
 
 #### Tasks
 
@@ -744,13 +744,18 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
   - Integrated into browser context creation via Playwright's HAR recording
   - **Acceptance:** HAR file written with request/response data
 
-- [ ] **P3-T3: Request interception**
-  - New command or flag for blocking/modifying requests
+- [x] **P3-T3: Request interception**
+  - Global flags: `--block <pattern>` (can use multiple times), `--block-file <file>`
+  - Uses Playwright's Page.route() to abort matching requests
+  - Patterns support glob syntax (e.g., `*://ads.*/**`, `**/*.png`)
+  - Block patterns loaded from file support `#` comments
   - **Acceptance:** Can block ad domains during automation
 
-- [ ] **P3-T4: Download management**
-  - Track downloads triggered by actions
-  - Return download paths in command output
+- [x] **P3-T4: Download management**
+  - Global flag: `--downloads-dir <dir>` enables download tracking
+  - Downloads saved to specified directory with suggested filename
+  - `DownloadInfo` struct tracks URL, suggested filename, and save path
+  - `ClickData` includes `downloads` field with collected download info
   - **Acceptance:** Click on download link returns file path
 
 #### Phase 3 Gate
@@ -758,10 +763,14 @@ system using the same pattern. The legacy `compute_preferred_url()` helper and
 **Must be true before proceeding:**
 - [x] Page model command provides actionable element list
 - [x] Network capture works without breaking existing commands
+- [x] Request blocking aborts matching requests
+- [x] Download tracking captures files and returns paths
 
 **Verification:**
 - Integration: page model on complex page returns useful structure
 - Integration: HAR capture includes expected requests
+- Integration: `--block` pattern prevents matching requests
+- Integration: `--downloads-dir` saves downloaded files
 
 ---
 

@@ -112,6 +112,72 @@ HAR options:
 - `--har-omit-content` - Omit request/response bodies entirely
 - `--har-url-filter <PATTERN>` - Only record requests matching this glob pattern
 
+### Block requests (ads, trackers, etc.)
+
+Use `--block` to intercept and abort requests matching URL patterns during automation:
+
+```bash
+# Block a single pattern
+pw --block "**/*.png" navigate https://example.com
+
+# Block multiple patterns (can use --block multiple times)
+pw --block "*://ads.*/**" --block "*://tracker.*/**" screenshot https://example.com
+
+# Load patterns from a file (one per line)
+pw --block-file blocklist.txt navigate https://example.com
+
+# Combine with other flags
+pw --block "*://ads.*/**" --har network.har navigate https://example.com
+```
+
+Block options:
+- `--block <PATTERN>` - URL glob pattern to block (can be used multiple times)
+- `--block-file <FILE>` - Load patterns from file (one per line, `#` comments supported)
+
+Common patterns for blocking:
+- `*://ads.*/**` - Ad domains
+- `*://tracker.*/**` - Trackers
+- `**/*.gif` - GIF images
+- `*://googletagmanager.com/**` - Google Tag Manager
+- `*://google-analytics.com/**` - Google Analytics
+
+### Track downloads
+
+Use `--downloads-dir` to track and save files downloaded during automation:
+
+```bash
+# Click a download link and save the file
+pw --downloads-dir ./downloads click -s "a[download]" https://example.com
+
+# Download files during navigation
+pw --downloads-dir ./downloads navigate https://example.com/file.pdf
+```
+
+When downloads are tracked, the `click` command includes download information in its output:
+
+```json
+{
+  "ok": true,
+  "command": "click",
+  "data": {
+    "beforeUrl": "https://example.com",
+    "afterUrl": "https://example.com",
+    "navigated": false,
+    "selector": "a[download]",
+    "downloads": [
+      {
+        "url": "https://example.com/file.pdf",
+        "suggestedFilename": "file.pdf",
+        "path": "./downloads/file.pdf"
+      }
+    ]
+  }
+}
+```
+
+Download options:
+- `--downloads-dir <DIR>` - Directory to save downloaded files (enables download tracking)
+
 ### Authenticated sessions
 
 ```bash
@@ -242,6 +308,9 @@ The daemon spawns browsers on ports 9222-10221. Currently only Chromium is suppo
 | `--har <file>`     | Record network activity to HAR file |
 | `--har-content`    | HAR content: embed, attach, omit    |
 | `--har-mode`       | HAR mode: full, minimal             |
+| `--block <pattern>`| Block requests matching URL pattern |
+| `--block-file`     | Load block patterns from file       |
+| `--downloads-dir`  | Directory to save downloaded files  |
 
 ## Batch Mode (for high-throughput agents)
 
