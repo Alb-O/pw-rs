@@ -5,6 +5,9 @@ use crate::output::OutputFormat;
 use crate::styles::cli_styles;
 use crate::types::BrowserKind;
 
+// Re-export OutputFormat for backwards compatibility
+pub use crate::output::OutputFormat as CliOutputFormat;
+
 #[derive(Parser, Debug)]
 #[command(name = "pw")]
 #[command(about = "Playwright CLI - Browser automation from the command line")]
@@ -17,7 +20,7 @@ pub struct Cli {
 
     /// Output format: toon (default), json, ndjson, or text
     #[arg(short = 'f', long, global = true, value_enum, default_value = "toon")]
-    pub format: CliOutputFormat,
+    pub format: OutputFormat,
 
     /// Load authentication state from file (cookies, localStorage)
     #[arg(long, global = true, value_name = "FILE")]
@@ -69,31 +72,6 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Commands,
-}
-
-/// CLI output format (clap-compatible enum)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
-pub enum CliOutputFormat {
-    /// TOON output (default, token-efficient for LLMs)
-    #[default]
-    Toon,
-    /// JSON output
-    Json,
-    /// Newline-delimited JSON (streaming)
-    Ndjson,
-    /// Human-readable text
-    Text,
-}
-
-impl From<CliOutputFormat> for OutputFormat {
-    fn from(f: CliOutputFormat) -> Self {
-        match f {
-            CliOutputFormat::Toon => OutputFormat::Toon,
-            CliOutputFormat::Json => OutputFormat::Json,
-            CliOutputFormat::Ndjson => OutputFormat::Ndjson,
-            CliOutputFormat::Text => OutputFormat::Text,
-        }
-    }
 }
 
 #[derive(Subcommand, Debug)]

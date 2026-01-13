@@ -28,125 +28,48 @@ use crate::context_store::{ContextState, ContextUpdate, is_current_page_sentinel
 use crate::error::{PwError, Result};
 use crate::output::OutputFormat;
 use crate::relay;
+use crate::runtime::{RuntimeConfig, RuntimeContext, build_runtime};
 use crate::session_broker::SessionBroker;
 use std::path::Path;
 
 pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
-    let Cli {
-        verbose: _,
-        format: _cli_format,
-        auth,
-        browser,
-        cdp_endpoint,
-        launch_server,
-        no_daemon,
-        no_project,
-        context,
-        no_context,
-        no_save_context,
-        refresh_context,
-        base_url,
-        artifacts_dir,
-        command,
-    } = cli;
-
-    match command {
-        Commands::Relay { host, port } => relay::run_relay_server(&host, port)
+    // Handle relay separately - doesn't need runtime
+    if let Commands::Relay { ref host, port } = cli.command {
+        return relay::run_relay_server(host, port)
             .await
-            .map_err(PwError::Anyhow),
-        Commands::Run => {
-            // Batch mode - create context and run in NDJSON mode
-            let project = if no_project {
-                None
-            } else {
-                crate::project::Project::detect()
-            };
-            let project_root = project.as_ref().map(|p| p.paths.root.clone());
-            let mut ctx_state = ContextState::new(
-                project_root.clone(),
-                context,
-                base_url,
-                no_context,
-                no_save_context,
-                refresh_context,
-            )?;
+            .map_err(PwError::Anyhow);
+    }
 
-            let resolved_cdp = cdp_endpoint.or_else(|| ctx_state.cdp_endpoint().map(String::from));
+    // Build runtime once (single source of truth for setup)
+    let config = RuntimeConfig::from(&cli);
+    let RuntimeContext { ctx, mut ctx_state } = build_runtime(&config)?;
+    let mut broker = SessionBroker::new(
+        &ctx,
+        ctx_state.session_descriptor_path(),
+        ctx_state.refresh_requested(),
+    );
 
-            let ctx = CommandContext::new(
-                browser,
-                no_project,
-                auth,
-                resolved_cdp,
-                launch_server,
-                no_daemon,
-            );
-
-            let mut broker = SessionBroker::new(
-                &ctx,
-                ctx_state.session_descriptor_path(),
-                ctx_state.refresh_requested(),
-            );
-
-            let result = run::execute(&ctx, &mut ctx_state, &mut broker).await;
-
-            if result.is_ok() {
-                ctx_state.persist()?;
-            }
-
-            result
-        }
+    let result = match cli.command {
+        Commands::Run => run::execute(&ctx, &mut ctx_state, &mut broker).await,
+        Commands::Relay { .. } => unreachable!("handled above"),
         command => {
-            // Create context state first to check for stored CDP endpoint
-            let project = if no_project {
-                None
-            } else {
-                crate::project::Project::detect()
-            };
-            let project_root = project.as_ref().map(|p| p.paths.root.clone());
-            let mut ctx_state = ContextState::new(
-                project_root.clone(),
-                context,
-                base_url,
-                no_context,
-                no_save_context,
-                refresh_context,
-            )?;
-
-            // Use CLI cdp_endpoint if provided, otherwise fall back to stored context
-            let resolved_cdp = cdp_endpoint.or_else(|| ctx_state.cdp_endpoint().map(String::from));
-
-            let ctx = CommandContext::new(
-                browser,
-                no_project,
-                auth,
-                resolved_cdp,
-                launch_server,
-                no_daemon,
-            );
-
-            let mut broker = SessionBroker::new(
-                &ctx,
-                ctx_state.session_descriptor_path(),
-                ctx_state.refresh_requested(),
-            );
-            let result = dispatch_command(
+            dispatch_command(
                 command,
                 &ctx,
                 &mut ctx_state,
                 &mut broker,
                 format,
-                artifacts_dir.as_deref(),
+                cli.artifacts_dir.as_deref(),
             )
-            .await;
-
-            if result.is_ok() {
-                ctx_state.persist()?;
-            }
-
-            result
+            .await
         }
+    };
+
+    if result.is_ok() {
+        ctx_state.persist()?;
     }
+
+    result
 }
 
 async fn dispatch_command(

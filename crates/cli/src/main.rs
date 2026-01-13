@@ -12,7 +12,7 @@ async fn main() {
     let cli = Cli::parse();
     logging::init_logging(cli.verbose);
 
-    let format: OutputFormat = cli.format.into();
+    let format = cli.format;
 
     if let Err(err) = commands::dispatch(cli, format).await {
         // If output was already printed (e.g., with artifacts), just exit
