@@ -33,6 +33,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-stream = "0.1"
 toon = "0.1"
+url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "ansi"] }
 

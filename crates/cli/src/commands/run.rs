@@ -65,13 +65,12 @@
 //! {"ok":true,"command":"quit"}
 //! ```
 
-use crate::args;
-use crate::cli::ReadOutputFormat;
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate, is_current_page_sentinel};
 use crate::error::Result;
 use crate::output::{CommandInputs, OutputFormat, SCHEMA_VERSION};
 use crate::session_broker::SessionBroker;
+use crate::target::{Resolve, ResolveEnv};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
@@ -370,48 +369,45 @@ async fn execute_batch_command(
         }
 
         "click" => {
-            let resolved =
-                args::resolve_url_and_selector(get_str("url"), None, get_str("selector"));
-            let wait_ms = args.get("wait_ms").and_then(|v| v.as_u64()).unwrap_or(500);
-
-            let final_url = match ctx_state.resolve_url_with_cdp(resolved.url, has_cdp) {
-                Ok(u) => u,
-                Err(e) => {
-                    return BatchResponse::error(id, "click", "INVALID_INPUT", &e.to_string());
-                }
-            };
-            let final_selector = match ctx_state.resolve_selector(resolved.selector, None) {
-                Ok(s) => s,
+            let raw: click::ClickRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "click", "INVALID_INPUT", &e.to_string());
                 }
             };
 
-            match click::execute(
-                &final_url,
-                &final_selector,
-                wait_ms,
+            let env = ResolveEnv::new(ctx_state, has_cdp, "click");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "click", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match click::execute_resolved(
+                &resolved,
                 ctx,
                 broker,
                 OutputFormat::Ndjson,
                 None,
-                preferred_url(&final_url, ctx_state),
+                last_url,
             )
             .await
             {
                 Ok(after_url) => {
                     ctx_state.record(ContextUpdate {
                         url: Some(&after_url),
-                        selector: Some(&final_selector),
+                        selector: Some(&resolved.selector),
                         ..Default::default()
                     });
                     BatchResponse::success(
                         id,
                         "click",
                         serde_json::json!({
-                            "beforeUrl": final_url,
+                            "beforeUrl": resolved.target.url_str(),
                             "afterUrl": after_url,
-                            "selector": final_selector,
+                            "selector": resolved.selector,
                         }),
                     )
                 }
@@ -420,34 +416,30 @@ async fn execute_batch_command(
         }
 
         "text" => {
-            let resolved =
-                args::resolve_url_and_selector(get_str("url"), None, get_str("selector"));
-            let final_url = match ctx_state.resolve_url_with_cdp(resolved.url, has_cdp) {
-                Ok(u) => u,
-                Err(e) => return BatchResponse::error(id, "text", "INVALID_INPUT", &e.to_string()),
-            };
-            let final_selector = match ctx_state.resolve_selector(resolved.selector, None) {
-                Ok(s) => s,
+            let raw: text::TextRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => return BatchResponse::error(id, "text", "INVALID_INPUT", &e.to_string()),
             };
 
-            match text::execute(
-                &final_url,
-                &final_selector,
+            let env = ResolveEnv::new(ctx_state, has_cdp, "text");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => return BatchResponse::error(id, "text", "INVALID_INPUT", &e.to_string()),
+            };
+
+            let last_url = ctx_state.last_url();
+            match text::execute_resolved(
+                &resolved,
                 ctx,
                 broker,
                 OutputFormat::Ndjson,
                 None,
-                preferred_url(&final_url, ctx_state),
+                last_url,
             )
             .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        selector: Some(&final_selector),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
                     BatchResponse::success_empty(id, "text")
                 }
                 Err(e) => BatchResponse::error(id, "text", "TEXT_FAILED", &e.to_string()),
@@ -455,33 +447,31 @@ async fn execute_batch_command(
         }
 
         "html" => {
-            let resolved =
-                args::resolve_url_and_selector(get_str("url"), None, get_str("selector"));
-            let final_url = match ctx_state.resolve_url_with_cdp(resolved.url, has_cdp) {
-                Ok(u) => u,
-                Err(e) => return BatchResponse::error(id, "html", "INVALID_INPUT", &e.to_string()),
-            };
-            let final_selector = match ctx_state.resolve_selector(resolved.selector, Some("html")) {
-                Ok(s) => s,
-                Err(e) => return BatchResponse::error(id, "html", "INVALID_INPUT", &e.to_string()),
+            // Deserialize raw args from JSON
+            let raw: html::HtmlRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "html", "INVALID_INPUT", &e.to_string());
+                }
             };
 
-            match html::execute(
-                &final_url,
-                &final_selector,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            // Resolve using typed target system
+            let env = ResolveEnv::new(ctx_state, has_cdp, "html");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "html", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            // Execute with resolved args
+            let last_url = ctx_state.last_url();
+            match html::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        selector: Some(&final_selector),
-                        ..Default::default()
-                    });
+                    // Record context from typed target
+                    ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
                     BatchResponse::success_empty(id, "html")
                 }
                 Err(e) => BatchResponse::error(id, "html", "HTML_FAILED", &e.to_string()),
@@ -570,38 +560,23 @@ async fn execute_batch_command(
         }
 
         "fill" => {
-            let text_val = match get_str("text") {
-                Some(t) => t,
-                None => {
-                    return BatchResponse::error(id, "fill", "INVALID_INPUT", "text is required");
-                }
-            };
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
-                Err(e) => return BatchResponse::error(id, "fill", "INVALID_INPUT", &e.to_string()),
-            };
-            let final_selector = match ctx_state.resolve_selector(get_str("selector"), None) {
-                Ok(s) => s,
+            let raw: fill::FillRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => return BatchResponse::error(id, "fill", "INVALID_INPUT", &e.to_string()),
             };
 
-            match fill::execute(
-                &final_url,
-                &final_selector,
-                &text_val,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            let env = ResolveEnv::new(ctx_state, has_cdp, "fill");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => return BatchResponse::error(id, "fill", "INVALID_INPUT", &e.to_string()),
+            };
+
+            let last_url = ctx_state.last_url();
+            match fill::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        selector: Some(&final_selector),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
                     BatchResponse::success_empty(id, "fill")
                 }
                 Err(e) => BatchResponse::error(id, "fill", "FILL_FAILED", &e.to_string()),
@@ -609,27 +584,23 @@ async fn execute_batch_command(
         }
 
         "wait" => {
-            let condition = get_str("condition").unwrap_or_else(|| "networkidle".to_string());
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
+            let raw: wait::WaitRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => return BatchResponse::error(id, "wait", "INVALID_INPUT", &e.to_string()),
             };
 
-            match wait::execute(
-                &final_url,
-                &condition,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            let env = ResolveEnv::new(ctx_state, has_cdp, "wait");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => return BatchResponse::error(id, "wait", "INVALID_INPUT", &e.to_string()),
+            };
+
+            let last_url = ctx_state.last_url();
+            match wait::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, None);
                     BatchResponse::success_empty(id, "wait")
                 }
                 Err(e) => BatchResponse::error(id, "wait", "WAIT_FAILED", &e.to_string()),
@@ -637,35 +608,34 @@ async fn execute_batch_command(
         }
 
         "elements" | "els" => {
-            let wait_flag = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
-            let timeout_ms = args
-                .get("timeout_ms")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10000);
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
+            let raw: elements::ElementsRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "elements", "INVALID_INPUT", &e.to_string());
                 }
             };
 
-            match elements::execute(
-                &final_url,
-                wait_flag,
-                timeout_ms,
+            let env = ResolveEnv::new(ctx_state, has_cdp, "elements");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "elements", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match elements::execute_resolved(
+                &resolved,
                 ctx,
                 broker,
                 OutputFormat::Ndjson,
                 None,
-                preferred_url(&final_url, ctx_state),
+                last_url,
             )
             .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, None);
                     BatchResponse::success_empty(id, "elements")
                 }
                 Err(e) => BatchResponse::error(id, "elements", "ELEMENTS_FAILED", &e.to_string()),
@@ -673,32 +643,27 @@ async fn execute_batch_command(
         }
 
         "console" | "con" => {
-            let timeout_ms = args
-                .get("timeout_ms")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(3000);
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
+            let raw: console::ConsoleRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "console", "INVALID_INPUT", &e.to_string());
                 }
             };
 
-            match console::execute(
-                &final_url,
-                timeout_ms,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            let env = ResolveEnv::new(ctx_state, has_cdp, "console");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "console", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match console::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, None);
                     BatchResponse::success_empty(id, "console")
                 }
                 Err(e) => BatchResponse::error(id, "console", "CONSOLE_FAILED", &e.to_string()),
@@ -706,36 +671,23 @@ async fn execute_batch_command(
         }
 
         "read" => {
-            let output_format = match get_str("output_format").as_deref() {
-                Some("text") => ReadOutputFormat::Text,
-                Some("html") => ReadOutputFormat::Html,
-                _ => ReadOutputFormat::Markdown,
-            };
-            let metadata = args
-                .get("metadata")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
+            let raw: read::ReadRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => return BatchResponse::error(id, "read", "INVALID_INPUT", &e.to_string()),
             };
 
-            match read::execute(
-                &final_url,
-                output_format,
-                metadata,
-                ctx,
-                broker,
-                OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
-            )
-            .await
+            let env = ResolveEnv::new(ctx_state, has_cdp, "read");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => return BatchResponse::error(id, "read", "INVALID_INPUT", &e.to_string()),
+            };
+
+            let last_url = ctx_state.last_url();
+            match read::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
+                .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, None);
                     BatchResponse::success_empty(id, "read")
                 }
                 Err(e) => BatchResponse::error(id, "read", "READ_FAILED", &e.to_string()),
@@ -743,35 +695,33 @@ async fn execute_batch_command(
         }
 
         "coords" => {
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
-                Err(e) => {
-                    return BatchResponse::error(id, "coords", "INVALID_INPUT", &e.to_string());
-                }
-            };
-            let final_selector = match ctx_state.resolve_selector(get_str("selector"), None) {
-                Ok(s) => s,
+            let raw: coords::CoordsRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "coords", "INVALID_INPUT", &e.to_string());
                 }
             };
 
-            match coords::execute_single(
-                &final_url,
-                &final_selector,
+            let env = ResolveEnv::new(ctx_state, has_cdp, "coords");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "coords", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match coords::execute_single_resolved(
+                &resolved,
                 ctx,
                 broker,
                 OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
+                last_url,
             )
             .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        selector: Some(&final_selector),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
                     BatchResponse::success_empty(id, "coords")
                 }
                 Err(e) => BatchResponse::error(id, "coords", "COORDS_FAILED", &e.to_string()),
@@ -779,35 +729,33 @@ async fn execute_batch_command(
         }
 
         "coords_all" => {
-            let final_url = match ctx_state.resolve_url_with_cdp(get_str("url"), has_cdp) {
-                Ok(u) => u,
-                Err(e) => {
-                    return BatchResponse::error(id, "coords_all", "INVALID_INPUT", &e.to_string());
-                }
-            };
-            let final_selector = match ctx_state.resolve_selector(get_str("selector"), None) {
-                Ok(s) => s,
+            let raw: coords::CoordsAllRaw = match serde_json::from_value(args.clone()) {
+                Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "coords_all", "INVALID_INPUT", &e.to_string());
                 }
             };
 
-            match coords::execute_all(
-                &final_url,
-                &final_selector,
+            let env = ResolveEnv::new(ctx_state, has_cdp, "coords_all");
+            let resolved = match raw.resolve(&env) {
+                Ok(r) => r,
+                Err(e) => {
+                    return BatchResponse::error(id, "coords_all", "INVALID_INPUT", &e.to_string());
+                }
+            };
+
+            let last_url = ctx_state.last_url();
+            match coords::execute_all_resolved(
+                &resolved,
                 ctx,
                 broker,
                 OutputFormat::Ndjson,
-                preferred_url(&final_url, ctx_state),
+                last_url,
             )
             .await
             {
                 Ok(()) => {
-                    ctx_state.record(ContextUpdate {
-                        url: record_url(&final_url),
-                        selector: Some(&final_selector),
-                        ..Default::default()
-                    });
+                    ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
                     BatchResponse::success_empty(id, "coords_all")
                 }
                 Err(e) => BatchResponse::error(id, "coords_all", "COORDS_FAILED", &e.to_string()),

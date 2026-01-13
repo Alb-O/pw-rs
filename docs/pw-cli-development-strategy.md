@@ -630,59 +630,61 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 
 **Goal:** Replace sentinel string with typed `Target` enum.
 
+**Status:** Complete (all 9 tasks done)
+
 #### Tasks
 
-- [ ] **P2-T1: Define `Target`, `TargetSource`, `ResolvedTarget`, `TargetPolicy`**
-  - Create `engine::target` or `core::target` module
+- [x] **P2-T1: Define `Target`, `TargetSource`, `ResolvedTarget`, `TargetPolicy`**
+  - Created `crates/cli/src/target.rs` module
   - Types as specified in [Typed Target Design](#typed-target-design)
   - **Acceptance:** Types compile and have Debug/Clone
 
-- [ ] **P2-T2: Implement `resolve_target()` function**
+- [x] **P2-T2: Implement `resolve_target()` function**
   - Handles explicit URL, CDP current page, context fallback
   - Returns `ResolvedTarget` with provenance
-  - **Acceptance:** Unit tests cover all policies and fallbacks
+  - **Acceptance:** Unit tests cover all policies and fallbacks (10 tests)
 
-- [ ] **P2-T3: Add `Target`-aware navigation to `SessionHandle`**
+- [x] **P2-T3: Add `Target`-aware navigation to `SessionHandle`**
   - Method: `goto_target(target: &Target) -> Result<bool>`
   - Replaces sentinel check in `goto_unless_current`
   - **Acceptance:** Navigate on `Target::Navigate`, no-op on `CurrentPage`
 
-- [ ] **P2-T4: Define `ResolveEnv` and `Resolve` trait**
+- [x] **P2-T4: Define `ResolveEnv` and `Resolve` trait**
   - Environment struct with `ctx_state`, `has_cdp`, `command`
   - Trait with `resolve(self, env) -> Result<Output>`
   - **Acceptance:** Trait compiles; can implement for simple struct
 
-- [ ] **P2-T5: Implement `HtmlRaw` and `HtmlResolved`**
+- [x] **P2-T5: Implement `HtmlRaw` and `HtmlResolved`**
   - Raw derives `Deserialize` (for batch)
   - Resolved uses `ResolvedTarget`
   - Implement `Resolve` for `HtmlRaw`
   - **Acceptance:** Both CLI and batch can use same resolution
 
-- [ ] **P2-T6: Update `html::execute` to take `HtmlResolved`**
-  - Change signature to accept resolved args
-  - Return `Result<CommandResult<HtmlData>>`
+- [x] **P2-T6: Update `html::execute` to take `HtmlResolved`**
+  - Created `execute_resolved()` function with resolved args
+  - Removed legacy `execute()` function
   - **Acceptance:** Command works with typed target
 
-- [ ] **P2-T7: Update CLI dispatch for `html`**
+- [x] **P2-T7: Update CLI dispatch for `html`**
   - Build `HtmlRaw` from clap args
-  - Call `.resolve()` then `execute()`
+  - Call `.resolve()` then `execute_resolved()`
   - **Acceptance:** `pw html` works as before
 
-- [ ] **P2-T8: Update batch dispatch for `html`**
+- [x] **P2-T8: Update batch dispatch for `html`**
   - Deserialize `HtmlRaw` from JSON
-  - Call same `.resolve()` then `execute()`
+  - Call same `.resolve()` then `execute_resolved()`
   - **Acceptance:** Batch `html` command works
 
-- [ ] **P2-T9: Add `ContextState::record_from_target()` helper**
+- [x] **P2-T9: Add `ContextState::record_from_target()` helper**
   - Records URL only for `Target::Navigate`
   - **Acceptance:** Context not polluted with sentinel values
 
 #### Phase 2 Gate
 
 **Must be true before proceeding:**
-- [ ] `html` command uses typed target end-to-end
-- [ ] CLI and batch dispatch share same resolution code
-- [ ] No sentinel string in `html` code path
+- [x] `html` command uses typed target end-to-end
+- [x] CLI and batch dispatch share same resolution code
+- [x] No sentinel string in `html` code path
 
 **Verification:**
 - Unit tests for `resolve_target()` with all policies
@@ -929,6 +931,7 @@ Phase 4: Resilience (parallel)
 | Daemon protocol | `crates/cli/src/daemon/` |
 | Arg resolution helpers | `crates/cli/src/args.rs` |
 | Runtime setup | `crates/cli/src/runtime.rs` |
+| Typed target resolution | `crates/cli/src/target.rs` |
 
 ---
 

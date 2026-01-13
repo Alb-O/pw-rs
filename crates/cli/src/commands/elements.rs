@@ -1,3 +1,22 @@
+//! Interactive elements discovery command.
+//!
+//! Extracts all interactive elements (buttons, links, inputs, etc.) from a page
+//! with stable CSS selectors suitable for automation. Each element includes its
+//! bounding box coordinates for visual reference.
+//!
+//! # Extracted Element Types
+//!
+//! - Buttons (including `role="button"`)
+//! - Links (`<a href="...">`)
+//! - Text inputs, textareas, selects
+//! - Checkboxes and radio buttons
+//!
+//! # Example
+//!
+//! ```bash
+//! pw elements https://example.com --wait --timeout-ms 5000
+//! ```
+
 use std::path::Path;
 
 use crate::context::CommandContext;
@@ -7,10 +26,81 @@ use crate::output::{
     ResultBuilder, print_failure_with_artifacts, print_result,
 };
 use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
+use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
 use pw::WaitUntil;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
+/// Raw inputs from CLI or batch JSON before resolution.
+///
+/// Use [`Resolve::resolve`] to convert to [`ElementsResolved`] for execution.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElementsRaw {
+    /// Target URL, resolved from context if not provided.
+    #[serde(default)]
+    pub url: Option<String>,
+
+    /// Whether to poll until elements appear.
+    #[serde(default)]
+    pub wait: Option<bool>,
+
+    /// Timeout in milliseconds when waiting (default: 10000).
+    #[serde(default, alias = "timeout_ms")]
+    pub timeout_ms: Option<u64>,
+}
+
+impl ElementsRaw {
+    /// Creates an [`ElementsRaw`] from CLI arguments.
+    pub fn from_cli(url: Option<String>, wait: bool, timeout_ms: u64) -> Self {
+        Self {
+            url,
+            wait: Some(wait),
+            timeout_ms: Some(timeout_ms),
+        }
+    }
+}
+
+/// Resolved inputs ready for execution.
+///
+/// All arguments have been validated with defaults applied.
+#[derive(Debug, Clone)]
+pub struct ElementsResolved {
+    /// Navigation target (URL or current page).
+    pub target: ResolvedTarget,
+
+    /// Whether to poll until elements appear.
+    pub wait: bool,
+
+    /// Timeout in milliseconds when waiting.
+    pub timeout_ms: u64,
+}
+
+impl ElementsResolved {
+    /// Returns the URL for page preference matching.
+    ///
+    /// For [`Navigate`](crate::target::Target::Navigate) targets, returns the URL.
+    /// For [`CurrentPage`](crate::target::Target::CurrentPage), returns `last_url` as a hint.
+    pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
+        self.target.preferred_url(last_url)
+    }
+}
+
+impl Resolve for ElementsRaw {
+    type Output = ElementsResolved;
+
+    fn resolve(self, env: &ResolveEnv<'_>) -> Result<ElementsResolved> {
+        let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
+
+        Ok(ElementsResolved {
+            target,
+            wait: self.wait.unwrap_or(false),
+            timeout_ms: self.timeout_ms.unwrap_or(10000),
+        })
+    }
+}
+
+/// Element data as returned by the extraction JavaScript.
 #[derive(Debug, Deserialize)]
 struct RawElement {
     kind: String,
@@ -27,22 +117,23 @@ struct RawElement {
     height: i32,
 }
 
+/// JavaScript that extracts interactive elements from the page.
+///
+/// Generates stable selectors preferring: ID > name attribute > text content >
+/// aria-label > class combination > nth-of-type fallback.
 const EXTRACT_ELEMENTS_JS: &str = r#"
 (() => {
     const elements = [];
     const seen = new Set();
     
     function getStableSelector(el) {
-        // Prefer id
         if (el.id) return '#' + CSS.escape(el.id);
         
-        // For inputs, prefer name
         if (el.name && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
             const sel = el.tagName.toLowerCase() + '[name="' + el.name + '"]';
             if (document.querySelectorAll(sel).length === 1) return sel;
         }
         
-        // For buttons/links with unique text, use text selector
         const text = (el.textContent || '').trim().substring(0, 50);
         if (text && (el.tagName === 'BUTTON' || el.tagName === 'A' || el.role === 'button')) {
             const shortText = text.split('\n')[0].trim();
@@ -52,13 +143,11 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
             }
         }
         
-        // Try aria-label
         if (el.getAttribute('aria-label')) {
             const sel = '[aria-label="' + el.getAttribute('aria-label').replace(/"/g, '\\"') + '"]';
             if (document.querySelectorAll(sel).length === 1) return sel;
         }
         
-        // Try class combination
         if (el.className && typeof el.className === 'string') {
             const classes = el.className.split(/\s+/).filter(c => c && !c.match(/^(hover|active|focus|disabled)/));
             if (classes.length > 0 && classes.length <= 3) {
@@ -67,7 +156,6 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
             }
         }
         
-        // Fallback: tag with nth-of-type
         const parent = el.parentElement;
         if (parent) {
             const siblings = Array.from(parent.children).filter(c => c.tagName === el.tagName);
@@ -135,12 +223,10 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
         });
     }
     
-    // Buttons
     document.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]').forEach(el => {
         addElement(el, 'button', null);
     });
     
-    // Links
     document.querySelectorAll('a[href]').forEach(el => {
         const href = el.getAttribute('href');
         if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
@@ -148,27 +234,22 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
         }
     });
     
-    // Text inputs
     document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])').forEach(el => {
         addElement(el, 'input', el.type || 'text');
     });
     
-    // Textareas
     document.querySelectorAll('textarea').forEach(el => {
         addElement(el, 'textarea', null);
     });
     
-    // Selects
     document.querySelectorAll('select').forEach(el => {
         addElement(el, 'select', null);
     });
     
-    // Checkboxes
     document.querySelectorAll('input[type="checkbox"]').forEach(el => {
         addElement(el, 'checkbox', el.checked ? 'checked' : 'unchecked');
     });
     
-    // Radio buttons
     document.querySelectorAll('input[type="radio"]').forEach(el => {
         addElement(el, 'radio', el.checked ? 'checked' : 'unchecked');
     });
@@ -177,26 +258,38 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
 })()
 "#;
 
-pub async fn execute(
-    url: &str,
-    wait: bool,
-    timeout_ms: u64,
+/// Executes the elements command with resolved arguments.
+///
+/// Navigates to the target page, runs element extraction JavaScript, and
+/// returns a list of interactive elements with their selectors and positions.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Navigation fails
+/// - JavaScript evaluation fails
+/// - Response parsing fails
+///
+/// On failure, collects diagnostic artifacts (screenshot, HTML) if `artifacts_dir` is set.
+pub async fn execute_resolved(
+    args: &ElementsResolved,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
-    preferred_url: Option<&str>,
+    last_url: Option<&str>,
 ) -> Result<()> {
-    info!(target = "pw", %url, %wait, %timeout_ms, browser = %ctx.browser, "list elements");
+    let url_display = args.target.url_str().unwrap_or("<current page>");
+    info!(target = "pw", url = %url_display, wait = %args.wait, timeout_ms = %args.timeout_ms, browser = %ctx.browser, "list elements");
 
     let session = broker
         .session(
             SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
-                .with_preferred_url(preferred_url),
+                .with_preferred_url(args.preferred_url(last_url)),
         )
         .await?;
 
-    match execute_inner(&session, url, wait, timeout_ms, format).await {
+    match extract_elements(&session, args, format).await {
         Ok(()) => session.close().await,
         Err(e) => {
             let artifacts = session
@@ -204,7 +297,6 @@ pub async fn execute(
                 .await;
 
             if !artifacts.is_empty() {
-                // Print failure with artifacts and signal that output is complete
                 let failure = FailureWithArtifacts::new(e.to_command_error())
                     .with_artifacts(artifacts.artifacts);
                 print_failure_with_artifacts("elements", &failure, format);
@@ -218,36 +310,18 @@ pub async fn execute(
     }
 }
 
-async fn execute_inner(
+/// Extracts interactive elements from the page.
+async fn extract_elements(
     session: &SessionHandle,
-    url: &str,
-    wait: bool,
-    timeout_ms: u64,
+    args: &ElementsResolved,
     format: OutputFormat,
 ) -> Result<()> {
-    session.goto_unless_current(url).await?;
+    session.goto_target(&args.target.target).await?;
 
     let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
 
-    let raw_elements: Vec<RawElement> = if wait {
-        let start = std::time::Instant::now();
-        let poll_interval = std::time::Duration::from_millis(500);
-        let timeout = std::time::Duration::from_millis(timeout_ms);
-
-        loop {
-            let raw_result = session.page().evaluate_value(&js).await?;
-            let elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
-
-            if !elements.is_empty() {
-                break elements;
-            }
-
-            if start.elapsed() >= timeout {
-                break vec![];
-            }
-
-            tokio::time::sleep(poll_interval).await;
-        }
+    let raw_elements: Vec<RawElement> = if args.wait {
+        poll_for_elements(session, &js, args.timeout_ms).await?
     } else {
         let raw_result = session.page().evaluate_value(&js).await?;
         serde_json::from_str(&raw_result)?
@@ -263,7 +337,7 @@ async fn execute_inner(
             } else {
                 Some(e.label)
             },
-            href: None, // TODO: extract for links
+            href: None,
             name: e.extra,
             id: None,
             x: e.x,
@@ -277,7 +351,7 @@ async fn execute_inner(
 
     let result = ResultBuilder::new("elements")
         .inputs(CommandInputs {
-            url: Some(url.to_string()),
+            url: args.target.url_str().map(String::from),
             ..Default::default()
         })
         .data(ElementsData { elements, count })
@@ -285,4 +359,52 @@ async fn execute_inner(
 
     print_result(&result, format);
     Ok(())
+}
+
+/// Polls for elements until some appear or timeout is reached.
+async fn poll_for_elements(
+    session: &SessionHandle,
+    js: &str,
+    timeout_ms: u64,
+) -> Result<Vec<RawElement>> {
+    let start = std::time::Instant::now();
+    let poll_interval = std::time::Duration::from_millis(500);
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+
+    loop {
+        let raw_result = session.page().evaluate_value(js).await?;
+        let elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
+
+        if !elements.is_empty() {
+            return Ok(elements);
+        }
+
+        if start.elapsed() >= timeout {
+            return Ok(vec![]);
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn elements_raw_deserialize_from_json() {
+        let json = r#"{"url": "https://example.com", "wait": true, "timeout_ms": 5000}"#;
+        let raw: ElementsRaw = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.url, Some("https://example.com".into()));
+        assert_eq!(raw.wait, Some(true));
+        assert_eq!(raw.timeout_ms, Some(5000));
+    }
+
+    #[test]
+    fn elements_raw_defaults() {
+        let json = r#"{}"#;
+        let raw: ElementsRaw = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.wait, None);
+        assert_eq!(raw.timeout_ms, None);
+    }
 }

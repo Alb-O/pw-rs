@@ -1,5 +1,8 @@
+//! Text content extraction command.
+
 use std::path::Path;
 
+use crate::args;
 use crate::context::CommandContext;
 use crate::error::{PwError, Result};
 use crate::output::{
@@ -7,19 +10,87 @@ use crate::output::{
     print_failure_with_artifacts, print_result,
 };
 use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
+use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
 use pw::WaitUntil;
+use serde::{Deserialize, Serialize};
 use tracing::info;
+
+// ---------------------------------------------------------------------------
+// Raw and Resolved Types
+// ---------------------------------------------------------------------------
+
+/// Raw inputs from CLI or batch JSON.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextRaw {
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub selector: Option<String>,
+    #[serde(default, alias = "url_flag")]
+    pub url_flag: Option<String>,
+    #[serde(default, alias = "selector_flag")]
+    pub selector_flag: Option<String>,
+}
+
+impl TextRaw {
+    pub fn from_cli(
+        url: Option<String>,
+        selector: Option<String>,
+        url_flag: Option<String>,
+        selector_flag: Option<String>,
+    ) -> Self {
+        Self {
+            url,
+            selector,
+            url_flag,
+            selector_flag,
+        }
+    }
+}
+
+/// Resolved inputs ready for execution.
+#[derive(Debug, Clone)]
+pub struct TextResolved {
+    pub target: ResolvedTarget,
+    pub selector: String,
+}
+
+impl TextResolved {
+    pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
+        self.target.preferred_url(last_url)
+    }
+}
+
+impl Resolve for TextRaw {
+    type Output = TextResolved;
+
+    fn resolve(self, env: &ResolveEnv<'_>) -> Result<TextResolved> {
+        let resolved = args::resolve_url_and_selector(
+            self.url.clone(),
+            self.url_flag,
+            self.selector_flag.or(self.selector),
+        );
+
+        let target = env.resolve_target(resolved.url, TargetPolicy::AllowCurrentPage)?;
+        let selector = env.resolve_selector(resolved.selector, None)?;
+
+        Ok(TextResolved { target, selector })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Garbage Filtering
+// ---------------------------------------------------------------------------
 
 /// Heuristically detect if a line looks like minified JavaScript or garbage
 fn is_garbage_line(line: &str) -> bool {
     let trimmed = line.trim();
 
-    // Skip empty lines (not garbage, just empty)
     if trimmed.is_empty() {
         return false;
     }
 
-    // Long lines with few spaces suggest minified code
     if trimmed.len() > 200 {
         let space_ratio =
             trimmed.chars().filter(|c| c.is_whitespace()).count() as f32 / trimmed.len() as f32;
@@ -28,7 +99,6 @@ fn is_garbage_line(line: &str) -> bool {
         }
     }
 
-    // High density of JS syntax characters
     let js_chars = trimmed
         .chars()
         .filter(|c| matches!(c, '{' | '}' | ';' | '(' | ')' | '=' | ',' | ':' | '[' | ']'))
@@ -37,7 +107,6 @@ fn is_garbage_line(line: &str) -> bool {
         return true;
     }
 
-    // Common JS/CSS patterns
     let lower = trimmed.to_lowercase();
     if lower.starts_with("function(")
         || lower.starts_with("!function")
@@ -53,7 +122,6 @@ fn is_garbage_line(line: &str) -> bool {
         return true;
     }
 
-    // Base64-like long strings (no spaces, alphanumeric heavy)
     if trimmed.len() > 100 && !trimmed.contains(' ') {
         let alnum_ratio =
             trimmed.chars().filter(|c| c.is_alphanumeric()).count() as f32 / trimmed.len() as f32;
@@ -69,7 +137,6 @@ fn is_garbage_line(line: &str) -> bool {
 fn filter_garbage(text: &str) -> String {
     let filtered: Vec<&str> = text.lines().filter(|line| !is_garbage_line(line)).collect();
 
-    // Collapse runs of empty lines into single blank lines
     let mut result = Vec::new();
     let mut prev_empty = false;
     for line in filtered {
@@ -84,17 +151,23 @@ fn filter_garbage(text: &str) -> String {
     result.join("\n")
 }
 
-pub async fn execute(
-    url: &str,
-    selector: &str,
+// ---------------------------------------------------------------------------
+// Execution
+// ---------------------------------------------------------------------------
+
+/// Execute the text command with resolved arguments.
+pub async fn execute_resolved(
+    args: &TextResolved,
     ctx: &CommandContext,
     broker: &mut SessionBroker<'_>,
     format: OutputFormat,
     artifacts_dir: Option<&Path>,
-    preferred_url: Option<&str>,
+    last_url: Option<&str>,
 ) -> Result<()> {
-    info!(target = "pw", %url, %selector, browser = %ctx.browser, "get text");
+    let url_display = args.target.url_str().unwrap_or("<current page>");
+    info!(target = "pw", url = %url_display, selector = %args.selector, browser = %ctx.browser, "get text");
 
+    let preferred_url = args.preferred_url(last_url);
     let session = broker
         .session(
             SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
@@ -102,16 +175,14 @@ pub async fn execute(
         )
         .await?;
 
-    match execute_inner(&session, url, selector, format).await {
+    match execute_inner(&session, &args.target, &args.selector, format).await {
         Ok(()) => session.close().await,
         Err(e) => {
-            // Collect artifacts on failure if artifacts_dir is set
             let artifacts = session
                 .collect_failure_artifacts(artifacts_dir, "text")
                 .await;
 
             if !artifacts.is_empty() {
-                // Print failure with artifacts and signal that output is complete
                 let failure = FailureWithArtifacts::new(e.to_command_error())
                     .with_artifacts(artifacts.artifacts);
                 print_failure_with_artifacts("text", &failure, format);
@@ -127,11 +198,11 @@ pub async fn execute(
 
 async fn execute_inner(
     session: &SessionHandle,
-    url: &str,
+    target: &ResolvedTarget,
     selector: &str,
     format: OutputFormat,
 ) -> Result<()> {
-    session.goto_unless_current(url).await?;
+    session.goto_target(&target.target).await?;
 
     let locator = session.page().locator(selector).await;
     let count = locator.count().await?;
@@ -139,7 +210,7 @@ async fn execute_inner(
     if count == 0 {
         let result = ResultBuilder::<TextData>::new("text")
             .inputs(CommandInputs {
-                url: Some(url.to_string()),
+                url: target.url_str().map(String::from),
                 selector: Some(selector.to_string()),
                 ..Default::default()
             })
@@ -162,7 +233,7 @@ async fn execute_inner(
 
     let result = ResultBuilder::new("text")
         .inputs(CommandInputs {
-            url: Some(url.to_string()),
+            url: target.url_str().map(String::from),
             selector: Some(selector.to_string()),
             ..Default::default()
         })
@@ -217,7 +288,6 @@ mod tests {
 
     #[test]
     fn preserves_short_code_snippets() {
-        // Short inline code in articles should be preserved
         assert!(!is_garbage_line("const x = 5;"));
         assert!(!is_garbage_line("function hello() {}"));
     }
@@ -232,7 +302,6 @@ mod tests {
     fn filter_garbage_preserves_structure() {
         let input = "Welcome\n\nfunction(a,b){return a}\n\nGoodbye";
         let output = filter_garbage(input);
-        // Garbage removed, consecutive blank lines collapsed
         assert_eq!(output, "Welcome\n\nGoodbye");
     }
 
@@ -241,5 +310,13 @@ mod tests {
         let input = "Hello\n\n\n\nWorld";
         let output = filter_garbage(input);
         assert_eq!(output, "Hello\n\nWorld");
+    }
+
+    #[test]
+    fn text_raw_deserialize() {
+        let json = r#"{"url": "https://example.com", "selector": "main"}"#;
+        let raw: TextRaw = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.url, Some("https://example.com".into()));
+        assert_eq!(raw.selector, Some("main".into()));
     }
 }
