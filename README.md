@@ -104,12 +104,12 @@ npx playwright install chromium
 
 ## Crates
 
-| Crate | Description |
-|-------|-------------|
-| `pw-rs` | Core library: Playwright client, browser/context/page APIs |
-| `pw-cli` | CLI tool (`pw` command) |
-| `pw-protocol` | Wire protocol types |
-| `pw-runtime` | Playwright driver management |
+| Crate         | Description                                                |
+| ------------- | ---------------------------------------------------------- |
+| `pw-rs`       | Core library: Playwright client, browser/context/page APIs |
+| `pw-cli`      | CLI tool (`pw` command)                                    |
+| `pw-protocol` | Wire protocol types                                        |
+| `pw-runtime`  | Playwright driver management                               |
 
 ## Development
 

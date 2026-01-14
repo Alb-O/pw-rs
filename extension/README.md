@@ -78,13 +78,16 @@ pw --auth github.json navigate https://github.com/settings
 ## Troubleshooting
 
 **"Failed to connect"**
+
 - Make sure `pw auth listen` is running
 - Check the server URL matches (default port is 9271)
 
 **"Authentication rejected"**
+
 - Token may have been mistyped - copy it again from the terminal
 - The server may have restarted - get a new token
 
 **"No cookies found"**
+
 - Make sure you're logged into the site in Chrome
 - Some sites use different cookie domains (try adding both `example.com` and `www.example.com`)

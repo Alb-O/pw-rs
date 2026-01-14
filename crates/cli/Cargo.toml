@@ -26,16 +26,16 @@ pw = { package = "pw-rs", path = "../core" }
 pw-protocol = { path = "../protocol" }
 regex-lite = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
-which = "7"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream = "0.1"
 toon = "0.1"
-url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "ansi"] }
+url = "2"
+which = "7"
 
 [dev-dependencies]
 tempfile = "3"

@@ -2,8 +2,8 @@
 resolver = "3"
 members = [
     "crates/cli",
-    "crates/protocol",
     "crates/core",
+    "crates/protocol",
     "crates/runtime",
     "extension/background",
 ]

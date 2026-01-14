@@ -32,7 +32,7 @@ Responses are streamed as NDJSON with request ID correlation:
 - `fill` - args: `url`, `selector`, `text`
 - `wait` - args: `url`, `condition`
 
-## Page Commands (page.*)
+## Page Commands (page.\*)
 
 - `page.text` - args: `url`, `selector`
 - `page.html` - args: `url`, `selector`

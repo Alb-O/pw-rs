@@ -69,8 +69,8 @@ ChatGPT uses Radix UI dropdowns that close between separate `pw` commands. Use a
 When "Thinking" mode is selected:
 
 1. Header changes to "ChatGPT 5.2 Thinking"
-1. "Extended thinking" pill appears in the composer area
-1. The pill has class `__composer-pill` and `aria-haspopup="menu"`
+2. "Extended thinking" pill appears in the composer area
+3. The pill has class `__composer-pill` and `aria-haspopup="menu"`
 
 ## Detecting Streaming State
 

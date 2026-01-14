@@ -63,6 +63,7 @@ pw --har network.har --har-omit-content navigate https://example.com
 ```
 
 HAR options:
+
 - `--har <FILE>` - Path to save HAR file
 - `--har-content <POLICY>` - Content policy: `embed` (inline base64), `attach` (separate files), `omit` (default: attach)
 - `--har-mode <MODE>` - Recording mode: `full` (all content) or `minimal` (essential for replay) (default: full)
@@ -88,10 +89,12 @@ pw --block "*://ads.*/**" --har network.har navigate https://example.com
 ```
 
 Block options:
+
 - `--block <PATTERN>` - URL glob pattern to block (can be used multiple times)
 - `--block-file <FILE>` - Load patterns from file (one per line, `#` comments supported)
 
 Common patterns for blocking:
+
 - `*://ads.*/**` - Ad domains
 - `*://tracker.*/**` - Trackers
 - `**/*.gif` - GIF images
@@ -133,6 +136,7 @@ When downloads are tracked, the `click` command includes download information in
 ```
 
 Download options:
+
 - `--downloads-dir <DIR>` - Directory to save downloaded files (enables download tracking)
 
 ## Output Format
@@ -176,21 +180,21 @@ Disable caching with `--no-context` for isolated commands.
 
 ## Flags Reference
 
-| Flag               | Description                         |
-| ------------------ | ----------------------------------- |
-| `--no-daemon`      | Don't use daemon even if running    |
-| `--no-context`     | Don't read/write context cache      |
-| `--auth <file>`    | Use saved authentication state      |
-| `--headful`        | Run browser with visible window     |
-| `--browser <kind>` | chromium (default), firefox, webkit |
-| `-v` / `-vv`       | Verbose / debug output              |
-| `--har <file>`     | Record network activity to HAR file |
-| `--har-content`    | HAR content: embed, attach, omit    |
-| `--har-mode`       | HAR mode: full, minimal             |
-| `--block <pattern>`| Block requests matching URL pattern |
-| `--block-file`     | Load block patterns from file       |
-| `--downloads-dir`  | Directory to save downloaded files  |
-| `--timeout <ms>`   | Timeout for navigation (ms)         |
+| Flag                | Description                         |
+| ------------------- | ----------------------------------- |
+| `--no-daemon`       | Don't use daemon even if running    |
+| `--no-context`      | Don't read/write context cache      |
+| `--auth <file>`     | Use saved authentication state      |
+| `--headful`         | Run browser with visible window     |
+| `--browser <kind>`  | chromium (default), firefox, webkit |
+| `-v` / `-vv`        | Verbose / debug output              |
+| `--har <file>`      | Record network activity to HAR file |
+| `--har-content`     | HAR content: embed, attach, omit    |
+| `--har-mode`        | HAR mode: full, minimal             |
+| `--block <pattern>` | Block requests matching URL pattern |
+| `--block-file`      | Load block patterns from file       |
+| `--downloads-dir`   | Directory to save downloaded files  |
+| `--timeout <ms>`    | Timeout for navigation (ms)         |
 
 ## Best Practices for Agents
 

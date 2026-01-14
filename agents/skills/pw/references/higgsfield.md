@@ -42,8 +42,8 @@ Options:
 Both commands automatically:
 
 1. Check for "Unlimited" toggle on the page
-1. Enable it if disabled
-1. Error if toggle not found (unless `--spend` flag used)
+2. Enable it if disabled
+3. Error if toggle not found (unless `--spend` flag used)
 
 This prevents accidental credit usage when the free Unlimited mode should be available.
 

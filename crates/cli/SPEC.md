@@ -27,9 +27,9 @@ CLI (Rust) --[stdio]--> Node.js Driver --[CDP/WS]--> Browser
 When the CLI exits:
 
 1. Stdio pipes close
-1. Node.js driver sees EOF and exits
-1. Driver sends close command to browser
-1. Browser exits
+2. Node.js driver sees EOF and exits
+3. Driver sends close command to browser
+4. Browser exits
 
 Even with `keep_server_running=true`, we only prevent explicit process kill - the driver
 still exits when its stdin closes.
@@ -86,20 +86,20 @@ Added infrastructure for CDP-based session reuse, though true persistence requir
 #### Completed Tasks
 
 1. **LaunchOptions.remote_debugging_port** - Added to pw-core, injects `--remote-debugging-port` into Chrome args
-1. **BrowserSession.launch_persistent()** - Launches with CDP port and disables signal handlers
-1. **SessionBroker** - Stores/loads CDP endpoint in session descriptor
-1. **SessionRequest** - Added `remote_debugging_port` and `keep_browser_running` fields
-1. **session start** - Uses CDP port (9222 + hash(context) % 1000)
-1. **session stop** - Closes browser via CDP connection
+2. **BrowserSession.launch_persistent()** - Launches with CDP port and disables signal handlers
+3. **SessionBroker** - Stores/loads CDP endpoint in session descriptor
+4. **SessionRequest** - Added `remote_debugging_port` and `keep_browser_running` fields
+5. **session start** - Uses CDP port (9222 + hash(context) % 1000)
+6. **session stop** - Closes browser via CDP connection
 
 #### Limitation: Browser Exits on CLI Exit
 
 The current implementation cannot keep the browser running after CLI exit because:
 
 1. Playwright driver communicates via stdio
-1. When CLI exits, stdio closes
-1. Driver exits on stdin EOF
-1. Driver closes browser on exit
+2. When CLI exits, stdio closes
+3. Driver exits on stdin EOF
+4. Driver closes browser on exit
 
 **Workaround**: Use `pw session start` in a terminal you keep open, or proceed to Phase 4.
 
@@ -328,15 +328,15 @@ pw session status
 ### Edge Cases
 
 1. **Stale descriptor**: Kill browser manually, run command → should detect and launch fresh
-1. **Port conflict**: Start two sessions → should use different ports
-1. **Context isolation**: `--context a` and `--context b` → separate browsers
-1. **Crash recovery**: Browser crashes → next command detects and relaunches
+2. **Port conflict**: Start two sessions → should use different ports
+3. **Context isolation**: `--context a` and `--context b` → separate browsers
+4. **Crash recovery**: Browser crashes → next command detects and relaunches
 
 ______________________________________________________________________
 
 ## Open Questions
 
 1. **Port allocation**: Fixed port per context vs dynamic with port file?
-1. **Browser reuse scope**: Per-context or global pool?
-1. **Auth state**: Reload `--auth` file on reconnect or cache in browser?
-1. **Headless→Headful**: Can we switch modes on reconnect? (Likely no)
+2. **Browser reuse scope**: Per-context or global pool?
+3. **Auth state**: Reload `--auth` file on reconnect or cache in browser?
+4. **Headless→Headful**: Can we switch modes on reconnect? (Likely no)

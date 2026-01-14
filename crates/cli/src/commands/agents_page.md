@@ -36,6 +36,7 @@ pw page snapshot --max-text-length 10000          # increase text limit
 ```
 
 This is ideal for AI agents that need full page context without multiple round-trips. The output includes:
+
 - Page URL and title
 - Viewport dimensions
 - All interactive elements (buttons, links, inputs) with stable selectors

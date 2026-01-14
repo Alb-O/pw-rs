@@ -82,6 +82,7 @@ extension/     # Browser extension (wasm)
 ## Imports
 
 Order imports in groups separated by blank lines:
+
 1. Standard library (`std::`)
 2. External crates
 3. Workspace crates (`pw::`, `pw_protocol::`, `pw_runtime::`)
@@ -136,6 +137,7 @@ use crate::error::Result;
 ## Commit Messages
 
 Use conventional commits:
+
 - `feat:` new features
 - `fix:` bug fixes
 - `refactor:` code changes without behavior changes
@@ -143,6 +145,7 @@ Use conventional commits:
 - `test:` adding/updating tests
 
 Examples from this repo:
+
 ```
 feat: add pw browser automation skill for AI agents
 refactor: organize page content commands under 'page' subcommand
