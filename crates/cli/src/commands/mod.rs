@@ -2,23 +2,16 @@ mod agents;
 mod auth;
 mod click;
 mod connect;
-mod console;
-mod coords;
 mod daemon;
-mod elements;
-mod eval;
 mod fill;
-mod html;
 pub mod init;
 mod navigate;
+mod page;
 mod protect;
-mod read;
 mod run;
 mod screenshot;
 mod session;
-mod snapshot;
 mod tabs;
-mod text;
 mod wait;
 
 use crate::cli::{
@@ -351,11 +344,12 @@ async fn dispatch_page_action(
             timeout_ms,
             url_flag,
         } => {
-            let raw = console::ConsoleRaw::from_cli(url_flag.or(url), timeout_ms);
+            let raw = page::console::ConsoleRaw::from_cli(url_flag.or(url), timeout_ms);
             let env = ResolveEnv::new(ctx_state, has_cdp, "console");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome = console::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            let outcome =
+                page::console::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, None);
             }
@@ -380,11 +374,12 @@ async fn dispatch_page_action(
             } else {
                 expression_flag.or(expression)
             };
-            let raw = eval::EvalRaw::from_cli(url, url_flag, final_expr.clone(), None);
+            let raw = page::eval::EvalRaw::from_cli(url, url_flag, final_expr.clone(), None);
             let env = ResolveEnv::new(ctx_state, has_cdp, "eval");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome = eval::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            let outcome =
+                page::eval::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, None);
             }
@@ -396,11 +391,12 @@ async fn dispatch_page_action(
             url_flag,
             selector_flag,
         } => {
-            let raw = html::HtmlRaw::from_cli(url, selector, url_flag, selector_flag);
+            let raw = page::html::HtmlRaw::from_cli(url, selector, url_flag, selector_flag);
             let env = ResolveEnv::new(ctx_state, has_cdp, "html");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome = html::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            let outcome =
+                page::html::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
             }
@@ -412,12 +408,14 @@ async fn dispatch_page_action(
             url_flag,
             selector_flag,
         } => {
-            let raw = coords::CoordsRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
+            let raw =
+                page::coords::CoordsRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
             let env = ResolveEnv::new(ctx_state, has_cdp, "coords");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
             let outcome =
-                coords::execute_single_resolved(&resolved, ctx, broker, format, last_url).await;
+                page::coords::execute_single_resolved(&resolved, ctx, broker, format, last_url)
+                    .await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
             }
@@ -429,12 +427,13 @@ async fn dispatch_page_action(
             url_flag,
             selector_flag,
         } => {
-            let raw = coords::CoordsAllRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
+            let raw =
+                page::coords::CoordsAllRaw::from_cli(url_flag.or(url), selector_flag.or(selector));
             let env = ResolveEnv::new(ctx_state, has_cdp, "coords-all");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
             let outcome =
-                coords::execute_all_resolved(&resolved, ctx, broker, format, last_url).await;
+                page::coords::execute_all_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
             }
@@ -446,13 +445,19 @@ async fn dispatch_page_action(
             url_flag,
             selector_flag,
         } => {
-            let raw = text::TextRaw::from_cli(url, selector, url_flag, selector_flag);
+            let raw = page::text::TextRaw::from_cli(url, selector, url_flag, selector_flag);
             let env = ResolveEnv::new(ctx_state, has_cdp, "text");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome =
-                text::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
-                    .await;
+            let outcome = page::text::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                format,
+                artifacts_dir,
+                last_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, Some(&resolved.selector));
             }
@@ -464,11 +469,12 @@ async fn dispatch_page_action(
             output_format,
             metadata,
         } => {
-            let raw = read::ReadRaw::from_cli(url_flag.or(url), output_format, metadata);
+            let raw = page::read::ReadRaw::from_cli(url_flag.or(url), output_format, metadata);
             let env = ResolveEnv::new(ctx_state, has_cdp, "read");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome = read::execute_resolved(&resolved, ctx, broker, format, last_url).await;
+            let outcome =
+                page::read::execute_resolved(&resolved, ctx, broker, format, last_url).await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, None);
             }
@@ -480,13 +486,19 @@ async fn dispatch_page_action(
             timeout_ms,
             url_flag,
         } => {
-            let raw = elements::ElementsRaw::from_cli(url_flag.or(url), wait, timeout_ms);
+            let raw = page::elements::ElementsRaw::from_cli(url_flag.or(url), wait, timeout_ms);
             let env = ResolveEnv::new(ctx_state, has_cdp, "elements");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome =
-                elements::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
-                    .await;
+            let outcome = page::elements::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                format,
+                artifacts_dir,
+                last_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, None);
             }
@@ -499,7 +511,7 @@ async fn dispatch_page_action(
             full,
             max_text_length,
         } => {
-            let raw = snapshot::SnapshotRaw::from_cli(
+            let raw = page::snapshot::SnapshotRaw::from_cli(
                 url,
                 url_flag,
                 text_only,
@@ -509,9 +521,15 @@ async fn dispatch_page_action(
             let env = ResolveEnv::new(ctx_state, has_cdp, "snapshot");
             let resolved = raw.resolve(&env)?;
             let last_url = ctx_state.last_url();
-            let outcome =
-                snapshot::execute_resolved(&resolved, ctx, broker, format, artifacts_dir, last_url)
-                    .await;
+            let outcome = page::snapshot::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                format,
+                artifacts_dir,
+                last_url,
+            )
+            .await;
             if outcome.is_ok() {
                 ctx_state.record_from_target(&resolved.target, None);
             }

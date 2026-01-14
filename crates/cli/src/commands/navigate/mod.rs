@@ -1,6 +1,6 @@
 //! Navigation command.
 
-use crate::commands::snapshot::{
+use crate::commands::page::snapshot::{
     EXTRACT_ELEMENTS_JS, EXTRACT_META_JS, EXTRACT_TEXT_JS, PageMeta, RawElement,
 };
 use crate::context::CommandContext;

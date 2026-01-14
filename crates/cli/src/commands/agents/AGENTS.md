@@ -206,9 +206,9 @@ Disable caching with `--no-context` for isolated commands.
 
 Documentation is embedded into `pw agents <subcommand>` and prints when run:
 
-- [pw agents auth](agents_auth.md) - Authentication and session management
-- [pw agents connect](agents_connect.md) - Browser connection options
-- [pw agents daemon](agents_daemon.md) - Daemon lifecycle management
-- [pw agents page](agents_page.md) - Page content extraction commands
-- [pw agents protect](agents_protect.md) - Request blocking and protection
-- [pw agents run](agents_run.md) - Running JavaScript in the browser
+- [pw agents auth](../auth/AGENTS.md) - Authentication and session management
+- [pw agents connect](../connect/AGENTS.md) - Browser connection options
+- [pw agents daemon](../daemon/AGENTS.md) - Daemon lifecycle management
+- [pw agents page](../page/AGENTS.md) - Page content extraction commands
+- [pw agents protect](../protect/AGENTS.md) - Request blocking and protection
+- [pw agents run](../run/AGENTS.md) - Running JavaScript in the browser
