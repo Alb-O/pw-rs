@@ -2,13 +2,13 @@
 
 use crate::error::Result;
 
-const DOC_PW: &str = include_str!("agents_pw.md");
-const DOC_AUTH: &str = include_str!("agents_auth.md");
-const DOC_CONNECT: &str = include_str!("agents_connect.md");
-const DOC_DAEMON: &str = include_str!("agents_daemon.md");
-const DOC_PAGE: &str = include_str!("agents_page.md");
-const DOC_PROTECT: &str = include_str!("agents_protect.md");
-const DOC_RUN: &str = include_str!("agents_run.md");
+const DOC_PW: &str = include_str!("AGENTS.md");
+const DOC_AUTH: &str = include_str!("../auth/AGENTS.md");
+const DOC_CONNECT: &str = include_str!("../connect/AGENTS.md");
+const DOC_DAEMON: &str = include_str!("../daemon/AGENTS.md");
+const DOC_PAGE: &str = include_str!("../page/AGENTS.md");
+const DOC_PROTECT: &str = include_str!("../protect/AGENTS.md");
+const DOC_RUN: &str = include_str!("../run/AGENTS.md");
 
 /// Prints the main pw documentation for agents.
 pub fn show_main() -> Result<()> {

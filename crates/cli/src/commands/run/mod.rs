@@ -86,10 +86,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::{
-    click, console, coords, elements, eval, fill, html, navigate, read, screenshot, snapshot, text,
-    wait,
-};
+use super::{click, fill, navigate, page, screenshot, wait};
 
 /// A batch request parsed from stdin.
 ///
@@ -404,7 +401,7 @@ async fn execute_batch_command(
         }
 
         "page.text" => {
-            let raw: text::TextRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::text::TextRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "page.text", "INVALID_INPUT", &e.to_string());
@@ -420,7 +417,7 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match text::execute_resolved(
+            match page::text::execute_resolved(
                 &resolved,
                 ctx,
                 broker,
@@ -440,7 +437,7 @@ async fn execute_batch_command(
 
         "page.html" => {
             // Deserialize raw args from JSON
-            let raw: html::HtmlRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::html::HtmlRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "page.html", "INVALID_INPUT", &e.to_string());
@@ -458,8 +455,14 @@ async fn execute_batch_command(
 
             // Execute with resolved args
             let last_url = ctx_state.last_url();
-            match html::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
-                .await
+            match page::html::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                OutputFormat::Ndjson,
+                last_url,
+            )
+            .await
             {
                 Ok(()) => {
                     // Record context from typed target
@@ -521,7 +524,7 @@ async fn execute_batch_command(
         }
 
         "page.eval" => {
-            let raw: eval::EvalRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::eval::EvalRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "page.eval", "INVALID_INPUT", &e.to_string());
@@ -537,8 +540,14 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match eval::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
-                .await
+            match page::eval::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                OutputFormat::Ndjson,
+                last_url,
+            )
+            .await
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
@@ -597,7 +606,7 @@ async fn execute_batch_command(
         }
 
         "page.elements" | "page.els" => {
-            let raw: elements::ElementsRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::elements::ElementsRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(
@@ -623,7 +632,7 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match elements::execute_resolved(
+            match page::elements::execute_resolved(
                 &resolved,
                 ctx,
                 broker,
@@ -644,7 +653,7 @@ async fn execute_batch_command(
         }
 
         "page.snapshot" | "page.snap" => {
-            let raw: snapshot::SnapshotRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::snapshot::SnapshotRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(
@@ -670,7 +679,7 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match snapshot::execute_resolved(
+            match page::snapshot::execute_resolved(
                 &resolved,
                 ctx,
                 broker,
@@ -691,7 +700,7 @@ async fn execute_batch_command(
         }
 
         "page.console" | "page.con" => {
-            let raw: console::ConsoleRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::console::ConsoleRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(
@@ -717,8 +726,14 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match console::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
-                .await
+            match page::console::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                OutputFormat::Ndjson,
+                last_url,
+            )
+            .await
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
@@ -731,7 +746,7 @@ async fn execute_batch_command(
         }
 
         "page.read" => {
-            let raw: read::ReadRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::read::ReadRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(id, "page.read", "INVALID_INPUT", &e.to_string());
@@ -747,8 +762,14 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match read::execute_resolved(&resolved, ctx, broker, OutputFormat::Ndjson, last_url)
-                .await
+            match page::read::execute_resolved(
+                &resolved,
+                ctx,
+                broker,
+                OutputFormat::Ndjson,
+                last_url,
+            )
+            .await
             {
                 Ok(()) => {
                     ctx_state.record_from_target(&resolved.target, None);
@@ -759,7 +780,7 @@ async fn execute_batch_command(
         }
 
         "page.coords" => {
-            let raw: coords::CoordsRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::coords::CoordsRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(
@@ -785,7 +806,7 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match coords::execute_single_resolved(
+            match page::coords::execute_single_resolved(
                 &resolved,
                 ctx,
                 broker,
@@ -803,7 +824,7 @@ async fn execute_batch_command(
         }
 
         "page.coords_all" => {
-            let raw: coords::CoordsAllRaw = match serde_json::from_value(args.clone()) {
+            let raw: page::coords::CoordsAllRaw = match serde_json::from_value(args.clone()) {
                 Ok(r) => r,
                 Err(e) => {
                     return BatchResponse::error(
@@ -829,7 +850,7 @@ async fn execute_batch_command(
             };
 
             let last_url = ctx_state.last_url();
-            match coords::execute_all_resolved(
+            match page::coords::execute_all_resolved(
                 &resolved,
                 ctx,
                 broker,
