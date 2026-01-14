@@ -201,3 +201,14 @@ Disable caching with `--no-context` for isolated commands.
 1. **Use context caching**: Let URLs and selectors carry over between related commands
 2. **Parse JSON output**: All commands return structured JSON for reliable parsing
 3. **Handle errors gracefully**: Check `ok` field before accessing `data`
+
+## Further Reading
+
+Documentation is embedded into `pw agents <subcommand>` and prints when run:
+
+- [pw agents auth](agents_auth.md) - Authentication and session management
+- [pw agents connect](agents_connect.md) - Browser connection options
+- [pw agents daemon](agents_daemon.md) - Daemon lifecycle management
+- [pw agents page](agents_page.md) - Page content extraction commands
+- [pw agents protect](agents_protect.md) - Request blocking and protection
+- [pw agents run](agents_run.md) - Running JavaScript in the browser
