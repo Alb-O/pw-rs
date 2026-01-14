@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
-use crate::browser::{BrowserSession, DownloadInfo};
+use crate::browser::{BrowserSession, DownloadInfo, SessionOptions};
 use crate::context::{BlockConfig, CommandContext, DownloadConfig, HarConfig};
 use crate::daemon;
 use crate::error::{PwError, Result};
@@ -207,19 +207,19 @@ impl<'a> SessionBroker<'a> {
                             pid = descriptor.pid,
                             "reusing existing browser via cdp"
                         );
-                        let session = BrowserSession::with_options(
-                            request.wait_until,
-                            storage_state.clone(),
-                            request.headless,
-                            request.browser,
-                            Some(endpoint),
-                            false,
-                            request.protected_urls,
-                            request.preferred_url,
-                            request.har_config,
-                            request.block_config,
-                            request.download_config,
-                        )
+                        let session = BrowserSession::with_options(SessionOptions {
+                            wait_until: request.wait_until,
+                            storage_state: storage_state.clone(),
+                            headless: request.headless,
+                            browser_kind: request.browser,
+                            cdp_endpoint: Some(endpoint),
+                            launch_server: false,
+                            protected_urls: request.protected_urls,
+                            preferred_url: request.preferred_url,
+                            har_config: request.har_config,
+                            block_config: request.block_config,
+                            download_config: request.download_config,
+                        })
                         .await?;
                         return Ok(SessionHandle {
                             session,
@@ -269,19 +269,19 @@ impl<'a> SessionBroker<'a> {
         }
 
         let (session, source) = if let Some(endpoint) = daemon_endpoint.as_deref() {
-            let mut s = BrowserSession::with_options(
-                request.wait_until,
-                storage_state.clone(),
-                request.headless,
-                request.browser,
-                Some(endpoint),
-                false,
-                request.protected_urls,
-                request.preferred_url,
-                request.har_config,
-                request.block_config,
-                request.download_config,
-            )
+            let mut s = BrowserSession::with_options(SessionOptions {
+                wait_until: request.wait_until,
+                storage_state: storage_state.clone(),
+                headless: request.headless,
+                browser_kind: request.browser,
+                cdp_endpoint: Some(endpoint),
+                launch_server: false,
+                protected_urls: request.protected_urls,
+                preferred_url: request.preferred_url,
+                har_config: request.har_config,
+                block_config: request.block_config,
+                download_config: request.download_config,
+            })
             .await?;
             // Daemon manages the browser lifecycle - don't close it on session close
             s.set_keep_browser_running(true);
@@ -312,19 +312,19 @@ impl<'a> SessionBroker<'a> {
             .await?;
             (s, SessionSource::BrowserServer)
         } else {
-            let s = BrowserSession::with_options(
-                request.wait_until,
+            let s = BrowserSession::with_options(SessionOptions {
+                wait_until: request.wait_until,
                 storage_state,
-                request.headless,
-                request.browser,
-                request.cdp_endpoint,
-                false,
-                request.protected_urls,
-                request.preferred_url,
-                request.har_config,
-                request.block_config,
-                request.download_config,
-            )
+                headless: request.headless,
+                browser_kind: request.browser,
+                cdp_endpoint: request.cdp_endpoint,
+                launch_server: false,
+                protected_urls: request.protected_urls,
+                preferred_url: request.preferred_url,
+                har_config: request.har_config,
+                block_config: request.block_config,
+                download_config: request.download_config,
+            })
             .await?;
             // Determine source based on whether we connected via CDP or launched fresh
             let src = if request.cdp_endpoint.is_some() {

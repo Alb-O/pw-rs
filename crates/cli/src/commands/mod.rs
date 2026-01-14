@@ -300,7 +300,17 @@ async fn dispatch_command_inner(
             profile,
         } => {
             connect::run(
-                ctx_state, format, endpoint, clear, launch, discover, kill, port, profile,
+                ctx_state,
+                format,
+                connect::ConnectOptions {
+                    endpoint,
+                    clear,
+                    launch,
+                    discover,
+                    kill,
+                    port,
+                    profile,
+                },
             )
             .await
         }

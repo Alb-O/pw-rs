@@ -6,7 +6,7 @@
 
 use crate::output::{Artifact, ArtifactType};
 use pw::Page;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, warn};
 
@@ -78,14 +78,14 @@ pub async fn collect_failure_artifacts(
     collected
 }
 
-async fn capture_screenshot(page: &Page, path: &PathBuf) -> Option<Artifact> {
+async fn capture_screenshot(page: &Page, path: &Path) -> Option<Artifact> {
     match page.screenshot_to_file(path, None).await {
         Ok(bytes) => {
             let size_bytes = Some(bytes.len() as u64);
             debug!("Captured failure screenshot: {}", path.display());
             Some(Artifact {
                 artifact_type: ArtifactType::Screenshot,
-                path: path.clone(),
+                path: path.to_path_buf(),
                 size_bytes,
             })
         }
@@ -96,8 +96,7 @@ async fn capture_screenshot(page: &Page, path: &PathBuf) -> Option<Artifact> {
     }
 }
 
-async fn capture_html(page: &Page, path: &PathBuf) -> Option<Artifact> {
-    // Get full page HTML via locator("html")
+async fn capture_html(page: &Page, path: &Path) -> Option<Artifact> {
     let locator = page.locator("html").await;
     match locator.inner_html().await {
         Ok(html) => match std::fs::write(path, &html) {
@@ -106,7 +105,7 @@ async fn capture_html(page: &Page, path: &PathBuf) -> Option<Artifact> {
                 debug!("Captured failure HTML: {}", path.display());
                 Some(Artifact {
                     artifact_type: ArtifactType::Html,
-                    path: path.clone(),
+                    path: path.to_path_buf(),
                     size_bytes,
                 })
             }
@@ -124,6 +123,8 @@ async fn capture_html(page: &Page, path: &PathBuf) -> Option<Artifact> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]

@@ -68,6 +68,22 @@ struct HarRecording {
     path: std::path::PathBuf,
 }
 
+/// Configuration options for creating a browser session.
+#[derive(Debug, Clone)]
+pub struct SessionOptions<'a> {
+    pub wait_until: WaitUntil,
+    pub storage_state: Option<StorageState>,
+    pub headless: bool,
+    pub browser_kind: BrowserKind,
+    pub cdp_endpoint: Option<&'a str>,
+    pub launch_server: bool,
+    pub protected_urls: &'a [String],
+    pub preferred_url: Option<&'a str>,
+    pub har_config: &'a HarConfig,
+    pub block_config: &'a BlockConfig,
+    pub download_config: &'a DownloadConfig,
+}
+
 pub struct BrowserSession {
     _playwright: Playwright,
     browser: pw::Browser,
@@ -93,19 +109,22 @@ pub struct BrowserSession {
 
 impl BrowserSession {
     pub async fn new(wait_until: WaitUntil) -> Result<Self> {
-        Self::with_options(
+        let har_config = HarConfig::default();
+        let block_config = BlockConfig::default();
+        let download_config = DownloadConfig::default();
+        Self::with_options(SessionOptions {
             wait_until,
-            None,
-            true,
-            BrowserKind::default(),
-            None,
-            false,
-            &[],
-            None,
-            &HarConfig::default(),
-            &BlockConfig::default(),
-            &DownloadConfig::default(),
-        )
+            storage_state: None,
+            headless: true,
+            browser_kind: BrowserKind::default(),
+            cdp_endpoint: None,
+            launch_server: false,
+            protected_urls: &[],
+            preferred_url: None,
+            har_config: &har_config,
+            block_config: &block_config,
+            download_config: &download_config,
+        })
         .await
     }
 
@@ -131,38 +150,43 @@ impl BrowserSession {
                 Self::with_auth_file_and_browser(wait_until, path, browser_kind, cdp_endpoint).await
             }
             None => {
-                Self::with_options(
+                let har_config = HarConfig::default();
+                let block_config = BlockConfig::default();
+                let download_config = DownloadConfig::default();
+                Self::with_options(SessionOptions {
                     wait_until,
-                    None,
-                    true,
+                    storage_state: None,
+                    headless: true,
                     browser_kind,
                     cdp_endpoint,
-                    false,
-                    &[],
-                    None,
-                    &HarConfig::default(),
-                    &BlockConfig::default(),
-                    &DownloadConfig::default(),
-                )
+                    launch_server: false,
+                    protected_urls: &[],
+                    preferred_url: None,
+                    har_config: &har_config,
+                    block_config: &block_config,
+                    download_config: &download_config,
+                })
                 .await
             }
         }
     }
 
-    /// Create a new session with optional storage state and headless mode
-    pub async fn with_options(
-        wait_until: WaitUntil,
-        storage_state: Option<StorageState>,
-        headless: bool,
-        browser_kind: BrowserKind,
-        cdp_endpoint: Option<&str>,
-        launch_server: bool,
-        protected_urls: &[String],
-        preferred_url: Option<&str>,
-        har_config: &HarConfig,
-        block_config: &BlockConfig,
-        download_config: &DownloadConfig,
-    ) -> Result<Self> {
+    /// Create a new session with the given options.
+    pub async fn with_options(opts: SessionOptions<'_>) -> Result<Self> {
+        let SessionOptions {
+            wait_until,
+            storage_state,
+            headless,
+            browser_kind,
+            cdp_endpoint,
+            launch_server,
+            protected_urls,
+            preferred_url,
+            har_config,
+            block_config,
+            download_config,
+        } = opts;
+
         debug!(
             target = "pw",
             browser = %browser_kind,
@@ -459,19 +483,22 @@ impl BrowserSession {
     ) -> Result<Self> {
         let storage_state = StorageState::from_file(auth_file)
             .map_err(|e| PwError::BrowserLaunch(format!("Failed to load auth file: {}", e)))?;
-        Self::with_options(
+        let har_config = HarConfig::default();
+        let block_config = BlockConfig::default();
+        let download_config = DownloadConfig::default();
+        Self::with_options(SessionOptions {
             wait_until,
-            Some(storage_state),
-            true,
+            storage_state: Some(storage_state),
+            headless: true,
             browser_kind,
             cdp_endpoint,
-            false,
-            &[],
-            None,
-            &HarConfig::default(),
-            &BlockConfig::default(),
-            &DownloadConfig::default(),
-        )
+            launch_server: false,
+            protected_urls: &[],
+            preferred_url: None,
+            har_config: &har_config,
+            block_config: &block_config,
+            download_config: &download_config,
+        })
         .await
     }
 
@@ -481,19 +508,22 @@ impl BrowserSession {
         headless: bool,
         browser_kind: BrowserKind,
     ) -> Result<Self> {
-        Self::with_options(
+        let har_config = HarConfig::default();
+        let block_config = BlockConfig::default();
+        let download_config = DownloadConfig::default();
+        Self::with_options(SessionOptions {
             wait_until,
             storage_state,
             headless,
             browser_kind,
-            None,
-            true,
-            &[],
-            None,
-            &HarConfig::default(),
-            &BlockConfig::default(),
-            &DownloadConfig::default(),
-        )
+            cdp_endpoint: None,
+            launch_server: true,
+            protected_urls: &[],
+            preferred_url: None,
+            har_config: &har_config,
+            block_config: &block_config,
+            download_config: &download_config,
+        })
         .await
     }
 
