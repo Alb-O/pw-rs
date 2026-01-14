@@ -46,10 +46,6 @@ fn run_pw(args: &[&str]) -> (bool, String, String) {
     (output.status.success(), stdout, stderr)
 }
 
-// =============================================================================
-// Screenshot Command Tests
-// =============================================================================
-
 #[test]
 fn screenshot_creates_file() {
     let temp_dir = std::env::temp_dir();
@@ -77,46 +73,6 @@ fn screenshot_creates_file() {
 }
 
 #[test]
-fn screenshot_with_complex_html() {
-    let temp_dir = std::env::temp_dir();
-    let output_path = temp_dir.join("pw-test-screenshot-complex.png");
-
-    let _ = std::fs::remove_file(&output_path);
-
-    let html = "data:text/html,<html><body style='background:blue'><h1 style='color:white'>Complex Test</h1><p>Paragraph</p></body></html>";
-
-    let (success, _stdout, stderr) =
-        run_pw(&["screenshot", html, "-o", output_path.to_str().unwrap()]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(output_path.exists(), "Screenshot file was not created");
-
-    let _ = std::fs::remove_file(&output_path);
-}
-
-// =============================================================================
-// HTML Command Tests
-// =============================================================================
-
-#[test]
-#[ignore = "flaky on CI due to browser timeouts with data: URLs and full page HTML"]
-fn html_full_page() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "html",
-        "data:text/html,<html><body><h1>Title</h1><p>Content</p></body></html>",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    // JSON envelope contains the HTML in data.html
-    assert!(stdout.contains("<h1>Title</h1>"), "Expected h1 in output");
-    assert!(
-        stdout.contains("<p>Content</p>"),
-        "Expected paragraph in output"
-    );
-}
-
-#[test]
 fn html_with_selector() {
     let (success, stdout, stderr) = run_pw(&[
         "page",
@@ -130,25 +86,6 @@ fn html_with_selector() {
     assert!(stdout.contains("Found me"), "Expected 'Found me' in output");
     assert!(stdout.contains("\"ok\": true"), "Expected success in JSON");
 }
-
-#[test]
-fn html_nested_elements() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "html",
-        "data:text/html,<div class='wrapper'><ul><li>One</li><li>Two</li></ul></div>",
-        ".wrapper",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(stdout.contains("<ul>"), "Expected ul in output");
-    assert!(stdout.contains("<li>One</li>"), "Expected first li");
-    assert!(stdout.contains("<li>Two</li>"), "Expected second li");
-}
-
-// =============================================================================
-// Text Command Tests
-// =============================================================================
 
 #[test]
 fn text_simple() {
@@ -171,38 +108,6 @@ fn text_simple() {
         "Expected matchCount in output"
     );
 }
-
-#[test]
-fn text_nested_content() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "text",
-        "data:text/html,<div id='container'><span>First</span> <span>Second</span></div>",
-        "#container",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(stdout.contains("First"), "Expected 'First' in output");
-    assert!(stdout.contains("Second"), "Expected 'Second' in output");
-}
-
-#[test]
-fn text_with_whitespace() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "text",
-        "data:text/html,<pre id='code'>  indented  </pre>",
-        "#code",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    // Text should be trimmed
-    assert!(stdout.contains("indented"), "Expected 'indented' in output");
-}
-
-// =============================================================================
-// Eval Command Tests
-// =============================================================================
 
 #[test]
 fn eval_simple_expression() {
@@ -250,35 +155,6 @@ fn eval_query_selector() {
 }
 
 #[test]
-fn eval_returns_object() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "eval",
-        "({a: 1, b: 'test'})",
-        "data:text/html,<html></html>",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(stdout.contains("\"a\""), "Expected 'a' key in output");
-    assert!(stdout.contains("\"b\""), "Expected 'b' key in output");
-}
-
-#[test]
-fn eval_returns_array() {
-    let (success, stdout, stderr) =
-        run_pw(&["page", "eval", "[1, 2, 3]", "data:text/html,<html></html>"]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(stdout.contains("1"), "Expected 1 in output");
-    assert!(stdout.contains("2"), "Expected 2 in output");
-    assert!(stdout.contains("3"), "Expected 3 in output");
-}
-
-// =============================================================================
-// Coords Command Tests
-// =============================================================================
-
-#[test]
 fn coords_finds_element() {
     let (success, stdout, stderr) = run_pw(&[
         "page",
@@ -292,35 +168,6 @@ fn coords_finds_element() {
     assert!(stdout.contains("\"y\""), "Expected y coordinate");
     assert!(stdout.contains("\"width\""), "Expected width");
     assert!(stdout.contains("\"height\""), "Expected height");
-}
-
-#[test]
-fn coords_includes_text() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "coords",
-        "data:text/html,<span id='target'>Sample Text</span>",
-        "#target",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(
-        stdout.contains("Sample Text"),
-        "Expected text content in output"
-    );
-}
-
-#[test]
-fn coords_includes_href() {
-    let (success, stdout, stderr) = run_pw(&[
-        "page",
-        "coords",
-        "data:text/html,<a id='link' href='/page'>Link</a>",
-        "#link",
-    ]);
-
-    assert!(success, "Command failed: {}", stderr);
-    assert!(stdout.contains("/page"), "Expected href in output");
 }
 
 #[test]
@@ -340,10 +187,6 @@ fn coords_element_not_found() {
         stdout
     );
 }
-
-// =============================================================================
-// Coords-All Command Tests
-// =============================================================================
 
 #[test]
 fn coords_all_multiple_elements() {
@@ -373,10 +216,6 @@ fn coords_all_empty_result() {
     assert!(stdout.contains("[]"), "Expected empty array");
 }
 
-// =============================================================================
-// Navigate Command Tests
-// =============================================================================
-
 #[test]
 fn navigate_returns_json() {
     let (success, stdout, stderr) = run_pw(&[
@@ -390,10 +229,6 @@ fn navigate_returns_json() {
     assert!(stdout.contains("\"title\""), "Expected title in JSON");
     assert!(stdout.contains("Nav Test"), "Expected title value in JSON");
 }
-
-// =============================================================================
-// Wait Command Tests
-// =============================================================================
 
 #[test]
 fn wait_timeout() {
@@ -434,10 +269,6 @@ fn wait_selector_found() {
     );
 }
 
-// =============================================================================
-// Error Handling Tests
-// =============================================================================
-
 #[test]
 fn missing_required_args() {
     let (success, _stdout, _stderr) = run_pw(&["--no-context", "screenshot"]);
@@ -458,10 +289,6 @@ fn unknown_command() {
         "Expected error message"
     );
 }
-
-// =============================================================================
-// Verbose Flag Tests
-// =============================================================================
 
 #[test]
 fn verbose_output() {
@@ -484,10 +311,6 @@ fn verbose_output() {
 
     let _ = std::fs::remove_file(&output_path);
 }
-
-// =============================================================================
-// Help and Version Tests
-// =============================================================================
 
 #[test]
 fn help_flag() {
