@@ -46,24 +46,6 @@ fn run_pw(args: &[&str]) -> (bool, String, String) {
     (output.status.success(), stdout, stderr)
 }
 
-/// Helper to run pw command with text format output
-fn run_pw_text(args: &[&str]) -> (bool, String, String) {
-    clear_context_store();
-
-    let mut all_args = vec!["--format", "text"];
-    all_args.extend(args);
-
-    let output = Command::new(pw_binary())
-        .args(&all_args)
-        .output()
-        .expect("Failed to execute pw");
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    (output.status.success(), stdout, stderr)
-}
-
 // =============================================================================
 // Screenshot Command Tests
 // =============================================================================

@@ -81,6 +81,22 @@ impl DownloadConfig {
     }
 }
 
+/// Configuration for creating a [`CommandContext`].
+#[derive(Debug, Clone, Default)]
+pub struct CommandContextConfig {
+    pub browser: BrowserKind,
+    pub no_project: bool,
+    pub auth_file: Option<PathBuf>,
+    pub cdp_endpoint: Option<String>,
+    pub cdp_endpoint_source: CdpEndpointSource,
+    pub launch_server: bool,
+    pub no_daemon: bool,
+    pub har_config: HarConfig,
+    pub block_config: BlockConfig,
+    pub download_config: DownloadConfig,
+    pub timeout_ms: Option<u64>,
+}
+
 /// Context passed to all pw-cli commands
 #[derive(Debug, Clone)]
 pub struct CommandContext {
@@ -120,19 +136,15 @@ impl CommandContext {
         launch_server: bool,
         no_daemon: bool,
     ) -> Self {
-        Self::with_config(
+        Self::with_config(CommandContextConfig {
             browser,
             no_project,
             auth_file,
             cdp_endpoint,
-            CdpEndpointSource::None,
             launch_server,
             no_daemon,
-            HarConfig::default(),
-            BlockConfig::default(),
-            DownloadConfig::default(),
-            None,
-        )
+            ..Default::default()
+        })
     }
 
     /// Create a new command context with HAR configuration
@@ -145,35 +157,34 @@ impl CommandContext {
         no_daemon: bool,
         har_config: HarConfig,
     ) -> Self {
-        Self::with_config(
+        Self::with_config(CommandContextConfig {
             browser,
             no_project,
             auth_file,
             cdp_endpoint,
-            CdpEndpointSource::None,
             launch_server,
             no_daemon,
             har_config,
-            BlockConfig::default(),
-            DownloadConfig::default(),
-            None,
-        )
+            ..Default::default()
+        })
     }
 
-    /// Create a new command context with all configuration options
-    pub fn with_config(
-        browser: BrowserKind,
-        no_project: bool,
-        auth_file: Option<PathBuf>,
-        cdp_endpoint: Option<String>,
-        cdp_endpoint_source: CdpEndpointSource,
-        launch_server: bool,
-        no_daemon: bool,
-        har_config: HarConfig,
-        block_config: BlockConfig,
-        download_config: DownloadConfig,
-        timeout_ms: Option<u64>,
-    ) -> Self {
+    /// Create a new command context with all configuration options.
+    pub fn with_config(cfg: CommandContextConfig) -> Self {
+        let CommandContextConfig {
+            browser,
+            no_project,
+            auth_file,
+            cdp_endpoint,
+            cdp_endpoint_source,
+            launch_server,
+            no_daemon,
+            har_config,
+            block_config,
+            download_config,
+            timeout_ms,
+        } = cfg;
+
         let project = if no_project { None } else { Project::detect() };
 
         // Resolve auth file path based on project

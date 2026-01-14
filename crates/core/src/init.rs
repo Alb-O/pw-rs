@@ -5,7 +5,7 @@
 
 use crate::{Playwright, Root};
 use pw_runtime::channel_owner::{ChannelOwner, ParentOrConnection};
-use pw_runtime::connection::{Connection, ConnectionLike, ObjectFactory};
+use pw_runtime::connection::{AsyncChannelOwnerResult, Connection, ConnectionLike, ObjectFactory};
 use pw_runtime::{Error, Result};
 use serde_json::Value;
 use std::sync::Arc;
@@ -95,9 +95,7 @@ impl ObjectFactory for DefaultObjectFactory {
         type_name: String,
         guid: Arc<str>,
         initializer: Value,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Arc<dyn ChannelOwner>>> + Send + '_>,
-    > {
+    ) -> AsyncChannelOwnerResult<'_> {
         Box::pin(async move {
             crate::object_factory::create_object(parent, type_name, guid, initializer).await
         })

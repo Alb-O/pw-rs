@@ -12,6 +12,17 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 use tracing::debug;
 
+/// Options for the connect command.
+pub struct ConnectOptions {
+    pub endpoint: Option<String>,
+    pub clear: bool,
+    pub launch: bool,
+    pub discover: bool,
+    pub kill: bool,
+    pub port: u16,
+    pub profile: Option<String>,
+}
+
 /// Response from Chrome DevTools Protocol /json/version endpoint
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -302,15 +313,18 @@ async fn kill_chrome(port: u16) -> Result<Option<String>> {
 pub async fn run(
     ctx_state: &mut ContextState,
     format: OutputFormat,
-    endpoint: Option<String>,
-    clear: bool,
-    launch: bool,
-    discover: bool,
-    kill: bool,
-    port: u16,
-    profile: Option<String>,
+    opts: ConnectOptions,
 ) -> Result<()> {
-    // Kill Chrome on the debugging port
+    let ConnectOptions {
+        endpoint,
+        clear,
+        launch,
+        discover,
+        kill,
+        port,
+        profile,
+    } = opts;
+
     if kill {
         match kill_chrome(port).await? {
             Some(pids) => {

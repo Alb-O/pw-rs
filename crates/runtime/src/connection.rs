@@ -69,11 +69,7 @@ pub trait ConnectionLike: Send + Sync {
     /// after the response).
     ///
     /// Uses notification-based waiting rather than polling for efficiency.
-    fn wait_for_object(
-        &self,
-        guid: &str,
-        timeout: Duration,
-    ) -> Pin<Box<dyn Future<Output = Result<Arc<dyn ChannelOwner>>> + Send + '_>>;
+    fn wait_for_object(&self, guid: &str, timeout: Duration) -> AsyncChannelOwnerResult<'_>;
 }
 
 /// Type alias for complex async return type
@@ -102,7 +98,7 @@ pub trait ObjectFactory: Send + Sync {
         type_name: String,
         guid: Arc<str>,
         initializer: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Arc<dyn ChannelOwner>>> + Send + '_>>;
+    ) -> AsyncChannelOwnerResult<'_>;
 }
 
 /// Metadata attached to every Playwright protocol message
@@ -731,11 +727,7 @@ impl ConnectionLike for Connection {
         })
     }
 
-    fn wait_for_object(
-        &self,
-        guid: &str,
-        timeout: Duration,
-    ) -> Pin<Box<dyn Future<Output = Result<Arc<dyn ChannelOwner>>> + Send + '_>> {
+    fn wait_for_object(&self, guid: &str, timeout: Duration) -> AsyncChannelOwnerResult<'_> {
         let guid_arc: Arc<str> = Arc::from(guid);
         Box::pin(async move {
             let deadline = tokio::time::Instant::now() + timeout;

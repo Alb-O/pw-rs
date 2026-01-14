@@ -133,42 +133,25 @@ pub fn extract_readable(html: &str, url: Option<&str>) -> ReadableContent {
 
 /// Extract metadata from HTML
 fn extract_metadata(html: &str, url: Option<&str>) -> PageMetadata {
-    let mut metadata = PageMetadata::default();
+    let site = extract_meta_content(html, "og:site_name")
+        .or_else(|| extract_meta_content(html, "twitter:site"))
+        .or_else(|| url.and_then(extract_domain));
 
-    // Extract title
-    metadata.title = extract_meta_content(html, "og:title")
-        .or_else(|| extract_meta_content(html, "twitter:title"))
-        .or_else(|| extract_title_tag(html));
-
-    // Extract author
-    metadata.author = extract_meta_content(html, "author")
-        .or_else(|| extract_meta_content(html, "article:author"));
-
-    // Extract description
-    metadata.description = extract_meta_content(html, "og:description")
-        .or_else(|| extract_meta_content(html, "description"))
-        .or_else(|| extract_meta_content(html, "twitter:description"));
-
-    // Extract image
-    metadata.image = extract_meta_content(html, "og:image")
-        .or_else(|| extract_meta_content(html, "twitter:image"));
-
-    // Extract site name
-    metadata.site = extract_meta_content(html, "og:site_name")
-        .or_else(|| extract_meta_content(html, "twitter:site"));
-
-    // Extract published date
-    metadata.published = extract_meta_content(html, "article:published_time")
-        .or_else(|| extract_meta_content(html, "datePublished"));
-
-    // Extract domain from URL
-    if metadata.site.is_none() {
-        if let Some(u) = url {
-            metadata.site = extract_domain(u);
-        }
+    PageMetadata {
+        title: extract_meta_content(html, "og:title")
+            .or_else(|| extract_meta_content(html, "twitter:title"))
+            .or_else(|| extract_title_tag(html)),
+        author: extract_meta_content(html, "author")
+            .or_else(|| extract_meta_content(html, "article:author")),
+        description: extract_meta_content(html, "og:description")
+            .or_else(|| extract_meta_content(html, "description"))
+            .or_else(|| extract_meta_content(html, "twitter:description")),
+        image: extract_meta_content(html, "og:image")
+            .or_else(|| extract_meta_content(html, "twitter:image")),
+        site,
+        published: extract_meta_content(html, "article:published_time")
+            .or_else(|| extract_meta_content(html, "datePublished")),
     }
-
-    metadata
 }
 
 /// Extract content from a meta tag

@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 
 use crate::cli::Cli;
-use crate::context::{BlockConfig, CommandContext, DownloadConfig, HarConfig};
+use crate::context::{
+    BlockConfig, CommandContext, CommandContextConfig, DownloadConfig, HarConfig,
+};
 use crate::context_store::ContextState;
 use crate::error::Result;
 use crate::output::CdpEndpointSource;
@@ -176,19 +178,19 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
     };
 
     // Step 7: Create command context
-    let ctx = CommandContext::with_config(
-        config.browser,
-        config.no_project,
-        config.auth.clone(),
-        resolved_cdp,
+    let ctx = CommandContext::with_config(CommandContextConfig {
+        browser: config.browser,
+        no_project: config.no_project,
+        auth_file: config.auth.clone(),
+        cdp_endpoint: resolved_cdp,
         cdp_endpoint_source,
-        config.launch_server,
-        config.no_daemon,
+        launch_server: config.launch_server,
+        no_daemon: config.no_daemon,
         har_config,
         block_config,
         download_config,
-        config.timeout_ms,
-    );
+        timeout_ms: config.timeout_ms,
+    });
 
     Ok(RuntimeContext { ctx, ctx_state })
 }
