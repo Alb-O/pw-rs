@@ -139,32 +139,32 @@ impl Resolve for SnapshotRaw {
 
 /// Element data returned by the browser extraction script.
 #[derive(Debug, Deserialize)]
-struct RawElement {
-    kind: String,
-    label: String,
-    selector: String,
-    extra: Option<String>,
+pub(crate) struct RawElement {
+    pub kind: String,
+    pub label: String,
+    pub selector: String,
+    pub extra: Option<String>,
     #[serde(default)]
-    x: i32,
+    pub x: i32,
     #[serde(default)]
-    y: i32,
+    pub y: i32,
     #[serde(default)]
-    width: i32,
+    pub width: i32,
     #[serde(default)]
-    height: i32,
+    pub height: i32,
 }
 
 /// Page metadata returned by the browser extraction script.
 #[derive(Debug, Deserialize)]
-struct PageMeta {
-    url: String,
-    title: String,
-    viewport_width: i32,
-    viewport_height: i32,
+pub(crate) struct PageMeta {
+    pub url: String,
+    pub title: String,
+    pub viewport_width: i32,
+    pub viewport_height: i32,
 }
 
 /// JavaScript that extracts page metadata (URL, title, viewport size).
-const EXTRACT_META_JS: &str = r#"
+pub(crate) const EXTRACT_META_JS: &str = r#"
 (() => {
     return {
         url: window.location.href,
@@ -179,7 +179,7 @@ const EXTRACT_META_JS: &str = r#"
 ///
 /// Accepts `maxLength` (character limit) and `full` (include non-visible text) parameters.
 /// Skips script, style, noscript, iframe, and SVG elements.
-const EXTRACT_TEXT_JS: &str = r#"
+pub(crate) const EXTRACT_TEXT_JS: &str = r#"
 ((maxLength, full) => {
     const texts = [];
     let totalLength = 0;
@@ -232,7 +232,7 @@ const EXTRACT_TEXT_JS: &str = r#"
 /// Generates selectors preferring: ID > name attribute > text content >
 /// aria-label > class combination > nth-of-type fallback. Duplicated from
 /// [`elements`](super::elements) module for bundle isolation.
-const EXTRACT_ELEMENTS_JS: &str = r#"
+pub(crate) const EXTRACT_ELEMENTS_JS: &str = r#"
 (() => {
     const elements = [];
     const seen = new Set();

@@ -1,20 +1,18 @@
 //! Navigation command.
 
+use crate::commands::snapshot::{
+    EXTRACT_ELEMENTS_JS, EXTRACT_META_JS, EXTRACT_TEXT_JS, PageMeta, RawElement,
+};
 use crate::context::CommandContext;
 use crate::error::Result;
 use crate::output::{
-    CommandInputs, DiagnosticLevel, EffectiveConfig, NavigateData, OutputFormat, ResultBuilder,
-    print_result,
+    CommandInputs, InteractiveElement, OutputFormat, ResultBuilder, SnapshotData, print_result,
 };
 use crate::session_broker::{SessionBroker, SessionRequest};
 use crate::target::{Resolve, ResolveEnv, ResolvedTarget, Target, TargetPolicy};
 use pw::WaitUntil;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
-
-// ---------------------------------------------------------------------------
-// Raw and Resolved Types
-// ---------------------------------------------------------------------------
+use tracing::info;
 
 /// Raw inputs from CLI or batch JSON.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -54,11 +52,12 @@ impl Resolve for NavigateRaw {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Execution
-// ---------------------------------------------------------------------------
+const DEFAULT_MAX_TEXT_LENGTH: usize = 5000;
 
 /// Execute navigation and return the actual browser URL after navigation.
+///
+/// After navigation completes, extracts a page snapshot (metadata, text content,
+/// and interactive elements) matching the output of `pw page snapshot`.
 pub async fn execute_resolved(
     args: &NavigateResolved,
     ctx: &CommandContext,
@@ -76,81 +75,50 @@ pub async fn execute_resolved(
         )
         .await?;
 
-    // Navigate based on target type
     match &args.target.target {
         Target::Navigate(url) => {
             session
                 .goto_if_needed(url.as_str(), ctx.timeout_ms())
                 .await?;
         }
-        Target::CurrentPage => {
-            // No navigation needed
-        }
+        Target::CurrentPage => {}
     }
 
-    let title = session.page().title().await.unwrap_or_default();
-    let actual_url = session
-        .page()
-        .evaluate_value("window.location.href")
-        .await
-        .unwrap_or_else(|_| session.page().url());
+    let meta_js = format!("JSON.stringify({})", EXTRACT_META_JS);
+    let meta: PageMeta = serde_json::from_str(&session.page().evaluate_value(&meta_js).await?)?;
 
-    let errors_json = session
-        .page()
-        .evaluate_value("JSON.stringify(window.__playwrightErrors || [])")
-        .await
-        .unwrap_or_else(|_| "[]".to_string());
-    let errors: Vec<String> = serde_json::from_str(&errors_json).unwrap_or_default();
+    let text_js = format!(
+        "JSON.stringify({}({}, {}))",
+        EXTRACT_TEXT_JS, DEFAULT_MAX_TEXT_LENGTH, false
+    );
+    let text: String = serde_json::from_str(&session.page().evaluate_value(&text_js).await?)?;
 
-    if !errors.is_empty() {
-        warn!(
-            target = "pw.browser",
-            count = errors.len(),
-            "page reported errors"
-        );
-    }
+    let elements_js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
+    let raw_elements: Vec<RawElement> =
+        serde_json::from_str(&session.page().evaluate_value(&elements_js).await?)?;
+    let elements: Vec<InteractiveElement> = raw_elements.into_iter().map(Into::into).collect();
+    let element_count = elements.len();
 
-    let input_url = args.target.url_str().unwrap_or(&actual_url);
-    let actual_url_field = if actual_url != input_url {
-        Some(actual_url.clone())
-    } else {
-        None
-    };
-
-    let effective_config = EffectiveConfig {
-        browser: ctx.browser.to_string(),
-        headless: true,
-        wait_until: Some("load".into()),
-        timeout_ms: ctx.timeout_ms(),
-        endpoint: session.cdp_endpoint().map(String::from),
-        cdp_endpoint_source: Some(ctx.cdp_endpoint_source()),
-        session_source: Some(session.source()),
-        target_source: Some(args.target.source.to_string()),
-    };
-
-    let mut builder = ResultBuilder::new("navigate")
+    let result = ResultBuilder::new("navigate")
         .inputs(CommandInputs {
             url: args.target.url_str().map(String::from),
             ..Default::default()
         })
-        .data(NavigateData {
-            url: input_url.to_string(),
-            actual_url: actual_url_field,
-            title,
-            errors: errors.clone(),
-            warnings: vec![],
+        .data(SnapshotData {
+            url: meta.url.clone(),
+            title: meta.title,
+            viewport_width: meta.viewport_width,
+            viewport_height: meta.viewport_height,
+            text,
+            elements,
+            element_count,
         })
-        .config(effective_config);
+        .build();
 
-    for error in &errors {
-        builder = builder.diagnostic_with_source(DiagnosticLevel::Error, error, "browser");
-    }
-
-    let result = builder.build();
     print_result(&result, format);
 
     session.close().await?;
-    Ok(actual_url)
+    Ok(meta.url)
 }
 
 #[cfg(test)]

@@ -153,7 +153,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Navigate to URL and check for console errors
+    /// Navigate to URL and show page snapshot (text, elements, metadata)
     #[command(alias = "nav")]
     Navigate {
         /// Target URL (positional, uses context when omitted)
