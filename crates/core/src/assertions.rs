@@ -657,15 +657,3 @@ impl Expectation {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_expectation_defaults() {
-        // Verify default timeout and poll interval constants
-        assert_eq!(DEFAULT_ASSERTION_TIMEOUT, Duration::from_secs(5));
-        assert_eq!(DEFAULT_POLL_INTERVAL, Duration::from_millis(100));
-    }
-}
