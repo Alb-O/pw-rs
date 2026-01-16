@@ -396,6 +396,7 @@ export def "chatgpt ask" [
     message: string
     --model (-m): string
     --new (-n)
+    --send (-s)                    # No-op (ask always sends), for flag compatibility
     --timeout (-t): int = 1200000  # Default: 20 minutes for thinking model
 ]: nothing -> record {
     let initial_count = (message-count)
