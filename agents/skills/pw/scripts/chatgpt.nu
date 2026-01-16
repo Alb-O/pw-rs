@@ -114,7 +114,7 @@ export def "chatgpt new" [
     # Navigate to base URL first, then to temporary chat to force fresh state
     pw nav $BASE_URL | ignore
     sleep 500ms
-    pw nav $"($BASE_URL)/?temporary-chat=true" | ignore
+    pw nav $BASE_URL | ignore
     pw wait-for "#prompt-textarea"
     sleep 500ms
     let mode = if ($model | is-empty) { $DEFAULT_MODEL } else { $model }
@@ -293,7 +293,7 @@ export def "chatgpt send" [
         ensure-tab
     }
     if $new {
-        pw nav $"($BASE_URL)/?temporary-chat=true"
+        pw nav $BASE_URL
         pw wait-for "#prompt-textarea"
         sleep 500ms
         # Set default model for new chats (unless overridden)
