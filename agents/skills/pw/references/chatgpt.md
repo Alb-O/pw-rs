@@ -1,125 +1,122 @@
-# ChatGPT Automation with pw-cli
+# chatgpt.nu Reference
 
-Findings from exploring ChatGPT automation via CDP connection.
+Requires CDP connection: `pw --cdp-endpoint http://localhost:9222`
 
-## Connection
-
-```bash
-pw --cdp-endpoint http://localhost:9222 <command>
-```
-
-## Key Selectors
-
-| Element                | Selector                                                     |
-| ---------------------- | ------------------------------------------------------------ |
-| Model selector button  | `button[aria-label^="Model selector"]`                       |
-| Model dropdown menu    | `[role="menu"]`                                              |
-| Extended thinking pill | `.__composer-pill` or `button:has-text("Extended thinking")` |
-| Chat input             | `#prompt-textarea`                                           |
-
-## Model Selector
-
-The model selector shows current model in `aria-label`:
-
-- `Model selector, current model is 5.2`
-- `Model selector, current model is 5.2 Thinking`
-
-Menu options (when open):
-
-- **Auto** - Decides how long to think
-- **Instant** - Answers right away
-- **Thinking** - Thinks longer for better answers
-- **Legacy models**
-
-## Dropdown Interaction Pattern
-
-ChatGPT uses Radix UI dropdowns that close between separate `pw` commands. Use a single `eval` with synchronous polling:
-
-```javascript
-(function() {
-  // Click to open
-  document.querySelector("button[aria-label^='Model selector']").click();
-
-  // Poll for menu (synchronous busy-wait)
-  var start = Date.now();
-  var menu = null;
-  while (Date.now() - start < 500) {
-    menu = document.querySelector("[role='menu']");
-    if (menu) break;
-  }
-
-  if (!menu) return { error: "Menu did not open" };
-
-  // Find and click option
-  var items = menu.querySelectorAll("*");
-  for (var item of items) {
-    if (item.textContent.includes("Thinking") &&
-        item.textContent.includes("Thinks longer")) {
-      item.click();
-      return { clicked: true };
-    }
-  }
-
-  return { error: "Option not found" };
-})()
-```
-
-## Thinking Mode
-
-When "Thinking" mode is selected:
-
-1. Header changes to "ChatGPT 5.2 Thinking"
-2. "Extended thinking" pill appears in the composer area
-3. The pill has class `__composer-pill` and `aria-haspopup="menu"`
-
-## Detecting Streaming State
-
-| State                   | Indicator                                         |
-| ----------------------- | ------------------------------------------------- |
-| Thinking (5.2 Thinking) | `.result-thinking` class on message               |
-| Streaming               | `button[aria-label="Stop streaming"]` visible     |
-| Complete                | Neither indicator present AND message has content |
-
-## Pasting Large Text
-
-Two approaches for inserting text:
-
-| Method     | Command          | Behavior                                                       | Size Limit                                              |
-| ---------- | ---------------- | -------------------------------------------------------------- | ------------------------------------------------------- |
-| Inline     | `chatgpt paste`  | Uses `execCommand('insertText')`, text stays in composer       | ~50KB (UI freezes with larger)                          |
-| Attachment | `chatgpt attach` | Uses `ClipboardEvent` with `File`, creates document attachment | Works with large text files (250KB+ tested and working) |
+## Invocation
 
 ```bash
-# Inline paste (small text, no attachment)
-cat small-file.rs | chatgpt paste
+# from scripts dir
+use chatgpt.nu *
+chatgpt ask "Hello"
 
-# File attachment via pipeline
-open large-codemap.md | chatgpt attach --name "codemap.md"
-
-# File attachment via --file flag (recommended for scripts)
-chatgpt attach --file codemap.md --prompt "Review this code" --send
+# from anywhere (bash)
+nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt ask "Hello"'
 ```
 
-The `--file` flag is recommended when calling from bash scripts, as it avoids issues with pipeline input not flowing through `nu -c`:
+## Commands
+
+### chatgpt ask
+
+Send message, wait for response, return result.
 
 ```bash
-# This works (--file flag)
-nu -c 'use scripts/chatgpt.nu *; chatgpt attach --file codemap.md --prompt "Review" --send'
-
-# This does NOT work (bash pipe doesn't reach nushell pipeline)
-cat codemap.md | nu -c 'use scripts/chatgpt.nu *; chatgpt attach --name "codemap.md"'
+chatgpt ask "Simple question"
+chatgpt ask --file prompt.md              # complex text with backticks/escapes
+"multi\nline" | chatgpt ask               # stdin
+chatgpt ask "Hello" --model=instant --new
 ```
 
-The attachment method creates a `File` object in `DataTransfer` and dispatches a `paste` event, which triggers ChatGPT's file attachment handler.
+Flags: `--file` (recommended for complex text), `--model`, `--new`, `--timeout` (default 20min, min 10min), `--send` (no-op)
 
-**Large file support**: The `chatgpt attach` command uses `pw eval --file` internally to bypass shell argument limits. This allows attaching files of 250KB+ without issues. The inline `chatgpt paste` method will freeze the ChatGPT UI for files larger than ~50KB due to `execCommand('insertText')` blocking the main thread.
+### chatgpt send
+
+Send message without waiting.
+
+```bash
+chatgpt send "Hello"
+chatgpt send --file prompt.md --new
+"text" | chatgpt send --model=thinking
+```
+
+Flags: `--file`, `--model` (auto/instant/thinking), `--new` (temp chat)
+
+### chatgpt attach
+
+Attach file as document. Best for large text (250KB+).
+
+```bash
+chatgpt attach --file codemap.md --prompt "Review this" --send
+open file.txt | chatgpt attach --name "doc.txt"
+```
+
+Flags: `--file`, `--name`, `--prompt`, `--send`
+
+**From bash**: Use `--file` for complex text (avoids shell escaping issues):
+
+```bash
+nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt ask --file prompt.md'
+nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt attach --file doc.md --send'
+```
+
+### chatgpt paste
+
+Inline text paste. Limit ~50KB (UI freezes on larger).
+
+```bash
+"short text" | chatgpt paste --send
+cat file.rs | chatgpt paste --clear
+```
+
+Flags: `--send`, `--clear`
+
+### chatgpt set-model
+
+```bash
+chatgpt set-model thinking  # auto | instant | thinking
+```
+
+### chatgpt new
+
+Start fresh temp chat.
+
+```bash
+chatgpt new                # defaults to thinking model
+chatgpt new --model=auto
+```
+
+### chatgpt wait
+
+Wait for response completion. Use 10min+ timeout; thinking model can take a while.
+
+```bash
+chatgpt wait                   # default 20min
+chatgpt wait --timeout=600000  # 10min minimum recommended
+```
+
+### chatgpt get-response
+
+Get last assistant message text.
+
+### chatgpt refresh
+
+Reload page when UI stuck.
+
+## Selectors
+
+| Element       | Selector                                 |
+| ------------- | ---------------------------------------- |
+| Input         | `#prompt-textarea`                       |
+| Model button  | `button[aria-label^="Model selector"]`   |
+| Send button   | `[data-testid="send-button"]`            |
+| Stop button   | `button[aria-label="Stop streaming"]`    |
+| Thinking      | `.result-thinking`                       |
+| Assistant msg | `[data-message-author-role="assistant"]` |
 
 ## Gotchas
 
-- Dropdowns close between separate `pw` commands (new session each time)
-- Playwright locator clicks may timeout on pills inside the composer
-- Use JavaScript `element.click()` within `eval` for more reliable clicks
-- Poll synchronously after clicking to catch the dropdown before it closes
-- **UI gets stuck**: ChatGPT sometimes shows loading dot indefinitely; use `location.reload()` to recover
-- ContentEditable div: `#prompt-textarea` is a div with `contentEditable=true`, not a real textarea; use JS to set content and trigger input event
-- File attachments show UUID names in UI, but content is correctly processed
+- Use `--file` for prompts with backticks/code blocks; complex inlines can break nushell
+- Always timeout 10min+ for responses; thinking model takes time
+- Radix dropdowns close between `pw` commands; script uses async polling
+- UI sometimes stuck with loading dot; `chatgpt refresh` to recover
+- `#prompt-textarea` is contentEditable div, not textarea
+- Attachment filenames show as UUIDs in UI but content works
