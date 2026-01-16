@@ -273,10 +273,22 @@ export def "chatgpt attach" [
 
 # Send a message to ChatGPT
 export def "chatgpt send" [
-    message: string
-    --model (-m): string  # Set model before sending (auto, instant, thinking)
-    --new (-n)            # Start new temporary chat
+    message?: string       # Message to send (or use --file or stdin)
+    --model (-m): string   # Set model before sending (auto, instant, thinking)
+    --new (-n)             # Start new temporary chat
+    --file (-f): path      # Read message from file (avoids shell escaping)
 ]: nothing -> record {
+    # Resolve message: --file > positional > stdin
+    let msg = if ($file | is-not-empty) {
+        open $file
+    } else if ($message | is-not-empty) {
+        $message
+    } else {
+        $in
+    }
+    if ($msg | is-empty) {
+        error make { msg: "No message provided (use positional arg, --file, or stdin)" }
+    }
     if not $new {
         ensure-tab
     }
@@ -296,7 +308,7 @@ export def "chatgpt send" [
 
     # Use insert-text helper (handles newlines, escaping, large text)
     # Clear existing content for fresh message
-    let result = (insert-text $message --clear)
+    let result = (insert-text $msg --clear)
     if ($result | get -o error | is-not-empty) {
         error make { msg: ($result.error) }
     }
@@ -315,7 +327,7 @@ export def "chatgpt send" [
         error make { msg: ($send_result.error) }
     }
 
-    { success: true, message: $message, model: (get-current-model) }
+    { success: true, message: $msg, model: (get-current-model) }
 }
 
 # Check if response is still in progress (thinking or streaming)
@@ -393,14 +405,27 @@ export def "chatgpt get-response" []: nothing -> string {
 
 # Send message and wait for response
 export def "chatgpt ask" [
-    message: string
+    message?: string               # Message to send (or use --file or stdin)
     --model (-m): string
     --new (-n)
     --send (-s)                    # No-op (ask always sends), for flag compatibility
+    --file (-f): path              # Read message from file (avoids shell escaping)
     --timeout (-t): int = 1200000  # Default: 20 minutes for thinking model
 ]: nothing -> record {
+    # Resolve message: --file > positional > stdin
+    let msg = if ($file | is-not-empty) {
+        open $file
+    } else if ($message | is-not-empty) {
+        $message
+    } else {
+        $in
+    }
+    if ($msg | is-empty) {
+        error make { msg: "No message provided (use positional arg, --file, or stdin)" }
+    }
+
     let initial_count = (message-count)
-    chatgpt send $message --model=$model --new=$new
+    chatgpt send $msg --model=$model --new=$new
     let wait_result = (chatgpt wait --timeout=$timeout)
     let response = (chatgpt get-response)
 
@@ -410,7 +435,7 @@ export def "chatgpt ask" [
 
     {
         success: $success
-        message: $message
+        message: $msg
         response: $response
         elapsed_ms: ($wait_result | get -o elapsed)
     }
