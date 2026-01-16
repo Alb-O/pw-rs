@@ -207,7 +207,7 @@ impl<'a> SessionBroker<'a> {
                             pid = descriptor.pid,
                             "reusing existing browser via cdp"
                         );
-                        let session = BrowserSession::with_options(SessionOptions {
+                        let mut session = BrowserSession::with_options(SessionOptions {
                             wait_until: request.wait_until,
                             storage_state: storage_state.clone(),
                             headless: request.headless,
@@ -221,6 +221,7 @@ impl<'a> SessionBroker<'a> {
                             download_config: request.download_config,
                         })
                         .await?;
+                        session.set_keep_browser_running(true);
                         return Ok(SessionHandle {
                             session,
                             source: SessionSource::CachedDescriptor,
@@ -312,7 +313,7 @@ impl<'a> SessionBroker<'a> {
             .await?;
             (s, SessionSource::BrowserServer)
         } else {
-            let s = BrowserSession::with_options(SessionOptions {
+            let mut s = BrowserSession::with_options(SessionOptions {
                 wait_until: request.wait_until,
                 storage_state,
                 headless: request.headless,
@@ -326,8 +327,8 @@ impl<'a> SessionBroker<'a> {
                 download_config: request.download_config,
             })
             .await?;
-            // Determine source based on whether we connected via CDP or launched fresh
             let src = if request.cdp_endpoint.is_some() {
+                s.set_keep_browser_running(true);
                 SessionSource::CdpConnect
             } else {
                 SessionSource::Fresh
