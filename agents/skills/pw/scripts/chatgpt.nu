@@ -403,6 +403,42 @@ export def "chatgpt get-response" []: nothing -> string {
     (pw eval $js).data.result
 }
 
+# Get conversation history (all user and assistant messages)
+export def "chatgpt history" [
+    --last (-l): int      # Only return last N messages (user+assistant pairs count as 2)
+    --json (-j)           # Output as JSON (structured data)
+    --raw (-r)            # Output raw records (for nushell piping)
+]: nothing -> any {
+    ensure-tab
+    let js = "(() => {
+        const els = document.querySelectorAll('[data-message-author-role]');
+        return Array.from(els).map((el, i) => ({
+            index: i,
+            role: el.dataset.messageAuthorRole,
+            text: el.innerText
+        }));
+    })()"
+    let messages = (pw eval $js).data.result
+
+    let filtered = if ($last | is-not-empty) {
+        $messages | last $last
+    } else {
+        $messages
+    }
+
+    if $json {
+        $filtered | to json
+    } else if $raw {
+        $filtered
+    } else {
+        # Transcript format (default)
+        $filtered | each { |msg|
+            let role_label = if $msg.role == "user" { "USER" } else { "ASSISTANT" }
+            $"--- ($role_label) ---\n($msg.text)\n"
+        } | str join "\n"
+    }
+}
+
 # Send message and wait for response
 export def "chatgpt ask" [
     message?: string               # Message to send (or use --file or stdin)
@@ -411,7 +447,8 @@ export def "chatgpt ask" [
     --send (-s)                    # No-op (ask always sends), for flag compatibility
     --file (-f): path              # Read message from file (avoids shell escaping)
     --timeout (-t): int = 1200000  # Default: 20 minutes for thinking model
-]: nothing -> record {
+    --json (-j)                    # Return full record with metadata instead of just response
+]: nothing -> any {
     # Resolve message: --file > positional > stdin
     let msg = if ($file | is-not-empty) {
         open $file
@@ -433,10 +470,18 @@ export def "chatgpt ask" [
     let has_new_response = (message-count) > $initial_count and ($response | is-not-empty)
     let success = $wait_result.complete or $has_new_response
 
-    {
-        success: $success
-        message: $msg
-        response: $response
-        elapsed_ms: ($wait_result | get -o elapsed)
+    if not $success {
+        error make { msg: "Failed to get response (timeout or no new message)" }
+    }
+
+    if $json {
+        {
+            success: $success
+            message: $msg
+            response: $response
+            elapsed_ms: ($wait_result | get -o elapsed)
+        }
+    } else {
+        $response
     }
 }
