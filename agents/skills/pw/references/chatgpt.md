@@ -13,20 +13,34 @@ chatgpt ask "Hello"
 nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt ask "Hello"'
 ```
 
+## Connecting to Existing Session
+
+When user has an open ChatGPT tab and wants to continue a conversation:
+
+```bash
+chatgpt history                  # get full conversation context
+chatgpt history --last 4         # or just recent exchanges
+```
+
+If user claims session already open, commands above should just work with no extra setup.
+
 ## Commands
 
 ### chatgpt ask
 
-Send message, wait for response, return result.
+Send message, wait for response, return response text.
 
 ```bash
-chatgpt ask "Simple question"
+chatgpt ask "Simple question"             # returns response text
 chatgpt ask --file prompt.md              # complex text with backticks/escapes
 "multi\nline" | chatgpt ask               # stdin
 chatgpt ask "Hello" --model=instant --new
+chatgpt ask "Hello" --json                # full record with metadata
 ```
 
-Flags: `--file` (recommended for complex text), `--model`, `--new`, `--timeout` (default 20min, min 10min), `--send` (no-op)
+Flags: `--file` (recommended for complex text), `--model`, `--new`, `--timeout` (default 20min), `--json` (full record), `--send` (no-op)
+
+Note: do not attempt to send multiple consecutive messages in a row, this will not work. You must compile everything needed into 1 message. Multiple attachments allowed.
 
 ### chatgpt send
 
@@ -67,8 +81,6 @@ Inline text paste. Limit ~50KB (UI freezes on larger).
 cat file.rs | chatgpt paste --clear
 ```
 
-Flags: `--send`, `--clear`
-
 ### chatgpt set-model
 
 ```bash
@@ -96,6 +108,18 @@ chatgpt wait --timeout=600000  # 10min minimum recommended
 ### chatgpt get-response
 
 Get last assistant message text.
+
+### chatgpt history
+
+Get full conversation history (all user and assistant messages).
+
+```bash
+chatgpt history                  # readable transcript
+chatgpt history --last 2         # last user/assistant exchange
+chatgpt history --json           # JSON
+# nushell records (for piping)
+chatgpt history --raw | where role == "user"
+```
 
 ### chatgpt refresh
 
