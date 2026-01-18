@@ -34,7 +34,7 @@ flake-parts.lib.mkFlake { inherit inputs; } {
       inherit nixpkgs;
       rootSrc = ../..;
       treefmt-nix = inputs.treefmt-nix;
-      imp-fmt-lib = inputs.imp-fmt.lib;
+      imp-fmt-lib = inputs.imp.formatterLib;
       rust-overlay = inputs.rust-overlay;
     };
 
