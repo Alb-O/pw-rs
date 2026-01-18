@@ -71,12 +71,12 @@
         chromium_dir=$(ls -d "$base"/chromium-* 2>/dev/null | grep -v headless | head -1)
         headless_dir=$(ls -d "$base"/chromium_headless_shell-* 2>/dev/null | head -1)
 
-        if [ -n "$chromium_dir" ]; then
-          # Create version alias for chromium-1200
+        if [ -n "$chromium_dir" ] && [ ! -e "$out/chromium-1200" ]; then
+          # Create version alias for chromium-1200 (skip if already exists from loop)
           ln -s "$chromium_dir" "$out/chromium-1200"
         fi
 
-        if [ -n "$headless_dir" ]; then
+        if [ -n "$headless_dir" ] && [ ! -e "$out/chromium_headless_shell-1200" ]; then
           # chromium_headless_shell-1200 needs new directory structure
           # (chrome-headless-shell-linux64/chrome-headless-shell instead of chrome-linux/headless_shell)
           mkdir -p "$out/chromium_headless_shell-1200/chrome-headless-shell-linux64"
