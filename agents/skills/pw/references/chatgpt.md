@@ -130,7 +130,9 @@ chatgpt download --list               # list all available downloads
 chatgpt download --index 0            # download specific file by index
 ```
 
-Note: You can ask for downloadable files from ChatGPT by explicitly prompting them to use the `python_user_visible` tool and providing a link in chat like: `sandbox:/mnt/data/<filename>`
+Note: You can ask for downloadable files from ChatGPT by explicitly prompting them to use the `python_user_visible` tool and providing a link in chat like: `sandbox:/mnt/data/<filename>`.
+
+Use this technique if we want a new file from ChatGPT, e.g. ChatGPT to make a detailed plan markdown doc, or a src code file, we want to download the artifact to our local project.
 
 ## Selectors
 

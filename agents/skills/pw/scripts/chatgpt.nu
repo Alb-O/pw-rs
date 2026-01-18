@@ -549,10 +549,7 @@ export def "chatgpt download" [
         return JSON.parse(xhr.responseText);
     })()"
 
-    let tmp_js = (mktemp --suffix .js)
-    $download_js | save -f $tmp_js
-    let download_result = (pw eval --file $tmp_js).data.result
-    rm $tmp_js
+    let download_result = (pw eval-js $download_js)
 
     if ($download_result | get -o error | is-not-empty) {
         error make { msg: ($download_result.error) }
@@ -573,10 +570,7 @@ export def "chatgpt download" [
         return { status: xhr.status, content: xhr.responseText };
     })()"
 
-    let tmp_js2 = (mktemp --suffix .js)
-    $content_js | save -f $tmp_js2
-    let content_result = (pw eval --file $tmp_js2).data.result
-    rm $tmp_js2
+    let content_result = (pw eval-js $content_js)
     if $content_result.status != 200 {
         error make { msg: $"Failed to fetch content: status ($content_result.status)" }
     }

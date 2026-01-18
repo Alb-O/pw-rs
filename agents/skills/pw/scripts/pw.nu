@@ -40,6 +40,16 @@ export def eval [
         error make { msg: "eval requires either an expression or --file" }
     }
 }
+
+# Eval JS via temp file (avoids shell escaping issues with complex JS)
+# Returns the result directly (unwrapped from .data.result)
+export def eval-js [js: string]: nothing -> any {
+    let tmp = (mktemp --suffix .js)
+    $js | save -f $tmp
+    let result = (pw-run page eval --file $tmp).data.result
+    rm $tmp
+    $result
+}
 export def screenshot [--output (-o): string = "screenshot.png", --full-page (-f)]: nothing -> record {
     if $full_page { pw-run screenshot -o $output --full-page } else { pw-run screenshot -o $output }
 }
