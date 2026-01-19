@@ -5,6 +5,9 @@
 #   use chatgpt.nu *
 #   chatgpt send "Explain quantum computing"
 #   chatgpt set-model thinking
+#
+# Deduplication: send/ask skip re-sending if the last user message matches.
+# This prevents retry spam if an agent disconnects mid-operation. Use --force to bypass.
 
 use pw.nu
 
@@ -40,6 +43,16 @@ def get-current-model []: nothing -> string {
         if (!btn) return null;
         const match = btn.ariaLabel.match(/current model is (.+)/i);
         return match ? match[1] : null;
+    })()"
+    (pw eval $js).data.result
+}
+
+# Get the last user message text (for deduplication)
+def last-user-message []: nothing -> string {
+    let js = "(() => {
+        const msgs = document.querySelectorAll('[data-message-author-role=\"user\"]');
+        if (msgs.length === 0) return null;
+        return msgs[msgs.length - 1].innerText;
     })()"
     (pw eval $js).data.result
 }
@@ -277,6 +290,7 @@ export def "chatgpt send" [
     --model (-m): string   # Set model before sending (auto, instant, thinking)
     --new (-n)             # Start new temporary chat
     --file (-f): path      # Read message from file (avoids shell escaping)
+    --force                # Send even if last message matches (bypass dedup)
 ]: nothing -> record {
     # Resolve message: --file > positional > stdin
     let msg = if ($file | is-not-empty) {
@@ -304,6 +318,14 @@ export def "chatgpt send" [
 
     if ($model | is-not-empty) {
         chatgpt set-model $model
+    }
+
+    # Deduplication: skip if last user message matches (prevents retry spam)
+    if not $force and not $new {
+        let last_msg = (last-user-message)
+        if ($last_msg | is-not-empty) and ($last_msg | str trim) == ($msg | str trim) {
+            return { success: true, message: $msg, model: (get-current-model), already_sent: true }
+        }
     }
 
     # Use insert-text helper (handles newlines, escaping, large text)
@@ -594,6 +616,7 @@ export def "chatgpt ask" [
     --file (-f): path              # Read message from file (avoids shell escaping)
     --timeout (-t): int = 1200000  # Default: 20 minutes for thinking model
     --json (-j)                    # Return full record with metadata instead of just response
+    --force                        # Bypass dedup check (send even if last message matches)
 ]: nothing -> any {
     # Resolve message: --file > positional > stdin
     let msg = if ($file | is-not-empty) {
@@ -608,13 +631,36 @@ export def "chatgpt ask" [
     }
 
     let initial_count = (message-count)
-    chatgpt send $msg --model=$model --new=$new
+    let send_result = (chatgpt send $msg --model=$model --new=$new --force=$force)
+
+    # If message was already sent (dedup triggered), check if response exists
+    let already_sent = ($send_result | get -o already_sent | default false)
+    if $already_sent {
+        # Response may already be complete - check before waiting
+        if not (is-generating) and (message-count) > 0 {
+            let response = (chatgpt get-response)
+            if ($response | is-not-empty) {
+                if $json {
+                    return {
+                        success: true
+                        message: $msg
+                        response: $response
+                        already_sent: true
+                    }
+                } else {
+                    return $response
+                }
+            }
+        }
+    }
+
     let wait_result = (chatgpt wait --timeout=$timeout)
     let response = (chatgpt get-response)
 
     # Consider successful if we have a new response, even if wait timed out (fast responses)
     let has_new_response = (message-count) > $initial_count and ($response | is-not-empty)
-    let success = $wait_result.complete or $has_new_response
+    # For already_sent case, we just need a non-empty response
+    let success = $wait_result.complete or $has_new_response or ($already_sent and ($response | is-not-empty))
 
     if not $success {
         error make { msg: "Failed to get response (timeout or no new message)" }
@@ -626,6 +672,7 @@ export def "chatgpt ask" [
             message: $msg
             response: $response
             elapsed_ms: ($wait_result | get -o elapsed)
+            already_sent: $already_sent
         }
     } else {
         $response
