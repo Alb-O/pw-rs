@@ -74,6 +74,8 @@ pw test -- --headed                # show browser
 pw test -- -g "login"              # filter by name
 ```
 
+Note: If you hit a `webServer` hang on older releases, start the server separately and add `reuseExistingServer: true` to your config. See [docs/issues/webserver-hang.md](docs/issues/webserver-hang.md) for details.
+
 ## Library
 
 For Rust applications, use `pw-rs` directly:

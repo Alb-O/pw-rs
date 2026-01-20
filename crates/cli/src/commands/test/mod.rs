@@ -7,7 +7,7 @@ use crate::error::{PwError, Result};
 use pw::pw_runtime::{self, TestRunnerPaths};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 /// Spawns the Playwright test runner with the given arguments.
 pub fn execute(args: Vec<String>) -> Result<()> {
@@ -24,21 +24,29 @@ pub fn execute(args: Vec<String>) -> Result<()> {
         .then(|| node_modules.join("playwright/cli.js"))
         .unwrap_or_else(|| paths.test_cli_js.clone());
 
-    let status = Command::new(&paths.node_exe)
-        .arg(&cli_js)
+    let mut cmd = Command::new(&paths.node_exe);
+    cmd.arg(&cli_js)
         .arg("test")
         .args(&args)
-        .env("NODE_PATH", &node_modules)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()?;
+        .env("NODE_PATH", &node_modules);
 
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+    #[cfg(unix)]
+    {
+        // Replace the current process to avoid extra parent/child layers
+        // that can interfere with Playwright's webServer spawning logic.
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        return Err(err.into());
     }
 
-    Ok(())
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status()?;
+        if !status.success() {
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        Ok(())
+    }
 }
 
 /// Sets up node_modules with required structure for module resolution.
