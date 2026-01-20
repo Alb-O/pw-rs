@@ -9,6 +9,7 @@ const DOC_DAEMON: &str = include_str!("../daemon/AGENTS.md");
 const DOC_PAGE: &str = include_str!("../page/AGENTS.md");
 const DOC_PROTECT: &str = include_str!("../protect/AGENTS.md");
 const DOC_RUN: &str = include_str!("../run/AGENTS.md");
+const DOC_TEST: &str = include_str!("../test/AGENTS.md");
 
 /// Prints the main pw documentation for agents.
 pub fn show_main() -> Result<()> {
@@ -49,5 +50,11 @@ pub fn show_protect() -> Result<()> {
 /// Prints documentation for the `run` subcommand.
 pub fn show_run() -> Result<()> {
     println!("{DOC_RUN}");
+    Ok(())
+}
+
+/// Prints documentation for the `test` subcommand.
+pub fn show_test() -> Result<()> {
+    println!("{DOC_TEST}");
     Ok(())
 }

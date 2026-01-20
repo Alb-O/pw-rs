@@ -258,6 +258,49 @@ fn find_playwright_in_node_modules(node_modules: &Path) -> Result<(PathBuf, Path
     Err(Error::ServerNotFound)
 }
 
+/// Paths needed for the Playwright test runner.
+pub struct TestRunnerPaths {
+    /// Node.js executable.
+    pub node_exe: PathBuf,
+    /// Test runner CLI entry point (`cli.js`).
+    pub test_cli_js: PathBuf,
+    /// Directory for module symlinks (`node_modules/`).
+    pub node_modules_dir: PathBuf,
+    /// Driver package directory (symlink target for `playwright-core`).
+    pub driver_package_dir: PathBuf,
+}
+
+/// Returns paths needed for the Playwright test runner.
+///
+/// # Errors
+///
+/// Returns [`Error::ServerNotFound`] if the test runner package or driver
+/// was not downloaded during build.
+pub fn get_test_runner_paths() -> Result<TestRunnerPaths> {
+    let (node_exe, _) = get_driver_executable()?;
+
+    let test_dir = PathBuf::from(option_env!("PLAYWRIGHT_TEST_DIR").ok_or(Error::ServerNotFound)?);
+    let test_cli_js = test_dir.join("cli.js");
+
+    if !test_cli_js.exists() {
+        return Err(Error::ServerNotFound);
+    }
+
+    let driver_dir = option_env!("PLAYWRIGHT_DRIVER_DIR").ok_or(Error::ServerNotFound)?;
+    let driver_package_dir = PathBuf::from(driver_dir).join("package");
+
+    if !driver_package_dir.exists() {
+        return Err(Error::ServerNotFound);
+    }
+
+    Ok(TestRunnerPaths {
+        node_exe,
+        test_cli_js,
+        node_modules_dir: test_dir.join("node_modules"),
+        driver_package_dir,
+    })
+}
+
 /// Find the node executable in PATH or common locations
 fn find_node_executable() -> Result<PathBuf> {
     #[cfg(not(windows))]

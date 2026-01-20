@@ -50,7 +50,7 @@ pub use connection::{
     AsyncChannelOwnerResult, Connection, ConnectionLike, Event, Message, Metadata, ObjectFactory,
     Request, Response,
 };
-pub use driver::get_driver_executable;
+pub use driver::{get_driver_executable, get_test_runner_paths, TestRunnerPaths};
 pub use error::{Error, Result};
 pub use playwright_server::PlaywrightServer;
 pub use transport::{

@@ -12,6 +12,7 @@ mod run;
 mod screenshot;
 mod session;
 mod tabs;
+pub mod test;
 mod wait;
 
 use crate::cli::{
@@ -36,6 +37,11 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
             .map_err(PwError::Anyhow);
     }
 
+    // Handle test command - doesn't need browser runtime
+    if let Commands::Test { ref args } = cli.command {
+        return test::execute(args.clone());
+    }
+
     // Handle agents docs - doesn't need runtime
     if let Commands::Agents { ref action } = cli.command {
         return match action {
@@ -47,6 +53,7 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
             Some(AgentsAction::Page) => agents::show_page(),
             Some(AgentsAction::Protect) => agents::show_protect(),
             Some(AgentsAction::Run) => agents::show_run(),
+            Some(AgentsAction::Test) => agents::show_test(),
         };
     }
 
@@ -326,6 +333,7 @@ async fn dispatch_command_inner(
             ProtectAction::List => protect::list(ctx_state, format),
         },
         Commands::Agents { .. } => unreachable!("handled earlier"),
+        Commands::Test { .. } => unreachable!("handled earlier"),
     }
 }
 

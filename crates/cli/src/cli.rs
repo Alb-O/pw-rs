@@ -340,6 +340,24 @@ pub enum Commands {
     /// Use Ctrl+D (EOF) to exit batch mode.
     Run,
 
+    /// Run Playwright tests
+    ///
+    /// Invokes the bundled Playwright test runner without requiring npm.
+    /// All arguments after -- are passed directly to the Playwright test CLI.
+    ///
+    /// Examples:
+    ///   pw test                          # Run all tests
+    ///   pw test -- --headed              # Show browser
+    ///   pw test -- --browser=firefox     # Use Firefox
+    ///   pw test -- -g "login"            # Filter by name
+    ///   pw test -- --debug               # Debug mode
+    #[command(alias = "t")]
+    Test {
+        /// Arguments passed to playwright test CLI
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
     /// Show documentation for AI agents
     ///
     /// Outputs embedded markdown documentation for AI coding agents.
@@ -368,6 +386,8 @@ pub enum AgentsAction {
     Protect,
     /// Show run (batch mode) documentation
     Run,
+    /// Show test command documentation
+    Test,
 }
 
 /// Project template type for init command
