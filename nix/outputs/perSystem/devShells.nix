@@ -27,7 +27,7 @@
         export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig"
 
         export PLAYWRIGHT_NODE_EXE="${pkgs.nodejs_22}/bin/node"
-        export PLAYWRIGHT_CLI_JS="${pkgs.playwright-driver}/cli.js"
+        # PLAYWRIGHT_CLI_JS intentionally not set - let pw use its bundled patched driver
 
         BROWSERS_BASE="${pkgs.playwright-driver.browsers}"
         BROWSERS_COMPAT="$PWD/.playwright-browsers"

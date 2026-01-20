@@ -9,7 +9,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 /// Playwright driver version to download
-const PLAYWRIGHT_VERSION: &str = "1.56.1";
+const PLAYWRIGHT_VERSION: &str = "1.57.0";
 
 /// Azure CDN base URL for Playwright drivers
 const DRIVER_BASE_URL: &str = "https://playwright.azureedge.net/builds/driver";
@@ -33,6 +33,10 @@ fn main() {
     let driver_dir = drivers_dir.join(format!("playwright-{}-{}", PLAYWRIGHT_VERSION, platform));
 
     if driver_dir.exists() {
+        // Always try to apply patches (idempotent - checks if already applied)
+        if let Err(e) = apply_driver_patches(&driver_dir) {
+            println!("cargo:warning=Failed to apply driver patches: {}", e);
+        }
         set_output_env_vars(&driver_dir, platform, &drivers_dir);
     } else {
         println!("cargo:warning=Downloading Playwright driver {} for {}...", PLAYWRIGHT_VERSION, platform);
@@ -58,6 +62,11 @@ fn main() {
         match download_playwright_package(&drivers_dir) {
             Ok(dir) => println!("cargo:warning=Playwright test runner downloaded to {}", dir.display()),
             Err(e) => println!("cargo:warning=Failed to download Playwright test runner: {}", e),
+        }
+    } else {
+        // Always try to apply patches (idempotent - checks if already applied)
+        if let Err(e) = apply_playwright_patches(&test_dir) {
+            println!("cargo:warning=Failed to apply playwright patches: {}", e);
         }
     }
 
@@ -246,6 +255,7 @@ fn download_and_extract_driver(drivers_dir: &Path, platform: &str) -> io::Result
         archive.len()
     );
 
+    apply_driver_patches(&extract_dir)?;
     Ok(extract_dir)
 }
 
@@ -312,9 +322,28 @@ fn download_playwright_package(drivers_dir: &Path) -> io::Result<PathBuf> {
 ///
 /// See `docs/issues/webserver-hang.md` for details on the port check timeout fix.
 fn apply_playwright_patches(extract_dir: &Path) -> io::Result<()> {
+    // Patch webServerPlugin.js for `port:` config
     let plugin = extract_dir.join("lib/plugins/webServerPlugin.js");
     if plugin.exists() {
         patch_web_server_plugin(&plugin)?;
+    }
+    Ok(())
+}
+
+/// Applies patches to the playwright-core driver package.
+fn apply_driver_patches(driver_dir: &Path) -> io::Result<()> {
+    let utils = driver_dir.join("package/lib/server/utils");
+
+    // Patch network.js for `url:` config in webServer
+    let network = utils.join("network.js");
+    if network.exists() {
+        patch_network_js(&network)?;
+    }
+
+    // Patch happyEyeballs.js for socket connection timeout
+    let happy_eyeballs = utils.join("happyEyeballs.js");
+    if happy_eyeballs.exists() {
+        patch_happy_eyeballs(&happy_eyeballs)?;
     }
     Ok(())
 }
@@ -354,6 +383,112 @@ fn patch_web_server_plugin(path: &Path) -> io::Result<()> {
         println!("cargo:warning=Patched webServerPlugin.js for port check timeout");
     } else {
         println!("cargo:warning=webServerPlugin.js patch pattern not found");
+    }
+    Ok(())
+}
+
+/// Adds socket timeout to `httpStatusCode()` in network.js.
+///
+/// When webServer config uses `url:` instead of `port:`, Playwright checks
+/// availability via HTTP request. Without a timeout, these requests hang
+/// in environments where TCP connections don't fail fast.
+fn patch_network_js(path: &Path) -> io::Result<()> {
+    let content = fs::read_to_string(path)?;
+    if content.contains("socketTimeout: 5000") {
+        return Ok(());
+    }
+
+    const ORIGINAL: &str = r#"httpRequest({
+      url: url2.toString(),
+      headers: { Accept: "*/*" },
+      rejectUnauthorized: !ignoreHTTPSErrors
+    },"#;
+
+    const PATCHED: &str = r#"httpRequest({
+      url: url2.toString(),
+      headers: { Accept: "*/*" },
+      rejectUnauthorized: !ignoreHTTPSErrors,
+      socketTimeout: 5000
+    },"#;
+
+    if content.contains(ORIGINAL) {
+        fs::write(path, content.replace(ORIGINAL, PATCHED))?;
+        println!("cargo:warning=Patched network.js for HTTP request timeout");
+    } else {
+        println!("cargo:warning=network.js patch pattern not found");
+    }
+    Ok(())
+}
+
+/// Adds socket timeout to happy eyeballs connection attempts.
+///
+/// The happy eyeballs agent bypasses createConnectionAsync for IP addresses,
+/// calling net.createConnection directly without a timeout. This patch wraps
+/// that call to add timeout handling.
+fn patch_happy_eyeballs(path: &Path) -> io::Result<()> {
+    let mut content = fs::read_to_string(path)?;
+    let mut patched = false;
+
+    // Patch 1: Add setTimeout in createConnectionAsync for hostname lookups
+    const ASYNC_ORIGINAL: &str = r#"socket.on("timeout", () => {
+      socket.destroy();
+      handleError(socket, new Error("Connection timeout"));
+    });"#;
+
+    const ASYNC_PATCHED: &str = r#"socket.setTimeout(5000);
+    socket.on("timeout", () => {
+      socket.destroy();
+      handleError(socket, new Error("Connection timeout"));
+    });"#;
+
+    if content.contains(ASYNC_ORIGINAL) && !content.contains("socket.setTimeout(5000)") {
+        content = content.replace(ASYNC_ORIGINAL, ASYNC_PATCHED);
+        patched = true;
+    }
+
+    // Patch 2: Wrap direct IP connection in HttpHappyEyeballsAgent
+    const HTTP_ORIGINAL: &str =
+        r#"if (import_net.default.isIP(clientRequestArgsToHostName(options)))
+      return import_net.default.createConnection(options);"#;
+
+    const HTTP_PATCHED: &str =
+        r#"if (import_net.default.isIP(clientRequestArgsToHostName(options))) {
+      const sock = import_net.default.createConnection(options);
+      sock.setTimeout(5000);
+      sock.on("timeout", () => sock.destroy());
+      return sock;
+    }"#;
+
+    if content.contains(HTTP_ORIGINAL) {
+        content = content.replace(HTTP_ORIGINAL, HTTP_PATCHED);
+        patched = true;
+    }
+
+    // Patch 3: Wrap direct IP connection in HttpsHappyEyeballsAgent
+    const HTTPS_ORIGINAL: &str =
+        r#"if (import_net.default.isIP(clientRequestArgsToHostName(options)))
+      return import_tls.default.connect(options);"#;
+
+    const HTTPS_PATCHED: &str =
+        r#"if (import_net.default.isIP(clientRequestArgsToHostName(options))) {
+      const sock = import_tls.default.connect(options);
+      sock.setTimeout(5000);
+      sock.on("timeout", () => sock.destroy());
+      return sock;
+    }"#;
+
+    if content.contains(HTTPS_ORIGINAL) {
+        content = content.replace(HTTPS_ORIGINAL, HTTPS_PATCHED);
+        patched = true;
+    }
+
+    if patched {
+        fs::write(path, content)?;
+        println!("cargo:warning=Patched happyEyeballs.js for socket timeout");
+    } else if content.contains("sock.setTimeout(5000)") {
+        // Already patched, nothing to do
+    } else {
+        println!("cargo:warning=happyEyeballs.js patch patterns not found");
     }
     Ok(())
 }

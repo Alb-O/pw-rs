@@ -47,7 +47,10 @@ conn.on("error", () => {
 
 ### Files Modified
 
-- `crates/runtime/build.rs` - Added `apply_playwright_patches()` and `patch_web_server_plugin()` functions that patch `webServerPlugin.js` after downloading the playwright package
+- `crates/runtime/build.rs` - Build-time patches for multiple timeout issues:
+  - `patch_web_server_plugin()` - Adds timeout to `isPortUsed()` for `port:` config
+  - `patch_network_js()` - Adds `socketTimeout` to HTTP requests for `url:` config
+  - `patch_happy_eyeballs()` - Adds timeout to direct IP connections in the happy eyeballs agent
 
 ## Investigation Details
 
