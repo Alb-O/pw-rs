@@ -207,30 +207,30 @@ test.describe("Example tests", () => {
 "#;
 
 /// .gitignore for playwright directory
-pub const PLAYWRIGHT_GITIGNORE: &str = r#"# Test outputs (regenerated on each run)
+pub const PLAYWRIGHT_GITIGNORE: &str = r#"# Test outputs
 /results/
 /reports/
 
-# Manual screenshots (e.g., from pw-cli)
+# Screenshots
 /screenshots/
 
-# Trace files (for playwright show-trace)
+# Trace files
 *.zip
 
-# Auth state files (may contain sensitive data)
+# Auth state
 /auth/
 
-# Playwright driver (downloaded by pw-core build.rs)
+# Playwright driver
 /drivers/
 
-# Browser symlinks (created by setup-browsers.sh for Nix compatibility)
+# Browser symlinks
 /browsers/
 
-# MCP server outputs (if using playwright MCP)
+# MCP server outputs
 /mcp-output/
 /mcp-user-data/
 
-# pw-cli context cache (session state, last URL/selector)
+# CLI context cache
 /.pw-cli/
 "#;
 
