@@ -2,6 +2,7 @@ mod auth;
 mod click;
 mod connect;
 mod daemon;
+pub(crate) mod def;
 mod fill;
 pub mod init;
 mod navigate;

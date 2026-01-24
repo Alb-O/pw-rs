@@ -130,7 +130,7 @@ pub struct CommandResult<T: Serialize> {
 }
 
 /// Inputs that were used for the command (for traceability)
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandInputs {
 	#[serde(skip_serializing_if = "Option::is_none")]
