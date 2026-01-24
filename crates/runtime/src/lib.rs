@@ -47,13 +47,13 @@ pub mod transport;
 pub use channel::Channel;
 pub use channel_owner::{ChannelOwner, ChannelOwnerImpl, DisposeReason, ParentOrConnection};
 pub use connection::{
-    AsyncChannelOwnerResult, Connection, ConnectionLike, Event, Message, Metadata, ObjectFactory,
-    Request, Response,
+	AsyncChannelOwnerResult, Connection, ConnectionLike, Event, Message, Metadata, ObjectFactory,
+	Request, Response,
 };
-pub use driver::{get_driver_executable, get_test_runner_paths, TestRunnerPaths};
+pub use driver::{TestRunnerPaths, get_driver_executable, get_test_runner_paths};
 pub use error::{Error, Result};
 pub use playwright_server::PlaywrightServer;
 pub use transport::{
-    PipeTransport, PipeTransportReceiver, PipeTransportSender, Transport, TransportParts,
-    TransportReceiver, WebSocketTransport, WebSocketTransportReceiver, WebSocketTransportSender,
+	PipeTransport, PipeTransportReceiver, PipeTransportSender, Transport, TransportParts,
+	TransportReceiver, WebSocketTransport, WebSocketTransportReceiver, WebSocketTransportSender,
 };

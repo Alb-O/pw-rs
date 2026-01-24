@@ -1,9 +1,9 @@
 pub fn escape_selector(selector: &str) -> String {
-    selector.replace('\\', "\\\\").replace('\'', "\\'")
+	selector.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 pub fn console_capture_injection_js() -> &'static str {
-    r#"() => {
+	r#"() => {
             window.__consoleMessages = [];
             const originalConsole = { ...console };
             ['log', 'warn', 'error', 'info', 'debug'].forEach(method => {
@@ -26,9 +26,9 @@ pub fn console_capture_injection_js() -> &'static str {
 }
 
 pub fn get_element_coords_js(selector: &str) -> String {
-    let escaped = escape_selector(selector);
-    format!(
-        r#"(() => {{
+	let escaped = escape_selector(selector);
+	format!(
+		r#"(() => {{
                 const el = document.querySelector('{escaped}');
                 if (!el) return 'null';
                 const rect = el.getBoundingClientRect();
@@ -41,13 +41,13 @@ pub fn get_element_coords_js(selector: &str) -> String {
                     href: el.getAttribute('href')
                 }});
             }})()"#
-    )
+	)
 }
 
 pub fn get_all_element_coords_js(selector: &str) -> String {
-    let escaped = escape_selector(selector);
-    format!(
-        r#"(() => {{
+	let escaped = escape_selector(selector);
+	format!(
+		r#"(() => {{
                 const elements = document.querySelectorAll('{escaped}');
                 return JSON.stringify(Array.from(elements).map((el, index) => {{
                     const rect = el.getBoundingClientRect();
@@ -62,5 +62,5 @@ pub fn get_all_element_coords_js(selector: &str) -> String {
                     }};
                 }}));
             }})()"#
-    )
+	)
 }

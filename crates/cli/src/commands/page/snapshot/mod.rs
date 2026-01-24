@@ -27,17 +27,18 @@
 
 use std::path::Path;
 
-use crate::context::CommandContext;
-use crate::error::{PwError, Result};
-use crate::output::{
-    CommandInputs, FailureWithArtifacts, InteractiveElement, OutputFormat, ResultBuilder,
-    SnapshotData, print_failure_with_artifacts, print_result,
-};
-use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
-use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
 use pw::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
+
+use crate::context::CommandContext;
+use crate::error::{PwError, Result};
+use crate::output::{
+	CommandInputs, FailureWithArtifacts, InteractiveElement, OutputFormat, ResultBuilder,
+	SnapshotData, print_failure_with_artifacts, print_result,
+};
+use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
+use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
 
 /// Raw inputs from CLI or batch JSON before resolution.
 ///
@@ -56,42 +57,42 @@ use tracing::info;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotRaw {
-    /// Target URL, resolved from context if not provided.
-    #[serde(default)]
-    pub url: Option<String>,
+	/// Target URL, resolved from context if not provided.
+	#[serde(default)]
+	pub url: Option<String>,
 
-    /// When `true`, skips interactive element extraction for faster text-only snapshots.
-    #[serde(default)]
-    pub text_only: Option<bool>,
+	/// When `true`, skips interactive element extraction for faster text-only snapshots.
+	#[serde(default)]
+	pub text_only: Option<bool>,
 
-    /// When `true`, includes all page text rather than just viewport-visible content.
-    #[serde(default)]
-    pub full: Option<bool>,
+	/// When `true`, includes all page text rather than just viewport-visible content.
+	#[serde(default)]
+	pub full: Option<bool>,
 
-    /// Maximum characters of text to extract. Defaults to 5000.
-    #[serde(default, alias = "max_text_length")]
-    pub max_text_length: Option<usize>,
+	/// Maximum characters of text to extract. Defaults to 5000.
+	#[serde(default, alias = "max_text_length")]
+	pub max_text_length: Option<usize>,
 }
 
 impl SnapshotRaw {
-    /// Constructs [`SnapshotRaw`] from CLI arguments.
-    ///
-    /// The `url_flag` takes precedence over `url` when both are provided,
-    /// matching the CLI convention where `--url` overrides positional args.
-    pub fn from_cli(
-        url: Option<String>,
-        url_flag: Option<String>,
-        text_only: bool,
-        full: bool,
-        max_text_length: Option<usize>,
-    ) -> Self {
-        Self {
-            url: url_flag.or(url),
-            text_only: Some(text_only),
-            full: Some(full),
-            max_text_length,
-        }
-    }
+	/// Constructs [`SnapshotRaw`] from CLI arguments.
+	///
+	/// The `url_flag` takes precedence over `url` when both are provided,
+	/// matching the CLI convention where `--url` overrides positional args.
+	pub fn from_cli(
+		url: Option<String>,
+		url_flag: Option<String>,
+		text_only: bool,
+		full: bool,
+		max_text_length: Option<usize>,
+	) -> Self {
+		Self {
+			url: url_flag.or(url),
+			text_only: Some(text_only),
+			full: Some(full),
+			max_text_length,
+		}
+	}
 }
 
 /// Resolved inputs ready for execution.
@@ -101,66 +102,66 @@ impl SnapshotRaw {
 /// or [`CurrentPage`](crate::target::Target::CurrentPage) for CDP mode without navigation.
 #[derive(Debug, Clone)]
 pub struct SnapshotResolved {
-    /// Navigation target (URL to navigate to, or current page in CDP mode).
-    pub target: ResolvedTarget,
+	/// Navigation target (URL to navigate to, or current page in CDP mode).
+	pub target: ResolvedTarget,
 
-    /// Skip interactive element extraction for faster execution.
-    pub text_only: bool,
+	/// Skip interactive element extraction for faster execution.
+	pub text_only: bool,
 
-    /// Include full page text instead of viewport-visible only.
-    pub full: bool,
+	/// Include full page text instead of viewport-visible only.
+	pub full: bool,
 
-    /// Maximum text length to extract in characters.
-    pub max_text_length: usize,
+	/// Maximum text length to extract in characters.
+	pub max_text_length: usize,
 }
 
 impl SnapshotResolved {
-    /// Returns the URL for session page-matching, preferring the target URL
-    /// if navigating, or `last_url` as a hint for [`Target::CurrentPage`].
-    pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
-        self.target.preferred_url(last_url)
-    }
+	/// Returns the URL for session page-matching, preferring the target URL
+	/// if navigating, or `last_url` as a hint for [`Target::CurrentPage`].
+	pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
+		self.target.preferred_url(last_url)
+	}
 }
 
 impl Resolve for SnapshotRaw {
-    type Output = SnapshotResolved;
+	type Output = SnapshotResolved;
 
-    fn resolve(self, env: &ResolveEnv<'_>) -> Result<SnapshotResolved> {
-        let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
+	fn resolve(self, env: &ResolveEnv<'_>) -> Result<SnapshotResolved> {
+		let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
 
-        Ok(SnapshotResolved {
-            target,
-            text_only: self.text_only.unwrap_or(false),
-            full: self.full.unwrap_or(false),
-            max_text_length: self.max_text_length.unwrap_or(5000),
-        })
-    }
+		Ok(SnapshotResolved {
+			target,
+			text_only: self.text_only.unwrap_or(false),
+			full: self.full.unwrap_or(false),
+			max_text_length: self.max_text_length.unwrap_or(5000),
+		})
+	}
 }
 
 /// Element data returned by the browser extraction script.
 #[derive(Debug, Deserialize)]
 pub(crate) struct RawElement {
-    pub kind: String,
-    pub label: String,
-    pub selector: String,
-    pub extra: Option<String>,
-    #[serde(default)]
-    pub x: i32,
-    #[serde(default)]
-    pub y: i32,
-    #[serde(default)]
-    pub width: i32,
-    #[serde(default)]
-    pub height: i32,
+	pub kind: String,
+	pub label: String,
+	pub selector: String,
+	pub extra: Option<String>,
+	#[serde(default)]
+	pub x: i32,
+	#[serde(default)]
+	pub y: i32,
+	#[serde(default)]
+	pub width: i32,
+	#[serde(default)]
+	pub height: i32,
 }
 
 /// Page metadata returned by the browser extraction script.
 #[derive(Debug, Deserialize)]
 pub(crate) struct PageMeta {
-    pub url: String,
-    pub title: String,
-    pub viewport_width: i32,
-    pub viewport_height: i32,
+	pub url: String,
+	pub title: String,
+	pub viewport_width: i32,
+	pub viewport_height: i32,
 }
 
 /// JavaScript that extracts page metadata (URL, title, viewport size).
@@ -392,151 +393,151 @@ pub(crate) const EXTRACT_ELEMENTS_JS: &str = r#"
 ///
 /// On failure with `artifacts_dir` set, saves screenshot and HTML for debugging.
 pub async fn execute_resolved(
-    args: &SnapshotResolved,
-    ctx: &CommandContext,
-    broker: &mut SessionBroker<'_>,
-    format: OutputFormat,
-    artifacts_dir: Option<&Path>,
-    last_url: Option<&str>,
+	args: &SnapshotResolved,
+	ctx: &CommandContext,
+	broker: &mut SessionBroker<'_>,
+	format: OutputFormat,
+	artifacts_dir: Option<&Path>,
+	last_url: Option<&str>,
 ) -> Result<()> {
-    let url_display = args.target.url_str().unwrap_or("<current page>");
-    info!(target = "pw", url = %url_display, text_only = %args.text_only, full = %args.full, browser = %ctx.browser, "snapshot");
+	let url_display = args.target.url_str().unwrap_or("<current page>");
+	info!(target = "pw", url = %url_display, text_only = %args.text_only, full = %args.full, browser = %ctx.browser, "snapshot");
 
-    let session = broker
-        .session(
-            SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
-                .with_preferred_url(args.preferred_url(last_url)),
-        )
-        .await?;
+	let session = broker
+		.session(
+			SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
+				.with_preferred_url(args.preferred_url(last_url)),
+		)
+		.await?;
 
-    match extract_snapshot(&session, args, format, ctx.timeout_ms()).await {
-        Ok(()) => session.close().await,
-        Err(e) => {
-            let artifacts = session
-                .collect_failure_artifacts(artifacts_dir, "snapshot")
-                .await;
+	match extract_snapshot(&session, args, format, ctx.timeout_ms()).await {
+		Ok(()) => session.close().await,
+		Err(e) => {
+			let artifacts = session
+				.collect_failure_artifacts(artifacts_dir, "snapshot")
+				.await;
 
-            if !artifacts.is_empty() {
-                let failure = FailureWithArtifacts::new(e.to_command_error())
-                    .with_artifacts(artifacts.artifacts);
-                print_failure_with_artifacts("snapshot", &failure, format);
-                let _ = session.close().await;
-                return Err(PwError::OutputAlreadyPrinted);
-            }
+			if !artifacts.is_empty() {
+				let failure = FailureWithArtifacts::new(e.to_command_error())
+					.with_artifacts(artifacts.artifacts);
+				print_failure_with_artifacts("snapshot", &failure, format);
+				let _ = session.close().await;
+				return Err(PwError::OutputAlreadyPrinted);
+			}
 
-            let _ = session.close().await;
-            Err(e)
-        }
-    }
+			let _ = session.close().await;
+			Err(e)
+		}
+	}
 }
 
 /// Performs the actual snapshot extraction after session acquisition.
 async fn extract_snapshot(
-    session: &SessionHandle,
-    args: &SnapshotResolved,
-    format: OutputFormat,
-    timeout_ms: Option<u64>,
+	session: &SessionHandle,
+	args: &SnapshotResolved,
+	format: OutputFormat,
+	timeout_ms: Option<u64>,
 ) -> Result<()> {
-    session.goto_target(&args.target.target, timeout_ms).await?;
+	session.goto_target(&args.target.target, timeout_ms).await?;
 
-    let meta_js = format!("JSON.stringify({})", EXTRACT_META_JS);
-    let meta: PageMeta = serde_json::from_str(&session.page().evaluate_value(&meta_js).await?)?;
+	let meta_js = format!("JSON.stringify({})", EXTRACT_META_JS);
+	let meta: PageMeta = serde_json::from_str(&session.page().evaluate_value(&meta_js).await?)?;
 
-    let text_js = format!(
-        "JSON.stringify({}({}, {}))",
-        EXTRACT_TEXT_JS, args.max_text_length, args.full
-    );
-    let text: String = serde_json::from_str(&session.page().evaluate_value(&text_js).await?)?;
+	let text_js = format!(
+		"JSON.stringify({}({}, {}))",
+		EXTRACT_TEXT_JS, args.max_text_length, args.full
+	);
+	let text: String = serde_json::from_str(&session.page().evaluate_value(&text_js).await?)?;
 
-    let elements = extract_elements_if_needed(session, args.text_only).await?;
-    let element_count = elements.len();
+	let elements = extract_elements_if_needed(session, args.text_only).await?;
+	let element_count = elements.len();
 
-    let result = ResultBuilder::new("snapshot")
-        .inputs(CommandInputs {
-            url: args.target.url_str().map(String::from),
-            ..Default::default()
-        })
-        .data(SnapshotData {
-            url: meta.url,
-            title: meta.title,
-            viewport_width: meta.viewport_width,
-            viewport_height: meta.viewport_height,
-            text,
-            elements,
-            element_count,
-        })
-        .build();
+	let result = ResultBuilder::new("snapshot")
+		.inputs(CommandInputs {
+			url: args.target.url_str().map(String::from),
+			..Default::default()
+		})
+		.data(SnapshotData {
+			url: meta.url,
+			title: meta.title,
+			viewport_width: meta.viewport_width,
+			viewport_height: meta.viewport_height,
+			text,
+			elements,
+			element_count,
+		})
+		.build();
 
-    print_result(&result, format);
-    Ok(())
+	print_result(&result, format);
+	Ok(())
 }
 
 /// Extracts interactive elements unless `text_only` mode is enabled.
 async fn extract_elements_if_needed(
-    session: &SessionHandle,
-    text_only: bool,
+	session: &SessionHandle,
+	text_only: bool,
 ) -> Result<Vec<InteractiveElement>> {
-    if text_only {
-        return Ok(Vec::new());
-    }
+	if text_only {
+		return Ok(Vec::new());
+	}
 
-    let elements_js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
-    let raw_elements: Vec<RawElement> =
-        serde_json::from_str(&session.page().evaluate_value(&elements_js).await?)?;
+	let elements_js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
+	let raw_elements: Vec<RawElement> =
+		serde_json::from_str(&session.page().evaluate_value(&elements_js).await?)?;
 
-    Ok(raw_elements.into_iter().map(Into::into).collect())
+	Ok(raw_elements.into_iter().map(Into::into).collect())
 }
 
 impl From<RawElement> for InteractiveElement {
-    fn from(e: RawElement) -> Self {
-        Self {
-            tag: e.kind,
-            selector: e.selector,
-            text: if e.label.is_empty() || e.label == "(unlabeled)" {
-                None
-            } else {
-                Some(e.label)
-            },
-            href: None,
-            name: e.extra,
-            id: None,
-            x: e.x,
-            y: e.y,
-            width: e.width,
-            height: e.height,
-        }
-    }
+	fn from(e: RawElement) -> Self {
+		Self {
+			tag: e.kind,
+			selector: e.selector,
+			text: if e.label.is_empty() || e.label == "(unlabeled)" {
+				None
+			} else {
+				Some(e.label)
+			},
+			href: None,
+			name: e.extra,
+			id: None,
+			x: e.x,
+			y: e.y,
+			width: e.width,
+			height: e.height,
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn deserialize_camel_case() {
-        let json = r#"{"url": "https://example.com", "textOnly": true, "maxTextLength": 1000}"#;
-        let raw: SnapshotRaw = serde_json::from_str(json).unwrap();
+	#[test]
+	fn deserialize_camel_case() {
+		let json = r#"{"url": "https://example.com", "textOnly": true, "maxTextLength": 1000}"#;
+		let raw: SnapshotRaw = serde_json::from_str(json).unwrap();
 
-        assert_eq!(raw.url, Some("https://example.com".into()));
-        assert_eq!(raw.text_only, Some(true));
-        assert_eq!(raw.max_text_length, Some(1000));
-    }
+		assert_eq!(raw.url, Some("https://example.com".into()));
+		assert_eq!(raw.text_only, Some(true));
+		assert_eq!(raw.max_text_length, Some(1000));
+	}
 
-    #[test]
-    fn deserialize_snake_case_alias() {
-        let json = r#"{"max_text_length": 2000}"#;
-        let raw: SnapshotRaw = serde_json::from_str(json).unwrap();
+	#[test]
+	fn deserialize_snake_case_alias() {
+		let json = r#"{"max_text_length": 2000}"#;
+		let raw: SnapshotRaw = serde_json::from_str(json).unwrap();
 
-        assert_eq!(raw.max_text_length, Some(2000));
-    }
+		assert_eq!(raw.max_text_length, Some(2000));
+	}
 
-    #[test]
-    fn deserialize_empty_uses_defaults() {
-        let raw: SnapshotRaw = serde_json::from_str("{}").unwrap();
+	#[test]
+	fn deserialize_empty_uses_defaults() {
+		let raw: SnapshotRaw = serde_json::from_str("{}").unwrap();
 
-        assert_eq!(raw.url, None);
-        assert_eq!(raw.text_only, None);
-        assert_eq!(raw.full, None);
-        assert_eq!(raw.max_text_length, None);
-    }
+		assert_eq!(raw.url, None);
+		assert_eq!(raw.text_only, None);
+		assert_eq!(raw.full, None);
+		assert_eq!(raw.max_text_length, None);
+	}
 }

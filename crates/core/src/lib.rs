@@ -184,23 +184,25 @@ pub mod tracing;
 pub mod video;
 
 pub use accessibility::{
-    Accessibility, AccessibilityNode, AccessibilitySnapshotOptions,
-    AccessibilitySnapshotOptionsBuilder, AccessibilityValue, CheckedState, PressedState,
+	Accessibility, AccessibilityNode, AccessibilitySnapshotOptions,
+	AccessibilitySnapshotOptionsBuilder, AccessibilityValue, CheckedState, PressedState,
 };
 pub use action_options::{
-    CheckOptions, FillOptions, HoverOptions, KeyboardOptions, MouseOptions, PressOptions,
-    SelectOptions,
+	CheckOptions, FillOptions, HoverOptions, KeyboardOptions, MouseOptions, PressOptions,
+	SelectOptions,
 };
+// Re-export assertions
+pub use assertions::{Expectation, expect};
 pub use browser::Browser;
 pub use browser_context::{
-    BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder, Geolocation,
-    HarContentPolicy, HarMode, HarNotFound, HarStartOptions, RouteFromHarOptions, Viewport,
+	BrowserContext, BrowserContextOptions, BrowserContextOptionsBuilder, Geolocation,
+	HarContentPolicy, HarMode, HarNotFound, HarStartOptions, RouteFromHarOptions, Viewport,
 };
 pub use browser_type::{BrowserType, ConnectOverCDPResult, LaunchedServer};
 pub use click::{ClickOptions, KeyboardModifier, MouseButton, Position};
 pub use cookie::{
-    ClearCookiesOptions, Cookie, LocalStorageEntry, OriginState, SameSite, StorageState,
-    StorageStateOptions,
+	ClearCookiesOptions, Cookie, LocalStorageEntry, OriginState, SameSite, StorageState,
+	StorageStateOptions,
 };
 pub use dialog::Dialog;
 pub use download::Download;
@@ -208,32 +210,28 @@ pub use element_handle::ElementHandle;
 pub use events::{ConsoleSubscription, EventStream, EventWaiter};
 pub use file_payload::{FilePayload, FilePayloadBuilder};
 pub use frame::Frame;
-pub use keyboard::Keyboard;
-pub use launch_options::{IgnoreDefaultArgs, LaunchOptions, ProxySettings};
-
 // Re-export initialization function
 pub use init::initialize_playwright;
-
-// Re-export assertions
-pub use assertions::{Expectation, expect};
+pub use keyboard::Keyboard;
+pub use launch_options::{IgnoreDefaultArgs, LaunchOptions, ProxySettings};
 pub use locator::Locator;
 pub use mouse::Mouse;
 pub use page::{
-    ConsoleLocation, ConsoleMessage, ConsoleMessageKind, GotoOptions, Page, Response, Subscription,
-    WaitUntil,
+	ConsoleLocation, ConsoleMessage, ConsoleMessageKind, GotoOptions, Page, Response, Subscription,
+	WaitUntil,
 };
 pub use playwright::Playwright;
 pub use request::Request;
 pub use response::ResponseObject;
 pub use root::Root;
 pub use route::{
-    ContinueOptions, ContinueOptionsBuilder, FulfillOptions, FulfillOptionsBuilder, Route,
+	ContinueOptions, ContinueOptionsBuilder, FulfillOptions, FulfillOptionsBuilder, Route,
 };
 pub use screenshot::{ScreenshotClip, ScreenshotOptions, ScreenshotType};
 pub use select_option::SelectOption;
 pub use tracing::{
-    Tracing, TracingStartChunkOptions, TracingStartOptions, TracingStartOptionsBuilder,
-    TracingStopOptions,
+	Tracing, TracingStartChunkOptions, TracingStartOptions, TracingStartOptionsBuilder,
+	TracingStopOptions,
 };
 pub use video::Video;
 
@@ -247,10 +245,8 @@ pub const DEFAULT_TIMEOUT_MS: f64 = pw_protocol::options::DEFAULT_TIMEOUT_MS;
 
 // Re-export pw-protocol types for convenience
 pub use pw_protocol;
-
 // Re-export pw-runtime for internal use
 pub use pw_runtime;
-
 // Re-export Error and Result from pw-runtime
 pub use pw_runtime::{Error, Result};
 
@@ -259,27 +255,27 @@ pub use pw_runtime::{Error, Result};
 /// These match the scaffold structure created by `pw init` and are used
 /// consistently across build.rs and runtime code.
 pub mod dirs {
-    /// Main playwright directory under project root (contains tests, auth, screenshots, etc.)
-    pub const PLAYWRIGHT: &str = "playwright";
-    /// Drivers directory name (where playwright driver is downloaded)
-    pub const DRIVERS: &str = "drivers";
-    /// Tests directory name (inside playwright/)
-    pub const TESTS: &str = "tests";
-    /// Results/output directory name (inside playwright/)
-    pub const RESULTS: &str = "results";
-    /// Screenshots directory name (inside playwright/)
-    pub const SCREENSHOTS: &str = "screenshots";
-    /// Auth state directory name (inside playwright/)
-    pub const AUTH: &str = "auth";
-    /// Reports directory name (inside playwright/)
-    pub const REPORTS: &str = "reports";
-    /// Scripts directory name (inside playwright/)
-    pub const SCRIPTS: &str = "scripts";
-    /// Browsers directory name (inside playwright/, for Nix browser symlinks)
-    pub const BROWSERS: &str = "browsers";
+	/// Main playwright directory under project root (contains tests, auth, screenshots, etc.)
+	pub const PLAYWRIGHT: &str = "playwright";
+	/// Drivers directory name (where playwright driver is downloaded)
+	pub const DRIVERS: &str = "drivers";
+	/// Tests directory name (inside playwright/)
+	pub const TESTS: &str = "tests";
+	/// Results/output directory name (inside playwright/)
+	pub const RESULTS: &str = "results";
+	/// Screenshots directory name (inside playwright/)
+	pub const SCREENSHOTS: &str = "screenshots";
+	/// Auth state directory name (inside playwright/)
+	pub const AUTH: &str = "auth";
+	/// Reports directory name (inside playwright/)
+	pub const REPORTS: &str = "reports";
+	/// Scripts directory name (inside playwright/)
+	pub const SCRIPTS: &str = "scripts";
+	/// Browsers directory name (inside playwright/, for Nix browser symlinks)
+	pub const BROWSERS: &str = "browsers";
 
-    /// JavaScript config file name
-    pub const CONFIG_JS: &str = "playwright.config.js";
-    /// TypeScript config file name
-    pub const CONFIG_TS: &str = "playwright.config.ts";
+	/// JavaScript config file name
+	pub const CONFIG_JS: &str = "playwright.config.js";
+	/// TypeScript config file name
+	pub const CONFIG_TS: &str = "playwright.config.ts";
 }

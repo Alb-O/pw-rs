@@ -3,10 +3,12 @@
 //! Handles locating and managing the Playwright Node.js driver.
 //! Follows the same architecture as playwright-python, playwright-java, and playwright-dotnet.
 
-use crate::error::{Error, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
 use tracing::warn;
+
+use crate::error::{Error, Result};
 
 /// Get the path to the Playwright driver executable
 ///
@@ -27,247 +29,247 @@ use tracing::warn;
 ///
 /// Returns `Error::ServerNotFound` if the driver cannot be located in any of the search paths.
 pub fn get_driver_executable() -> Result<(PathBuf, PathBuf)> {
-    // 1. Try PLAYWRIGHT_NODE_EXE and PLAYWRIGHT_CLI_JS environment variables (runtime override)
-    if let Some((node, cli)) = try_node_cli_env()? {
-        let usable = node_is_usable(&node);
-        debug_candidate("env node/cli", &node, &cli, usable);
-        if usable {
-            return Ok((node, cli));
-        }
-        warn!(
-            target = "pw",
-            node = %node.display(),
-            cli = %cli.display(),
-            "PLAYWRIGHT_NODE_EXE is set but node is not runnable; falling back"
-        );
-    }
+	// 1. Try PLAYWRIGHT_NODE_EXE and PLAYWRIGHT_CLI_JS environment variables (runtime override)
+	if let Some((node, cli)) = try_node_cli_env()? {
+		let usable = node_is_usable(&node);
+		debug_candidate("env node/cli", &node, &cli, usable);
+		if usable {
+			return Ok((node, cli));
+		}
+		warn!(
+			target = "pw",
+			node = %node.display(),
+			cli = %cli.display(),
+			"PLAYWRIGHT_NODE_EXE is set but node is not runnable; falling back"
+		);
+	}
 
-    // 2. Try PLAYWRIGHT_DRIVER_PATH environment variable (runtime override)
-    if let Some((node, cli)) = try_driver_path_env()? {
-        let usable = node_is_usable(&node);
-        debug_candidate("PLAYWRIGHT_DRIVER_PATH", &node, &cli, usable);
-        if usable {
-            return Ok((node, cli));
-        }
-        warn!(
-            target = "pw",
-            node = %node.display(),
-            cli = %cli.display(),
-            "PLAYWRIGHT_DRIVER_PATH is set but node is not runnable; falling back"
-        );
-    }
+	// 2. Try PLAYWRIGHT_DRIVER_PATH environment variable (runtime override)
+	if let Some((node, cli)) = try_driver_path_env()? {
+		let usable = node_is_usable(&node);
+		debug_candidate("PLAYWRIGHT_DRIVER_PATH", &node, &cli, usable);
+		if usable {
+			return Ok((node, cli));
+		}
+		warn!(
+			target = "pw",
+			node = %node.display(),
+			cli = %cli.display(),
+			"PLAYWRIGHT_DRIVER_PATH is set but node is not runnable; falling back"
+		);
+	}
 
-    // 3. Try bundled driver from build.rs (matches official bindings)
-    if let Some((node, cli)) = try_bundled_driver()? {
-        let usable = node_is_usable(&node);
-        debug_candidate("bundled driver", &node, &cli, usable);
-        if usable {
-            return Ok((node, cli));
-        }
-        warn!(
-            target = "pw",
-            node = %node.display(),
-            cli = %cli.display(),
-            "Bundled Playwright driver not runnable; falling back"
-        );
-    }
+	// 3. Try bundled driver from build.rs (matches official bindings)
+	if let Some((node, cli)) = try_bundled_driver()? {
+		let usable = node_is_usable(&node);
+		debug_candidate("bundled driver", &node, &cli, usable);
+		if usable {
+			return Ok((node, cli));
+		}
+		warn!(
+			target = "pw",
+			node = %node.display(),
+			cli = %cli.display(),
+			"Bundled Playwright driver not runnable; falling back"
+		);
+	}
 
-    // 4. Try npm global installation (development fallback)
-    if let Some((node, cli)) = try_npm_global()? {
-        let usable = node_is_usable(&node);
-        debug_candidate("npm global", &node, &cli, usable);
-        if usable {
-            return Ok((node, cli));
-        }
-        warn!(
-            target = "pw",
-            node = %node.display(),
-            cli = %cli.display(),
-            "Global npm Playwright driver not runnable; falling back"
-        );
-    }
+	// 4. Try npm global installation (development fallback)
+	if let Some((node, cli)) = try_npm_global()? {
+		let usable = node_is_usable(&node);
+		debug_candidate("npm global", &node, &cli, usable);
+		if usable {
+			return Ok((node, cli));
+		}
+		warn!(
+			target = "pw",
+			node = %node.display(),
+			cli = %cli.display(),
+			"Global npm Playwright driver not runnable; falling back"
+		);
+	}
 
-    // 5. Try npm local installation (development fallback)
-    if let Some((node, cli)) = try_npm_local()? {
-        let usable = node_is_usable(&node);
-        debug_candidate("npm local", &node, &cli, usable);
-        if usable {
-            return Ok((node, cli));
-        }
-        warn!(
-            target = "pw",
-            node = %node.display(),
-            cli = %cli.display(),
-            "Local npm Playwright driver not runnable; falling back"
-        );
-    }
+	// 5. Try npm local installation (development fallback)
+	if let Some((node, cli)) = try_npm_local()? {
+		let usable = node_is_usable(&node);
+		debug_candidate("npm local", &node, &cli, usable);
+		if usable {
+			return Ok((node, cli));
+		}
+		warn!(
+			target = "pw",
+			node = %node.display(),
+			cli = %cli.display(),
+			"Local npm Playwright driver not runnable; falling back"
+		);
+	}
 
-    Err(Error::ServerNotFound)
+	Err(Error::ServerNotFound)
 }
 
 /// Try to find bundled driver from build.rs
 fn try_bundled_driver() -> Result<Option<(PathBuf, PathBuf)>> {
-    // Check if build.rs set the environment variables (compile-time)
-    if let (Some(node_exe), Some(cli_js)) = (
-        option_env!("PLAYWRIGHT_BUNDLED_NODE_EXE"),
-        option_env!("PLAYWRIGHT_BUNDLED_CLI_JS"),
-    ) {
-        let node_path = PathBuf::from(node_exe);
-        let cli_path = PathBuf::from(cli_js);
+	// Check if build.rs set the environment variables (compile-time)
+	if let (Some(node_exe), Some(cli_js)) = (
+		option_env!("PLAYWRIGHT_BUNDLED_NODE_EXE"),
+		option_env!("PLAYWRIGHT_BUNDLED_CLI_JS"),
+	) {
+		let node_path = PathBuf::from(node_exe);
+		let cli_path = PathBuf::from(cli_js);
 
-        if node_path.exists() && cli_path.exists() {
-            return Ok(Some((node_path, cli_path)));
-        }
-    }
+		if node_path.exists() && cli_path.exists() {
+			return Ok(Some((node_path, cli_path)));
+		}
+	}
 
-    // Fallback: Check PLAYWRIGHT_DRIVER_DIR and construct paths (compile-time)
-    if let Some(driver_dir) = option_env!("PLAYWRIGHT_DRIVER_DIR") {
-        let driver_path = PathBuf::from(driver_dir);
-        let node_exe = if cfg!(windows) {
-            driver_path.join("node.exe")
-        } else {
-            driver_path.join("node")
-        };
-        let cli_js = driver_path.join("package").join("cli.js");
+	// Fallback: Check PLAYWRIGHT_DRIVER_DIR and construct paths (compile-time)
+	if let Some(driver_dir) = option_env!("PLAYWRIGHT_DRIVER_DIR") {
+		let driver_path = PathBuf::from(driver_dir);
+		let node_exe = if cfg!(windows) {
+			driver_path.join("node.exe")
+		} else {
+			driver_path.join("node")
+		};
+		let cli_js = driver_path.join("package").join("cli.js");
 
-        if node_exe.exists() && cli_js.exists() {
-            return Ok(Some((node_exe, cli_js)));
-        }
-    }
+		if node_exe.exists() && cli_js.exists() {
+			return Ok(Some((node_exe, cli_js)));
+		}
+	}
 
-    Ok(None)
+	Ok(None)
 }
 
 /// Try to find driver from PLAYWRIGHT_DRIVER_PATH environment variable
 fn try_driver_path_env() -> Result<Option<(PathBuf, PathBuf)>> {
-    if let Ok(driver_path) = std::env::var("PLAYWRIGHT_DRIVER_PATH") {
-        let driver_dir = PathBuf::from(driver_path);
-        let node_exe = if cfg!(windows) {
-            driver_dir.join("node.exe")
-        } else {
-            driver_dir.join("node")
-        };
-        let cli_js = driver_dir.join("package").join("cli.js");
+	if let Ok(driver_path) = std::env::var("PLAYWRIGHT_DRIVER_PATH") {
+		let driver_dir = PathBuf::from(driver_path);
+		let node_exe = if cfg!(windows) {
+			driver_dir.join("node.exe")
+		} else {
+			driver_dir.join("node")
+		};
+		let cli_js = driver_dir.join("package").join("cli.js");
 
-        if node_exe.exists() && cli_js.exists() {
-            return Ok(Some((node_exe, cli_js)));
-        }
-    }
+		if node_exe.exists() && cli_js.exists() {
+			return Ok(Some((node_exe, cli_js)));
+		}
+	}
 
-    Ok(None)
+	Ok(None)
 }
 
 /// Try to find driver from PLAYWRIGHT_NODE_EXE and PLAYWRIGHT_CLI_JS environment variables
 fn try_node_cli_env() -> Result<Option<(PathBuf, PathBuf)>> {
-    if let (Ok(node_exe), Ok(cli_js)) = (
-        std::env::var("PLAYWRIGHT_NODE_EXE"),
-        std::env::var("PLAYWRIGHT_CLI_JS"),
-    ) {
-        let node_path = PathBuf::from(node_exe);
-        let cli_path = PathBuf::from(cli_js);
+	if let (Ok(node_exe), Ok(cli_js)) = (
+		std::env::var("PLAYWRIGHT_NODE_EXE"),
+		std::env::var("PLAYWRIGHT_CLI_JS"),
+	) {
+		let node_path = PathBuf::from(node_exe);
+		let cli_path = PathBuf::from(cli_js);
 
-        if node_path.exists() && cli_path.exists() {
-            return Ok(Some((node_path, cli_path)));
-        }
-    }
+		if node_path.exists() && cli_path.exists() {
+			return Ok(Some((node_path, cli_path)));
+		}
+	}
 
-    Ok(None)
+	Ok(None)
 }
 
 /// Try to find driver in npm global installation (development fallback)
 fn try_npm_global() -> Result<Option<(PathBuf, PathBuf)>> {
-    let output = Command::new("npm").args(["root", "-g"]).output();
+	let output = Command::new("npm").args(["root", "-g"]).output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let npm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let node_modules = PathBuf::from(npm_root);
-            if node_modules.exists() {
-                if let Ok(paths) = find_playwright_in_node_modules(&node_modules) {
-                    return Ok(Some(paths));
-                }
-            }
-        }
-    }
+	if let Ok(output) = output {
+		if output.status.success() {
+			let npm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+			let node_modules = PathBuf::from(npm_root);
+			if node_modules.exists() {
+				if let Ok(paths) = find_playwright_in_node_modules(&node_modules) {
+					return Ok(Some(paths));
+				}
+			}
+		}
+	}
 
-    Ok(None)
+	Ok(None)
 }
 
 /// Try to find driver in npm local installation (development fallback)
 fn try_npm_local() -> Result<Option<(PathBuf, PathBuf)>> {
-    let output = Command::new("npm").args(["root"]).output();
+	let output = Command::new("npm").args(["root"]).output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let npm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let node_modules = PathBuf::from(npm_root);
-            if node_modules.exists() {
-                if let Ok(paths) = find_playwright_in_node_modules(&node_modules) {
-                    return Ok(Some(paths));
-                }
-            }
-        }
-    }
+	if let Ok(output) = output {
+		if output.status.success() {
+			let npm_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+			let node_modules = PathBuf::from(npm_root);
+			if node_modules.exists() {
+				if let Ok(paths) = find_playwright_in_node_modules(&node_modules) {
+					return Ok(Some(paths));
+				}
+			}
+		}
+	}
 
-    Ok(None)
+	Ok(None)
 }
 
 fn node_is_usable(node: &Path) -> bool {
-    Command::new(node)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+	Command::new(node)
+		.arg("--version")
+		.stdout(Stdio::null())
+		.stderr(Stdio::null())
+		.status()
+		.map(|status| status.success())
+		.unwrap_or(false)
 }
 
 fn debug_candidate(label: &str, node: &Path, cli: &Path, usable: bool) {
-    if std::env::var("PW_DEBUG_DRIVER").is_ok() {
-        eprintln!(
-            "[driver-check] {label}: node={} cli={} usable={}",
-            node.display(),
-            cli.display(),
-            usable
-        );
-    }
+	if std::env::var("PW_DEBUG_DRIVER").is_ok() {
+		eprintln!(
+			"[driver-check] {label}: node={} cli={} usable={}",
+			node.display(),
+			cli.display(),
+			usable
+		);
+	}
 }
 
 /// Find Playwright CLI in node_modules directory
 fn find_playwright_in_node_modules(node_modules: &Path) -> Result<(PathBuf, PathBuf)> {
-    let playwright_dirs = [
-        node_modules.join("playwright"),
-        node_modules.join("@playwright").join("test"),
-    ];
+	let playwright_dirs = [
+		node_modules.join("playwright"),
+		node_modules.join("@playwright").join("test"),
+	];
 
-    for playwright_dir in &playwright_dirs {
-        if !playwright_dir.exists() {
-            continue;
-        }
+	for playwright_dir in &playwright_dirs {
+		if !playwright_dir.exists() {
+			continue;
+		}
 
-        let cli_js = playwright_dir.join("cli.js");
-        if !cli_js.exists() {
-            continue;
-        }
+		let cli_js = playwright_dir.join("cli.js");
+		if !cli_js.exists() {
+			continue;
+		}
 
-        if let Ok(node_exe) = find_node_executable() {
-            return Ok((node_exe, cli_js));
-        }
-    }
+		if let Ok(node_exe) = find_node_executable() {
+			return Ok((node_exe, cli_js));
+		}
+	}
 
-    Err(Error::ServerNotFound)
+	Err(Error::ServerNotFound)
 }
 
 /// Paths needed for the Playwright test runner.
 pub struct TestRunnerPaths {
-    /// Node.js executable.
-    pub node_exe: PathBuf,
-    /// Test runner CLI entry point (`cli.js`).
-    pub test_cli_js: PathBuf,
-    /// Directory for module symlinks (`node_modules/`).
-    pub node_modules_dir: PathBuf,
-    /// Driver package directory (symlink target for `playwright-core`).
-    pub driver_package_dir: PathBuf,
+	/// Node.js executable.
+	pub node_exe: PathBuf,
+	/// Test runner CLI entry point (`cli.js`).
+	pub test_cli_js: PathBuf,
+	/// Directory for module symlinks (`node_modules/`).
+	pub node_modules_dir: PathBuf,
+	/// Driver package directory (symlink target for `playwright-core`).
+	pub driver_package_dir: PathBuf,
 }
 
 /// Returns paths needed for the Playwright test runner.
@@ -281,146 +283,146 @@ pub struct TestRunnerPaths {
 ///
 /// Returns [`Error::ServerNotFound`] if no test runner is available.
 pub fn get_test_runner_paths() -> Result<TestRunnerPaths> {
-    let (node_exe, driver_cli_js) = get_driver_executable()?;
+	let (node_exe, driver_cli_js) = get_driver_executable()?;
 
-    let test_dir = if let Ok(test_cli) = std::env::var("PLAYWRIGHT_TEST_CLI_JS") {
-        PathBuf::from(test_cli)
-            .parent()
-            .ok_or(Error::ServerNotFound)?
-            .to_path_buf()
-    } else if let Some(dir) = env_cli_js_if_has_test() {
-        dir
-    } else if let Some(test_dir) = option_env!("PLAYWRIGHT_TEST_DIR") {
-        PathBuf::from(test_dir)
-    } else {
-        return Err(Error::ServerNotFound);
-    };
+	let test_dir = if let Ok(test_cli) = std::env::var("PLAYWRIGHT_TEST_CLI_JS") {
+		PathBuf::from(test_cli)
+			.parent()
+			.ok_or(Error::ServerNotFound)?
+			.to_path_buf()
+	} else if let Some(dir) = env_cli_js_if_has_test() {
+		dir
+	} else if let Some(test_dir) = option_env!("PLAYWRIGHT_TEST_DIR") {
+		PathBuf::from(test_dir)
+	} else {
+		return Err(Error::ServerNotFound);
+	};
 
-    let test_cli_js = test_dir.join("cli.js");
-    if !test_cli_js.exists() {
-        return Err(Error::ServerNotFound);
-    }
+	let test_cli_js = test_dir.join("cli.js");
+	if !test_cli_js.exists() {
+		return Err(Error::ServerNotFound);
+	}
 
-    let driver_package_dir = driver_cli_js
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| test_dir.clone());
+	let driver_package_dir = driver_cli_js
+		.parent()
+		.map(|p| p.to_path_buf())
+		.unwrap_or_else(|| test_dir.clone());
 
-    Ok(TestRunnerPaths {
-        node_exe,
-        test_cli_js,
-        node_modules_dir: test_dir.join("node_modules"),
-        driver_package_dir,
-    })
+	Ok(TestRunnerPaths {
+		node_exe,
+		test_cli_js,
+		node_modules_dir: test_dir.join("node_modules"),
+		driver_package_dir,
+	})
 }
 
 /// Returns the directory from PLAYWRIGHT_CLI_JS if it contains test.js.
 fn env_cli_js_if_has_test() -> Option<PathBuf> {
-    let cli_js = std::env::var("PLAYWRIGHT_CLI_JS").ok()?;
-    let dir = PathBuf::from(cli_js).parent()?.to_path_buf();
-    dir.join("test.js").exists().then_some(dir)
+	let cli_js = std::env::var("PLAYWRIGHT_CLI_JS").ok()?;
+	let dir = PathBuf::from(cli_js).parent()?.to_path_buf();
+	dir.join("test.js").exists().then_some(dir)
 }
 
 /// Find the node executable in PATH or common locations
 fn find_node_executable() -> Result<PathBuf> {
-    #[cfg(not(windows))]
-    let which_cmd = "which";
-    #[cfg(windows)]
-    let which_cmd = "where";
+	#[cfg(not(windows))]
+	let which_cmd = "which";
+	#[cfg(windows)]
+	let which_cmd = "where";
 
-    if let Ok(output) = Command::new(which_cmd).arg("node").output() {
-        if output.status.success() {
-            let node_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !node_path.is_empty() {
-                let path = PathBuf::from(node_path.lines().next().unwrap_or(&node_path));
-                if path.exists() {
-                    return Ok(path);
-                }
-            }
-        }
-    }
+	if let Ok(output) = Command::new(which_cmd).arg("node").output() {
+		if output.status.success() {
+			let node_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+			if !node_path.is_empty() {
+				let path = PathBuf::from(node_path.lines().next().unwrap_or(&node_path));
+				if path.exists() {
+					return Ok(path);
+				}
+			}
+		}
+	}
 
-    #[cfg(not(windows))]
-    let common_locations = [
-        "/usr/local/bin/node",
-        "/usr/bin/node",
-        "/opt/homebrew/bin/node",
-        "/opt/local/bin/node",
-    ];
+	#[cfg(not(windows))]
+	let common_locations = [
+		"/usr/local/bin/node",
+		"/usr/bin/node",
+		"/opt/homebrew/bin/node",
+		"/opt/local/bin/node",
+	];
 
-    #[cfg(windows)]
-    let common_locations = [
-        "C:\\Program Files\\nodejs\\node.exe",
-        "C:\\Program Files (x86)\\nodejs\\node.exe",
-    ];
+	#[cfg(windows)]
+	let common_locations = [
+		"C:\\Program Files\\nodejs\\node.exe",
+		"C:\\Program Files (x86)\\nodejs\\node.exe",
+	];
 
-    for location in &common_locations {
-        let path = PathBuf::from(location);
-        if path.exists() {
-            return Ok(path);
-        }
-    }
+	for location in &common_locations {
+		let path = PathBuf::from(location);
+		if path.exists() {
+			return Ok(path);
+		}
+	}
 
-    Err(Error::LaunchFailed(
-        "Node.js executable not found. Please install Node.js or set PLAYWRIGHT_NODE_EXE."
-            .to_string(),
-    ))
+	Err(Error::LaunchFailed(
+		"Node.js executable not found. Please install Node.js or set PLAYWRIGHT_NODE_EXE."
+			.to_string(),
+	))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn test_find_node_executable() {
-        let result = find_node_executable();
-        match result {
-            Ok(node_path) => {
-                println!("Found node at: {:?}", node_path);
-                assert!(node_path.exists());
-            }
-            Err(e) => {
-                println!(
-                    "Node.js not found (expected if Node.js not installed): {:?}",
-                    e
-                );
-            }
-        }
-    }
+	#[test]
+	fn test_find_node_executable() {
+		let result = find_node_executable();
+		match result {
+			Ok(node_path) => {
+				println!("Found node at: {:?}", node_path);
+				assert!(node_path.exists());
+			}
+			Err(e) => {
+				println!(
+					"Node.js not found (expected if Node.js not installed): {:?}",
+					e
+				);
+			}
+		}
+	}
 
-    #[test]
-    fn test_get_driver_executable() {
-        let result = get_driver_executable();
-        match result {
-            Ok((node, cli)) => {
-                println!("Found Playwright driver:");
-                println!("  Node: {:?}", node);
-                println!("  CLI:  {:?}", cli);
-                assert!(node.exists());
-                assert!(cli.exists());
-            }
-            Err(Error::ServerNotFound) => {
-                println!("Playwright driver not found (expected in some environments)");
-            }
-            Err(e) => panic!("Unexpected error: {:?}", e),
-        }
-    }
+	#[test]
+	fn test_get_driver_executable() {
+		let result = get_driver_executable();
+		match result {
+			Ok((node, cli)) => {
+				println!("Found Playwright driver:");
+				println!("  Node: {:?}", node);
+				println!("  CLI:  {:?}", cli);
+				assert!(node.exists());
+				assert!(cli.exists());
+			}
+			Err(Error::ServerNotFound) => {
+				println!("Playwright driver not found (expected in some environments)");
+			}
+			Err(e) => panic!("Unexpected error: {:?}", e),
+		}
+	}
 
-    #[test]
-    fn test_bundled_driver_detection() {
-        let result = try_bundled_driver();
-        match result {
-            Ok(Some((node, cli))) => {
-                println!("Found bundled driver:");
-                println!("  Node: {:?}", node);
-                println!("  CLI:  {:?}", cli);
-                assert!(node.exists());
-                assert!(cli.exists());
-            }
-            Ok(None) => {
-                println!("No bundled driver (expected during development)");
-            }
-            Err(e) => panic!("Unexpected error: {:?}", e),
-        }
-    }
+	#[test]
+	fn test_bundled_driver_detection() {
+		let result = try_bundled_driver();
+		match result {
+			Ok(Some((node, cli))) => {
+				println!("Found bundled driver:");
+				println!("  Node: {:?}", node);
+				println!("  CLI:  {:?}", cli);
+				assert!(node.exists());
+				assert!(cli.exists());
+			}
+			Ok(None) => {
+				println!("No bundled driver (expected during development)");
+			}
+			Err(e) => panic!("Unexpected error: {:?}", e),
+		}
+	}
 }

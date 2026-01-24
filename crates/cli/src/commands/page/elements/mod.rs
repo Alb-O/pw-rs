@@ -19,17 +19,18 @@
 
 use std::path::Path;
 
-use crate::context::CommandContext;
-use crate::error::{PwError, Result};
-use crate::output::{
-    CommandInputs, ElementsData, FailureWithArtifacts, InteractiveElement, OutputFormat,
-    ResultBuilder, print_failure_with_artifacts, print_result,
-};
-use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
-use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
 use pw::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
+
+use crate::context::CommandContext;
+use crate::error::{PwError, Result};
+use crate::output::{
+	CommandInputs, ElementsData, FailureWithArtifacts, InteractiveElement, OutputFormat,
+	ResultBuilder, print_failure_with_artifacts, print_result,
+};
+use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
+use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
 
 /// Raw inputs from CLI or batch JSON before resolution.
 ///
@@ -37,28 +38,28 @@ use tracing::info;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ElementsRaw {
-    /// Target URL, resolved from context if not provided.
-    #[serde(default)]
-    pub url: Option<String>,
+	/// Target URL, resolved from context if not provided.
+	#[serde(default)]
+	pub url: Option<String>,
 
-    /// Whether to poll until elements appear.
-    #[serde(default)]
-    pub wait: Option<bool>,
+	/// Whether to poll until elements appear.
+	#[serde(default)]
+	pub wait: Option<bool>,
 
-    /// Timeout in milliseconds when waiting (default: 10000).
-    #[serde(default, alias = "timeout_ms")]
-    pub timeout_ms: Option<u64>,
+	/// Timeout in milliseconds when waiting (default: 10000).
+	#[serde(default, alias = "timeout_ms")]
+	pub timeout_ms: Option<u64>,
 }
 
 impl ElementsRaw {
-    /// Creates an [`ElementsRaw`] from CLI arguments.
-    pub fn from_cli(url: Option<String>, wait: bool, timeout_ms: u64) -> Self {
-        Self {
-            url,
-            wait: Some(wait),
-            timeout_ms: Some(timeout_ms),
-        }
-    }
+	/// Creates an [`ElementsRaw`] from CLI arguments.
+	pub fn from_cli(url: Option<String>, wait: bool, timeout_ms: u64) -> Self {
+		Self {
+			url,
+			wait: Some(wait),
+			timeout_ms: Some(timeout_ms),
+		}
+	}
 }
 
 /// Resolved inputs ready for execution.
@@ -66,55 +67,55 @@ impl ElementsRaw {
 /// All arguments have been validated with defaults applied.
 #[derive(Debug, Clone)]
 pub struct ElementsResolved {
-    /// Navigation target (URL or current page).
-    pub target: ResolvedTarget,
+	/// Navigation target (URL or current page).
+	pub target: ResolvedTarget,
 
-    /// Whether to poll until elements appear.
-    pub wait: bool,
+	/// Whether to poll until elements appear.
+	pub wait: bool,
 
-    /// Timeout in milliseconds when waiting.
-    pub timeout_ms: u64,
+	/// Timeout in milliseconds when waiting.
+	pub timeout_ms: u64,
 }
 
 impl ElementsResolved {
-    /// Returns the URL for page preference matching.
-    ///
-    /// For [`Navigate`](crate::target::Target::Navigate) targets, returns the URL.
-    /// For [`CurrentPage`](crate::target::Target::CurrentPage), returns `last_url` as a hint.
-    pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
-        self.target.preferred_url(last_url)
-    }
+	/// Returns the URL for page preference matching.
+	///
+	/// For [`Navigate`](crate::target::Target::Navigate) targets, returns the URL.
+	/// For [`CurrentPage`](crate::target::Target::CurrentPage), returns `last_url` as a hint.
+	pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
+		self.target.preferred_url(last_url)
+	}
 }
 
 impl Resolve for ElementsRaw {
-    type Output = ElementsResolved;
+	type Output = ElementsResolved;
 
-    fn resolve(self, env: &ResolveEnv<'_>) -> Result<ElementsResolved> {
-        let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
+	fn resolve(self, env: &ResolveEnv<'_>) -> Result<ElementsResolved> {
+		let target = env.resolve_target(self.url, TargetPolicy::AllowCurrentPage)?;
 
-        Ok(ElementsResolved {
-            target,
-            wait: self.wait.unwrap_or(false),
-            timeout_ms: self.timeout_ms.unwrap_or(10000),
-        })
-    }
+		Ok(ElementsResolved {
+			target,
+			wait: self.wait.unwrap_or(false),
+			timeout_ms: self.timeout_ms.unwrap_or(10000),
+		})
+	}
 }
 
 /// Element data as returned by the extraction JavaScript.
 #[derive(Debug, Deserialize)]
 struct RawElement {
-    kind: String,
-    label: String,
-    selector: String,
-    extra: Option<String>,
-    #[serde(default)]
-    x: i32,
-    #[serde(default)]
-    y: i32,
-    #[serde(default)]
-    width: i32,
-    #[serde(default)]
-    height: i32,
+	kind: String,
+	label: String,
+	selector: String,
+	extra: Option<String>,
+	#[serde(default)]
+	x: i32,
+	#[serde(default)]
+	y: i32,
+	#[serde(default)]
+	width: i32,
+	#[serde(default)]
+	height: i32,
 }
 
 /// JavaScript that extracts interactive elements from the page.
@@ -272,142 +273,142 @@ const EXTRACT_ELEMENTS_JS: &str = r#"
 ///
 /// On failure, collects diagnostic artifacts (screenshot, HTML) if `artifacts_dir` is set.
 pub async fn execute_resolved(
-    args: &ElementsResolved,
-    ctx: &CommandContext,
-    broker: &mut SessionBroker<'_>,
-    format: OutputFormat,
-    artifacts_dir: Option<&Path>,
-    last_url: Option<&str>,
+	args: &ElementsResolved,
+	ctx: &CommandContext,
+	broker: &mut SessionBroker<'_>,
+	format: OutputFormat,
+	artifacts_dir: Option<&Path>,
+	last_url: Option<&str>,
 ) -> Result<()> {
-    let url_display = args.target.url_str().unwrap_or("<current page>");
-    info!(target = "pw", url = %url_display, wait = %args.wait, timeout_ms = %args.timeout_ms, browser = %ctx.browser, "list elements");
+	let url_display = args.target.url_str().unwrap_or("<current page>");
+	info!(target = "pw", url = %url_display, wait = %args.wait, timeout_ms = %args.timeout_ms, browser = %ctx.browser, "list elements");
 
-    let session = broker
-        .session(
-            SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
-                .with_preferred_url(args.preferred_url(last_url)),
-        )
-        .await?;
+	let session = broker
+		.session(
+			SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
+				.with_preferred_url(args.preferred_url(last_url)),
+		)
+		.await?;
 
-    match extract_elements(&session, args, format, ctx.timeout_ms()).await {
-        Ok(()) => session.close().await,
-        Err(e) => {
-            let artifacts = session
-                .collect_failure_artifacts(artifacts_dir, "elements")
-                .await;
+	match extract_elements(&session, args, format, ctx.timeout_ms()).await {
+		Ok(()) => session.close().await,
+		Err(e) => {
+			let artifacts = session
+				.collect_failure_artifacts(artifacts_dir, "elements")
+				.await;
 
-            if !artifacts.is_empty() {
-                let failure = FailureWithArtifacts::new(e.to_command_error())
-                    .with_artifacts(artifacts.artifacts);
-                print_failure_with_artifacts("elements", &failure, format);
-                let _ = session.close().await;
-                return Err(PwError::OutputAlreadyPrinted);
-            }
+			if !artifacts.is_empty() {
+				let failure = FailureWithArtifacts::new(e.to_command_error())
+					.with_artifacts(artifacts.artifacts);
+				print_failure_with_artifacts("elements", &failure, format);
+				let _ = session.close().await;
+				return Err(PwError::OutputAlreadyPrinted);
+			}
 
-            let _ = session.close().await;
-            Err(e)
-        }
-    }
+			let _ = session.close().await;
+			Err(e)
+		}
+	}
 }
 
 /// Extracts interactive elements from the page.
 async fn extract_elements(
-    session: &SessionHandle,
-    args: &ElementsResolved,
-    format: OutputFormat,
-    nav_timeout_ms: Option<u64>,
+	session: &SessionHandle,
+	args: &ElementsResolved,
+	format: OutputFormat,
+	nav_timeout_ms: Option<u64>,
 ) -> Result<()> {
-    session
-        .goto_target(&args.target.target, nav_timeout_ms)
-        .await?;
+	session
+		.goto_target(&args.target.target, nav_timeout_ms)
+		.await?;
 
-    let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
+	let js = format!("JSON.stringify({})", EXTRACT_ELEMENTS_JS);
 
-    let raw_elements: Vec<RawElement> = if args.wait {
-        poll_for_elements(session, &js, args.timeout_ms).await?
-    } else {
-        let raw_result = session.page().evaluate_value(&js).await?;
-        serde_json::from_str(&raw_result)?
-    };
+	let raw_elements: Vec<RawElement> = if args.wait {
+		poll_for_elements(session, &js, args.timeout_ms).await?
+	} else {
+		let raw_result = session.page().evaluate_value(&js).await?;
+		serde_json::from_str(&raw_result)?
+	};
 
-    let elements: Vec<InteractiveElement> = raw_elements
-        .into_iter()
-        .map(|e| InteractiveElement {
-            tag: e.kind,
-            selector: e.selector,
-            text: if e.label.is_empty() || e.label == "(unlabeled)" {
-                None
-            } else {
-                Some(e.label)
-            },
-            href: None,
-            name: e.extra,
-            id: None,
-            x: e.x,
-            y: e.y,
-            width: e.width,
-            height: e.height,
-        })
-        .collect();
+	let elements: Vec<InteractiveElement> = raw_elements
+		.into_iter()
+		.map(|e| InteractiveElement {
+			tag: e.kind,
+			selector: e.selector,
+			text: if e.label.is_empty() || e.label == "(unlabeled)" {
+				None
+			} else {
+				Some(e.label)
+			},
+			href: None,
+			name: e.extra,
+			id: None,
+			x: e.x,
+			y: e.y,
+			width: e.width,
+			height: e.height,
+		})
+		.collect();
 
-    let count = elements.len();
+	let count = elements.len();
 
-    let result = ResultBuilder::new("elements")
-        .inputs(CommandInputs {
-            url: args.target.url_str().map(String::from),
-            ..Default::default()
-        })
-        .data(ElementsData { elements, count })
-        .build();
+	let result = ResultBuilder::new("elements")
+		.inputs(CommandInputs {
+			url: args.target.url_str().map(String::from),
+			..Default::default()
+		})
+		.data(ElementsData { elements, count })
+		.build();
 
-    print_result(&result, format);
-    Ok(())
+	print_result(&result, format);
+	Ok(())
 }
 
 /// Polls for elements until some appear or timeout is reached.
 async fn poll_for_elements(
-    session: &SessionHandle,
-    js: &str,
-    timeout_ms: u64,
+	session: &SessionHandle,
+	js: &str,
+	timeout_ms: u64,
 ) -> Result<Vec<RawElement>> {
-    let start = std::time::Instant::now();
-    let poll_interval = std::time::Duration::from_millis(500);
-    let timeout = std::time::Duration::from_millis(timeout_ms);
+	let start = std::time::Instant::now();
+	let poll_interval = std::time::Duration::from_millis(500);
+	let timeout = std::time::Duration::from_millis(timeout_ms);
 
-    loop {
-        let raw_result = session.page().evaluate_value(js).await?;
-        let elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
+	loop {
+		let raw_result = session.page().evaluate_value(js).await?;
+		let elements: Vec<RawElement> = serde_json::from_str(&raw_result)?;
 
-        if !elements.is_empty() {
-            return Ok(elements);
-        }
+		if !elements.is_empty() {
+			return Ok(elements);
+		}
 
-        if start.elapsed() >= timeout {
-            return Ok(vec![]);
-        }
+		if start.elapsed() >= timeout {
+			return Ok(vec![]);
+		}
 
-        tokio::time::sleep(poll_interval).await;
-    }
+		tokio::time::sleep(poll_interval).await;
+	}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+	use super::*;
 
-    #[test]
-    fn elements_raw_deserialize_from_json() {
-        let json = r#"{"url": "https://example.com", "wait": true, "timeout_ms": 5000}"#;
-        let raw: ElementsRaw = serde_json::from_str(json).unwrap();
-        assert_eq!(raw.url, Some("https://example.com".into()));
-        assert_eq!(raw.wait, Some(true));
-        assert_eq!(raw.timeout_ms, Some(5000));
-    }
+	#[test]
+	fn elements_raw_deserialize_from_json() {
+		let json = r#"{"url": "https://example.com", "wait": true, "timeout_ms": 5000}"#;
+		let raw: ElementsRaw = serde_json::from_str(json).unwrap();
+		assert_eq!(raw.url, Some("https://example.com".into()));
+		assert_eq!(raw.wait, Some(true));
+		assert_eq!(raw.timeout_ms, Some(5000));
+	}
 
-    #[test]
-    fn elements_raw_defaults() {
-        let json = r#"{}"#;
-        let raw: ElementsRaw = serde_json::from_str(json).unwrap();
-        assert_eq!(raw.wait, None);
-        assert_eq!(raw.timeout_ms, None);
-    }
+	#[test]
+	fn elements_raw_defaults() {
+		let json = r#"{}"#;
+		let raw: ElementsRaw = serde_json::from_str(json).unwrap();
+		assert_eq!(raw.wait, None);
+		assert_eq!(raw.timeout_ms, None);
+	}
 }

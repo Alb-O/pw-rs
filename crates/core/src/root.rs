@@ -8,14 +8,15 @@
 // - Java: playwright-java/.../impl/Connection.java (Root inner class)
 // - .NET: playwright-dotnet/src/Playwright/Transport/Connection.cs (InitializePlaywrightAsync)
 
+use std::sync::Arc;
+
 use pw_runtime::Result;
 use pw_runtime::channel::Channel;
 use pw_runtime::channel_owner::{
-    ChannelOwner, ChannelOwnerImpl, DisposeReason, ParentOrConnection,
+	ChannelOwner, ChannelOwnerImpl, DisposeReason, ParentOrConnection,
 };
 use pw_runtime::connection::ConnectionLike;
 use serde_json::Value;
-use std::sync::Arc;
 
 /// Root object for sending the initialize message to the Playwright server
 ///
@@ -64,133 +65,133 @@ use std::sync::Arc;
 /// - Python: <https://github.com/microsoft/playwright-python/blob/main/playwright/_impl/_connection.py>
 /// - Java: <https://github.com/microsoft/playwright-java>
 pub struct Root {
-    /// Base ChannelOwner implementation
-    base: ChannelOwnerImpl,
+	/// Base ChannelOwner implementation
+	base: ChannelOwnerImpl,
 }
 
 impl Root {
-    /// Creates a new Root object
-    ///
-    /// # Arguments
-    ///
-    /// * `connection` - The connection to the Playwright server
-    pub fn new(connection: Arc<dyn ConnectionLike>) -> Self {
-        Self {
-            base: ChannelOwnerImpl::new(
-                ParentOrConnection::Connection(connection),
-                "Root".to_string(),
-                Arc::from(""), // Empty GUID - Root is not registered in object map
-                Value::Null,
-            ),
-        }
-    }
+	/// Creates a new Root object
+	///
+	/// # Arguments
+	///
+	/// * `connection` - The connection to the Playwright server
+	pub fn new(connection: Arc<dyn ConnectionLike>) -> Self {
+		Self {
+			base: ChannelOwnerImpl::new(
+				ParentOrConnection::Connection(connection),
+				"Root".to_string(),
+				Arc::from(""), // Empty GUID - Root is not registered in object map
+				Value::Null,
+			),
+		}
+	}
 
-    /// Send the initialize message to the Playwright server
-    ///
-    /// This is a synchronous request that blocks until the server responds.
-    /// By the time the response arrives, all protocol objects (Playwright,
-    /// BrowserType, etc.) will have been created and registered.
-    ///
-    /// # Returns
-    ///
-    /// The server response containing the Playwright object GUID:
-    /// ```json
-    /// {
-    ///   "playwright": {
-    ///     "guid": "playwright"
-    ///   }
-    /// }
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - Message send fails
-    /// - Server returns protocol error
-    /// - Connection is closed
-    pub async fn initialize(&self) -> Result<Value> {
-        self.channel()
-            .send(
-                "initialize",
-                serde_json::json!({
-                    // TODO: Use "rust" once upstream Playwright accepts it
-                    // Current issue: Playwright v1.49.0 protocol validator only accepts:
-                    // (javascript|python|java|csharp)
-                    //
-                    // Using "python" because:
-                    // - Closest async/await patterns to Rust
-                    // - sdkLanguage only affects CLI error messages and codegen
-                    // - Does NOT affect core protocol functionality
-                    // - Python error messages are appropriate ("playwright install")
-                    //
-                    // Plan: Contribute to microsoft/playwright to add 'rust' to Language enum
-                    // See: packages/playwright-core/src/utils/isomorphic/locatorGenerators.ts
-                    "sdkLanguage": "python"
-                }),
-            )
-            .await
-    }
+	/// Send the initialize message to the Playwright server
+	///
+	/// This is a synchronous request that blocks until the server responds.
+	/// By the time the response arrives, all protocol objects (Playwright,
+	/// BrowserType, etc.) will have been created and registered.
+	///
+	/// # Returns
+	///
+	/// The server response containing the Playwright object GUID:
+	/// ```json
+	/// {
+	///   "playwright": {
+	///     "guid": "playwright"
+	///   }
+	/// }
+	/// ```
+	///
+	/// # Errors
+	///
+	/// Returns error if:
+	/// - Message send fails
+	/// - Server returns protocol error
+	/// - Connection is closed
+	pub async fn initialize(&self) -> Result<Value> {
+		self.channel()
+			.send(
+				"initialize",
+				serde_json::json!({
+					// TODO: Use "rust" once upstream Playwright accepts it
+					// Current issue: Playwright v1.49.0 protocol validator only accepts:
+					// (javascript|python|java|csharp)
+					//
+					// Using "python" because:
+					// - Closest async/await patterns to Rust
+					// - sdkLanguage only affects CLI error messages and codegen
+					// - Does NOT affect core protocol functionality
+					// - Python error messages are appropriate ("playwright install")
+					//
+					// Plan: Contribute to microsoft/playwright to add 'rust' to Language enum
+					// See: packages/playwright-core/src/utils/isomorphic/locatorGenerators.ts
+					"sdkLanguage": "python"
+				}),
+			)
+			.await
+	}
 }
 
 impl pw_runtime::channel_owner::private::Sealed for Root {}
 
 impl ChannelOwner for Root {
-    fn guid(&self) -> &str {
-        self.base.guid()
-    }
+	fn guid(&self) -> &str {
+		self.base.guid()
+	}
 
-    fn type_name(&self) -> &str {
-        self.base.type_name()
-    }
+	fn type_name(&self) -> &str {
+		self.base.type_name()
+	}
 
-    fn parent(&self) -> Option<Arc<dyn ChannelOwner>> {
-        self.base.parent()
-    }
+	fn parent(&self) -> Option<Arc<dyn ChannelOwner>> {
+		self.base.parent()
+	}
 
-    fn connection(&self) -> Arc<dyn ConnectionLike> {
-        self.base.connection()
-    }
+	fn connection(&self) -> Arc<dyn ConnectionLike> {
+		self.base.connection()
+	}
 
-    fn initializer(&self) -> &Value {
-        self.base.initializer()
-    }
+	fn initializer(&self) -> &Value {
+		self.base.initializer()
+	}
 
-    fn channel(&self) -> &Channel {
-        self.base.channel()
-    }
+	fn channel(&self) -> &Channel {
+		self.base.channel()
+	}
 
-    fn dispose(&self, reason: DisposeReason) {
-        self.base.dispose(reason)
-    }
+	fn dispose(&self, reason: DisposeReason) {
+		self.base.dispose(reason)
+	}
 
-    fn adopt(&self, child: Arc<dyn ChannelOwner>) {
-        self.base.adopt(child)
-    }
+	fn adopt(&self, child: Arc<dyn ChannelOwner>) {
+		self.base.adopt(child)
+	}
 
-    fn add_child(&self, guid: Arc<str>, child: Arc<dyn ChannelOwner>) {
-        self.base.add_child(guid, child)
-    }
+	fn add_child(&self, guid: Arc<str>, child: Arc<dyn ChannelOwner>) {
+		self.base.add_child(guid, child)
+	}
 
-    fn remove_child(&self, guid: &str) {
-        self.base.remove_child(guid)
-    }
+	fn remove_child(&self, guid: &str) {
+		self.base.remove_child(guid)
+	}
 
-    fn on_event(&self, method: &str, params: Value) {
-        self.base.on_event(method, params)
-    }
+	fn on_event(&self, method: &str, params: Value) {
+		self.base.on_event(method, params)
+	}
 
-    fn was_collected(&self) -> bool {
-        self.base.was_collected()
-    }
+	fn was_collected(&self) -> bool {
+		self.base.was_collected()
+	}
 }
 
 impl std::fmt::Debug for Root {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Root")
-            .field("guid", &self.guid())
-            .field("type_name", &self.type_name())
-            .finish()
-    }
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Root")
+			.field("guid", &self.guid())
+			.field("type_name", &self.type_name())
+			.finish()
+	}
 }
 
 // Note: Root object testing is done via integration tests since it requires:

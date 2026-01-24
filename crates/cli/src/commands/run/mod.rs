@@ -82,13 +82,12 @@ use std::io::Write;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use super::{click, fill, navigate, page, screenshot, wait};
 use crate::context::CommandContext;
 use crate::context_store::ContextState;
 use crate::error::Result;
 use crate::output::{CommandInputs, SCHEMA_VERSION};
 use crate::session_broker::SessionBroker;
-
-use super::{click, fill, navigate, page, screenshot, wait};
 
 /// A batch request parsed from stdin.
 ///
@@ -96,16 +95,16 @@ use super::{click, fill, navigate, page, screenshot, wait};
 /// for correlating responses with requests.
 #[derive(Debug, Deserialize)]
 pub struct BatchRequest {
-    /// Request identifier echoed in the response for correlation.
-    #[serde(default)]
-    pub id: Option<String>,
+	/// Request identifier echoed in the response for correlation.
+	#[serde(default)]
+	pub id: Option<String>,
 
-    /// Command name (e.g., `"navigate"`, `"click"`, `"screenshot"`).
-    pub command: String,
+	/// Command name (e.g., `"navigate"`, `"click"`, `"screenshot"`).
+	pub command: String,
 
-    /// Command-specific arguments as a JSON object.
-    #[serde(default)]
-    pub args: serde_json::Value,
+	/// Command-specific arguments as a JSON object.
+	#[serde(default)]
+	pub args: serde_json::Value,
 }
 
 /// A batch response written to stdout as NDJSON.
@@ -125,31 +124,31 @@ pub struct BatchRequest {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchResponse {
-    /// Schema version for output format compatibility.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema_version: Option<u32>,
+	/// Schema version for output format compatibility.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub schema_version: Option<u32>,
 
-    /// Request ID echoed from [`BatchRequest::id`] for correlation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+	/// Request ID echoed from [`BatchRequest::id`] for correlation.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub id: Option<String>,
 
-    /// `true` if the command succeeded, `false` on error.
-    pub ok: bool,
+	/// `true` if the command succeeded, `false` on error.
+	pub ok: bool,
 
-    /// Command name echoed from the request.
-    pub command: String,
+	/// Command name echoed from the request.
+	pub command: String,
 
-    /// Command-specific result data (present only on success).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
+	/// Command-specific result data (present only on success).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub data: Option<serde_json::Value>,
 
-    /// Error details (present only on failure).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<BatchError>,
+	/// Error details (present only on failure).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub error: Option<BatchError>,
 
-    /// Resolved inputs used for this command (URLs, selectors after context resolution).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub inputs: Option<CommandInputs>,
+	/// Resolved inputs used for this command (URLs, selectors after context resolution).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub inputs: Option<CommandInputs>,
 }
 
 /// Structured error information in a [`BatchResponse`].
@@ -166,56 +165,56 @@ pub struct BatchResponse {
 /// | `*_FAILED` | Command-specific failure |
 #[derive(Debug, Serialize)]
 pub struct BatchError {
-    /// Machine-readable error code (e.g., `"INVALID_INPUT"`, `"NAVIGATION_FAILED"`).
-    pub code: String,
-    /// Human-readable error description.
-    pub message: String,
+	/// Machine-readable error code (e.g., `"INVALID_INPUT"`, `"NAVIGATION_FAILED"`).
+	pub code: String,
+	/// Human-readable error description.
+	pub message: String,
 }
 
 impl BatchResponse {
-    fn success(id: Option<String>, command: &str, data: serde_json::Value) -> Self {
-        Self {
-            schema_version: Some(SCHEMA_VERSION),
-            id,
-            ok: true,
-            command: command.to_string(),
-            data: Some(data),
-            error: None,
-            inputs: None,
-        }
-    }
+	fn success(id: Option<String>, command: &str, data: serde_json::Value) -> Self {
+		Self {
+			schema_version: Some(SCHEMA_VERSION),
+			id,
+			ok: true,
+			command: command.to_string(),
+			data: Some(data),
+			error: None,
+			inputs: None,
+		}
+	}
 
-    fn success_empty(id: Option<String>, command: &str) -> Self {
-        Self {
-            schema_version: Some(SCHEMA_VERSION),
-            id,
-            ok: true,
-            command: command.to_string(),
-            data: None,
-            error: None,
-            inputs: None,
-        }
-    }
+	fn success_empty(id: Option<String>, command: &str) -> Self {
+		Self {
+			schema_version: Some(SCHEMA_VERSION),
+			id,
+			ok: true,
+			command: command.to_string(),
+			data: None,
+			error: None,
+			inputs: None,
+		}
+	}
 
-    fn error(id: Option<String>, command: &str, code: &str, message: &str) -> Self {
-        Self {
-            schema_version: Some(SCHEMA_VERSION),
-            id,
-            ok: false,
-            command: command.to_string(),
-            data: None,
-            error: Some(BatchError {
-                code: code.to_string(),
-                message: message.to_string(),
-            }),
-            inputs: None,
-        }
-    }
+	fn error(id: Option<String>, command: &str, code: &str, message: &str) -> Self {
+		Self {
+			schema_version: Some(SCHEMA_VERSION),
+			id,
+			ok: false,
+			command: command.to_string(),
+			data: None,
+			error: Some(BatchError {
+				code: code.to_string(),
+				message: message.to_string(),
+			}),
+			inputs: None,
+		}
+	}
 
-    fn with_inputs(mut self, inputs: CommandInputs) -> Self {
-        self.inputs = Some(inputs);
-        self
-    }
+	fn with_inputs(mut self, inputs: CommandInputs) -> Self {
+		self.inputs = Some(inputs);
+		self
+	}
 }
 
 /// Runs batch mode, reading NDJSON commands from stdin and streaming responses.
@@ -234,70 +233,70 @@ impl BatchResponse {
 /// Returns `Ok(())` on graceful exit (EOF or quit command). Individual command
 /// errors are reported in the response stream, not as function errors.
 pub async fn execute(
-    ctx: &CommandContext,
-    ctx_state: &mut ContextState,
-    broker: &mut SessionBroker<'_>,
+	ctx: &CommandContext,
+	ctx_state: &mut ContextState,
+	broker: &mut SessionBroker<'_>,
 ) -> Result<()> {
-    let stdin = tokio::io::stdin();
-    let mut reader = BufReader::new(stdin);
-    let mut stdout = std::io::stdout();
-    let mut line = String::new();
+	let stdin = tokio::io::stdin();
+	let mut reader = BufReader::new(stdin);
+	let mut stdout = std::io::stdout();
+	let mut line = String::new();
 
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => break, // EOF
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!(error = %e, "stdin read failed");
-                break;
-            }
-        }
+	loop {
+		line.clear();
+		match reader.read_line(&mut line).await {
+			Ok(0) => break, // EOF
+			Ok(_) => {}
+			Err(e) => {
+				tracing::error!(error = %e, "stdin read failed");
+				break;
+			}
+		}
 
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+		let line = line.trim();
+		if line.is_empty() {
+			continue;
+		}
 
-        let request: BatchRequest = match serde_json::from_str(line) {
-            Ok(r) => r,
-            Err(e) => {
-                output_response(
-                    &mut stdout,
-                    &BatchResponse::error(None, "unknown", "PARSE_ERROR", &e.to_string()),
-                );
-                continue;
-            }
-        };
+		let request: BatchRequest = match serde_json::from_str(line) {
+			Ok(r) => r,
+			Err(e) => {
+				output_response(
+					&mut stdout,
+					&BatchResponse::error(None, "unknown", "PARSE_ERROR", &e.to_string()),
+				);
+				continue;
+			}
+		};
 
-        match request.command.as_str() {
-            "ping" => {
-                output_response(
-                    &mut stdout,
-                    &BatchResponse::success_empty(request.id, "ping"),
-                );
-                continue;
-            }
-            "quit" | "exit" => {
-                output_response(
-                    &mut stdout,
-                    &BatchResponse::success_empty(request.id, "quit"),
-                );
-                break;
-            }
-            _ => {}
-        }
+		match request.command.as_str() {
+			"ping" => {
+				output_response(
+					&mut stdout,
+					&BatchResponse::success_empty(request.id, "ping"),
+				);
+				continue;
+			}
+			"quit" | "exit" => {
+				output_response(
+					&mut stdout,
+					&BatchResponse::success_empty(request.id, "quit"),
+				);
+				break;
+			}
+			_ => {}
+		}
 
-        let response = dispatch::execute_batch_command(&request, ctx, ctx_state, broker).await;
-        output_response(&mut stdout, &response);
-    }
+		let response = dispatch::execute_batch_command(&request, ctx, ctx_state, broker).await;
+		output_response(&mut stdout, &response);
+	}
 
-    Ok(())
+	Ok(())
 }
 
 fn output_response(stdout: &mut std::io::Stdout, response: &BatchResponse) {
-    if let Ok(json) = serde_json::to_string(response) {
-        let _ = writeln!(stdout, "{json}");
-        let _ = stdout.flush();
-    }
+	if let Ok(json) = serde_json::to_string(response) {
+		let _ = writeln!(stdout, "{json}");
+		let _ = stdout.flush();
+	}
 }

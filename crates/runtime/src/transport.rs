@@ -3,19 +3,20 @@
 // Handles bidirectional communication with Playwright server via stdio pipes.
 // Follows the same architecture as playwright-python's PipeTransport.
 
-use crate::error::{Error, Result};
+use std::future::Future;
+use std::pin::Pin;
+
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value as JsonValue;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Error as WsError;
-use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
-};
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
+
+use crate::error::{Error, Result};
 
 /// Send a JSON message using length-prefixed framing
 ///
@@ -27,33 +28,33 @@ use tokio_tungstenite::{
 /// * `message` - JSON message to send
 pub async fn send_message<W>(stdin: &mut W, message: JsonValue) -> Result<()>
 where
-    W: AsyncWriteExt + Unpin,
+	W: AsyncWriteExt + Unpin,
 {
-    // Serialize to JSON
-    let json_bytes = serde_json::to_vec(&message)
-        .map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
+	// Serialize to JSON
+	let json_bytes = serde_json::to_vec(&message)
+		.map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
 
-    let length = json_bytes.len() as u32;
+	let length = json_bytes.len() as u32;
 
-    // Write 4-byte little-endian length prefix
-    stdin
-        .write_all(&length.to_le_bytes())
-        .await
-        .map_err(|e| Error::TransportError(format!("Failed to write length: {}", e)))?;
+	// Write 4-byte little-endian length prefix
+	stdin
+		.write_all(&length.to_le_bytes())
+		.await
+		.map_err(|e| Error::TransportError(format!("Failed to write length: {}", e)))?;
 
-    // Write JSON payload
-    stdin
-        .write_all(&json_bytes)
-        .await
-        .map_err(|e| Error::TransportError(format!("Failed to write message: {}", e)))?;
+	// Write JSON payload
+	stdin
+		.write_all(&json_bytes)
+		.await
+		.map_err(|e| Error::TransportError(format!("Failed to write message: {}", e)))?;
 
-    // Flush to ensure message is sent
-    stdin
-        .flush()
-        .await
-        .map_err(|e| Error::TransportError(format!("Failed to flush: {}", e)))?;
+	// Flush to ensure message is sent
+	stdin
+		.flush()
+		.await
+		.map_err(|e| Error::TransportError(format!("Failed to flush: {}", e)))?;
 
-    Ok(())
+	Ok(())
 }
 
 /// Transport trait for abstracting communication mechanisms
@@ -61,20 +62,20 @@ where
 /// Playwright server communication happens over stdio pipes using
 /// length-prefixed JSON messages.
 pub trait Transport: Send + Sync {
-    /// Send a JSON message to the server
-    fn send(&mut self, message: JsonValue)
-    -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+	/// Send a JSON message to the server
+	fn send(&mut self, message: JsonValue)
+	-> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
 }
 
 pub trait TransportReceiver: Send {
-    /// Run the receive loop for this transport
-    fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+	/// Run the receive loop for this transport
+	fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 }
 
 pub struct TransportParts {
-    pub sender: Box<dyn Transport>,
-    pub receiver: Box<dyn TransportReceiver>,
-    pub message_rx: mpsc::UnboundedReceiver<JsonValue>,
+	pub sender: Box<dyn Transport>,
+	pub receiver: Box<dyn TransportReceiver>,
+	pub message_rx: mpsc::UnboundedReceiver<JsonValue>,
 }
 
 /// Pipe-based transport for communicating with Playwright server
@@ -119,12 +120,12 @@ pub struct TransportParts {
 /// **Unix**: Standard pipe cleanup applies - no special handling needed.
 pub struct PipeTransport<W, R>
 where
-    W: AsyncWrite + Unpin + Send,
-    R: AsyncRead + Unpin + Send,
+	W: AsyncWrite + Unpin + Send,
+	R: AsyncRead + Unpin + Send,
 {
-    stdin: W,
-    stdout: R,
-    message_tx: mpsc::UnboundedSender<JsonValue>,
+	stdin: W,
+	stdout: R,
+	message_tx: mpsc::UnboundedSender<JsonValue>,
 }
 
 /// Receive-only part of PipeTransport
@@ -134,657 +135,658 @@ where
 /// This solves the deadlock issue by separating send and receive.
 pub struct PipeTransportReceiver<R>
 where
-    R: AsyncRead + Unpin + Send + Sync,
+	R: AsyncRead + Unpin + Send + Sync,
 {
-    stdout: R,
-    message_tx: mpsc::UnboundedSender<JsonValue>,
+	stdout: R,
+	message_tx: mpsc::UnboundedSender<JsonValue>,
 }
 
 pub struct PipeTransportSender<W>
 where
-    W: AsyncWrite + Unpin + Send + Sync,
+	W: AsyncWrite + Unpin + Send + Sync,
 {
-    stdin: W,
+	stdin: W,
 }
 
 impl<R> PipeTransportReceiver<R>
 where
-    R: AsyncRead + Unpin + Send + Sync + 'static,
+	R: AsyncRead + Unpin + Send + Sync + 'static,
 {
-    /// Run the message read loop
-    ///
-    /// This continuously reads messages from stdout and sends them
-    /// to the message channel.
-    ///
-    /// For messages larger than 32KB, reads in chunks to reduce peak memory usage.
-    /// Matches playwright-python's chunked reading strategy.
-    pub async fn run(mut self) -> Result<()> {
-        const CHUNK_SIZE: usize = 32_768; // 32KB chunks
+	/// Run the message read loop
+	///
+	/// This continuously reads messages from stdout and sends them
+	/// to the message channel.
+	///
+	/// For messages larger than 32KB, reads in chunks to reduce peak memory usage.
+	/// Matches playwright-python's chunked reading strategy.
+	pub async fn run(mut self) -> Result<()> {
+		const CHUNK_SIZE: usize = 32_768; // 32KB chunks
 
-        loop {
-            // Read 4-byte little-endian length prefix
-            let mut len_buf = [0u8; 4];
-            self.stdout.read_exact(&mut len_buf).await.map_err(|e| {
-                Error::TransportError(format!("Failed to read length prefix: {}", e))
-            })?;
+		loop {
+			// Read 4-byte little-endian length prefix
+			let mut len_buf = [0u8; 4];
+			self.stdout.read_exact(&mut len_buf).await.map_err(|e| {
+				Error::TransportError(format!("Failed to read length prefix: {}", e))
+			})?;
 
-            let length = u32::from_le_bytes(len_buf) as usize;
+			let length = u32::from_le_bytes(len_buf) as usize;
 
-            // Read message payload
-            // For large messages (>32KB), read in chunks to reduce memory pressure
-            let message_buf = if length <= CHUNK_SIZE {
-                // Small message: read all at once
-                let mut buf = vec![0u8; length];
-                self.stdout
-                    .read_exact(&mut buf)
-                    .await
-                    .map_err(|e| Error::TransportError(format!("Failed to read message: {}", e)))?;
-                buf
-            } else {
-                // Large message: read in chunks
-                let mut buf = Vec::with_capacity(length);
-                let mut remaining = length;
+			// Read message payload
+			// For large messages (>32KB), read in chunks to reduce memory pressure
+			let message_buf = if length <= CHUNK_SIZE {
+				// Small message: read all at once
+				let mut buf = vec![0u8; length];
+				self.stdout
+					.read_exact(&mut buf)
+					.await
+					.map_err(|e| Error::TransportError(format!("Failed to read message: {}", e)))?;
+				buf
+			} else {
+				// Large message: read in chunks
+				let mut buf = Vec::with_capacity(length);
+				let mut remaining = length;
 
-                while remaining > 0 {
-                    let to_read = std::cmp::min(remaining, CHUNK_SIZE);
-                    let mut chunk = vec![0u8; to_read];
+				while remaining > 0 {
+					let to_read = std::cmp::min(remaining, CHUNK_SIZE);
+					let mut chunk = vec![0u8; to_read];
 
-                    self.stdout.read_exact(&mut chunk).await.map_err(|e| {
-                        Error::TransportError(format!("Failed to read message chunk: {}", e))
-                    })?;
+					self.stdout.read_exact(&mut chunk).await.map_err(|e| {
+						Error::TransportError(format!("Failed to read message chunk: {}", e))
+					})?;
 
-                    buf.extend_from_slice(&chunk);
-                    remaining -= to_read;
-                }
+					buf.extend_from_slice(&chunk);
+					remaining -= to_read;
+				}
 
-                buf
-            };
+				buf
+			};
 
-            // Parse JSON
-            let message: JsonValue = serde_json::from_slice(&message_buf)
-                .map_err(|e| Error::ProtocolError(format!("Failed to parse JSON: {}", e)))?;
+			// Parse JSON
+			let message: JsonValue = serde_json::from_slice(&message_buf)
+				.map_err(|e| Error::ProtocolError(format!("Failed to parse JSON: {}", e)))?;
 
-            // Dispatch message
-            if self.message_tx.send(message).is_err() {
-                // Channel closed, stop reading
-                break;
-            }
-        }
+			// Dispatch message
+			if self.message_tx.send(message).is_err() {
+				// Channel closed, stop reading
+				break;
+			}
+		}
 
-        Ok(())
-    }
+		Ok(())
+	}
 }
 
 impl<W, R> PipeTransport<W, R>
 where
-    W: AsyncWrite + Unpin + Send + Sync + 'static,
-    R: AsyncRead + Unpin + Send + Sync + 'static,
+	W: AsyncWrite + Unpin + Send + Sync + 'static,
+	R: AsyncRead + Unpin + Send + Sync + 'static,
 {
-    /// Create a new pipe transport from child process stdio handles
-    ///
-    /// # Arguments
-    ///
-    /// * `stdin` - Child process stdin for sending messages
-    /// * `stdout` - Child process stdout for receiving messages
-    ///
-    /// Returns a tuple of (PipeTransport, message receiver channel)
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// # use pw::server::transport::PipeTransport;
-    /// # use tokio::process::Command;
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let mut child = Command::new("node")
-    ///     .arg("cli.js")
-    ///     .stdin(std::process::Stdio::piped())
-    ///     .stdout(std::process::Stdio::piped())
-    ///     .spawn()?;
-    ///
-    /// let stdin = child.stdin.take().unwrap();
-    /// let stdout = child.stdout.take().unwrap();
-    ///
-    /// let (mut transport, mut rx) = PipeTransport::new(stdin, stdout);
-    ///
-    /// // Spawn read loop
-    /// tokio::spawn(async move {
-    ///     transport.run().await
-    /// });
-    ///
-    /// // Receive messages
-    /// while let Some(message) = rx.recv().await {
-    ///     println!("Received: {:?}", message);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn new(stdin: W, stdout: R) -> (Self, mpsc::UnboundedReceiver<JsonValue>) {
-        let (message_tx, message_rx) = mpsc::unbounded_channel();
+	/// Create a new pipe transport from child process stdio handles
+	///
+	/// # Arguments
+	///
+	/// * `stdin` - Child process stdin for sending messages
+	/// * `stdout` - Child process stdout for receiving messages
+	///
+	/// Returns a tuple of (PipeTransport, message receiver channel)
+	///
+	/// # Example
+	///
+	/// ```ignore
+	/// # use pw::server::transport::PipeTransport;
+	/// # use tokio::process::Command;
+	/// # #[tokio::main]
+	/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let mut child = Command::new("node")
+	///     .arg("cli.js")
+	///     .stdin(std::process::Stdio::piped())
+	///     .stdout(std::process::Stdio::piped())
+	///     .spawn()?;
+	///
+	/// let stdin = child.stdin.take().unwrap();
+	/// let stdout = child.stdout.take().unwrap();
+	///
+	/// let (mut transport, mut rx) = PipeTransport::new(stdin, stdout);
+	///
+	/// // Spawn read loop
+	/// tokio::spawn(async move {
+	///     transport.run().await
+	/// });
+	///
+	/// // Receive messages
+	/// while let Some(message) = rx.recv().await {
+	///     println!("Received: {:?}", message);
+	/// }
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn new(stdin: W, stdout: R) -> (Self, mpsc::UnboundedReceiver<JsonValue>) {
+		let (message_tx, message_rx) = mpsc::unbounded_channel();
 
-        let transport = Self {
-            stdin,
-            stdout,
-            message_tx,
-        };
+		let transport = Self {
+			stdin,
+			stdout,
+			message_tx,
+		};
 
-        (transport, message_rx)
-    }
+		(transport, message_rx)
+	}
 
-    /// Split the transport into stdin and the rest
-    ///
-    /// This allows Connection to hold stdin separately (for sending)
-    /// while run() owns stdout (for receiving).
-    ///
-    /// # Returns
-    ///
-    /// Returns (stdin, self_without_stdin) where self_without_stdin
-    /// can still run the receive loop but cannot send.
-    pub fn into_parts(self) -> (PipeTransportSender<W>, PipeTransportReceiver<R>) {
-        (
-            PipeTransportSender { stdin: self.stdin },
-            PipeTransportReceiver {
-                stdout: self.stdout,
-                message_tx: self.message_tx,
-            },
-        )
-    }
+	/// Split the transport into stdin and the rest
+	///
+	/// This allows Connection to hold stdin separately (for sending)
+	/// while run() owns stdout (for receiving).
+	///
+	/// # Returns
+	///
+	/// Returns (stdin, self_without_stdin) where self_without_stdin
+	/// can still run the receive loop but cannot send.
+	pub fn into_parts(self) -> (PipeTransportSender<W>, PipeTransportReceiver<R>) {
+		(
+			PipeTransportSender { stdin: self.stdin },
+			PipeTransportReceiver {
+				stdout: self.stdout,
+				message_tx: self.message_tx,
+			},
+		)
+	}
 
-    pub fn into_transport_parts(
-        self,
-        message_rx: mpsc::UnboundedReceiver<JsonValue>,
-    ) -> TransportParts {
-        let (sender, receiver) = self.into_parts();
-        TransportParts {
-            sender: Box::new(sender),
-            receiver: Box::new(receiver),
-            message_rx,
-        }
-    }
+	pub fn into_transport_parts(
+		self,
+		message_rx: mpsc::UnboundedReceiver<JsonValue>,
+	) -> TransportParts {
+		let (sender, receiver) = self.into_parts();
+		TransportParts {
+			sender: Box::new(sender),
+			receiver: Box::new(receiver),
+			message_rx,
+		}
+	}
 
-    /// Run the message read loop
-    ///
-    /// This continuously reads messages from the server and sends them
-    /// to the message channel. Matches playwright-python's `run()` method.
-    ///
-    /// For messages larger than 32KB, reads in chunks to reduce peak memory usage.
-    /// Matches playwright-python's chunked reading strategy.
-    ///
-    /// The loop will run until:
-    /// - An error occurs
-    /// - The stdout stream is closed
-    /// - The message channel is dropped
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if reading from stdout fails or if message parsing fails.
-    pub async fn run(&mut self) -> Result<()> {
-        const CHUNK_SIZE: usize = 32_768; // 32KB chunks
+	/// Run the message read loop
+	///
+	/// This continuously reads messages from the server and sends them
+	/// to the message channel. Matches playwright-python's `run()` method.
+	///
+	/// For messages larger than 32KB, reads in chunks to reduce peak memory usage.
+	/// Matches playwright-python's chunked reading strategy.
+	///
+	/// The loop will run until:
+	/// - An error occurs
+	/// - The stdout stream is closed
+	/// - The message channel is dropped
+	///
+	/// # Errors
+	///
+	/// Returns an error if reading from stdout fails or if message parsing fails.
+	pub async fn run(&mut self) -> Result<()> {
+		const CHUNK_SIZE: usize = 32_768; // 32KB chunks
 
-        loop {
-            // Read 4-byte little-endian length prefix
-            // Matches: buffer = await self._proc.stdout.readexactly(4)
-            let mut len_buf = [0u8; 4];
-            self.stdout.read_exact(&mut len_buf).await.map_err(|e| {
-                Error::TransportError(format!("Failed to read length prefix: {}", e))
-            })?;
+		loop {
+			// Read 4-byte little-endian length prefix
+			// Matches: buffer = await self._proc.stdout.readexactly(4)
+			let mut len_buf = [0u8; 4];
+			self.stdout.read_exact(&mut len_buf).await.map_err(|e| {
+				Error::TransportError(format!("Failed to read length prefix: {}", e))
+			})?;
 
-            let length = u32::from_le_bytes(len_buf) as usize;
+			let length = u32::from_le_bytes(len_buf) as usize;
 
-            // Read message payload
-            // Python reads in 32KB chunks for large messages
-            // Matches: to_read = min(length, 32768)
-            let message_buf = if length <= CHUNK_SIZE {
-                // Small message: read all at once
-                let mut buf = vec![0u8; length];
-                self.stdout
-                    .read_exact(&mut buf)
-                    .await
-                    .map_err(|e| Error::TransportError(format!("Failed to read message: {}", e)))?;
-                buf
-            } else {
-                // Large message: read in chunks
-                // Matches Python: while length > 0: data = await readexactly(min(length, 32768))
-                let mut buf = Vec::with_capacity(length);
-                let mut remaining = length;
+			// Read message payload
+			// Python reads in 32KB chunks for large messages
+			// Matches: to_read = min(length, 32768)
+			let message_buf = if length <= CHUNK_SIZE {
+				// Small message: read all at once
+				let mut buf = vec![0u8; length];
+				self.stdout
+					.read_exact(&mut buf)
+					.await
+					.map_err(|e| Error::TransportError(format!("Failed to read message: {}", e)))?;
+				buf
+			} else {
+				// Large message: read in chunks
+				// Matches Python: while length > 0: data = await readexactly(min(length, 32768))
+				let mut buf = Vec::with_capacity(length);
+				let mut remaining = length;
 
-                while remaining > 0 {
-                    let to_read = std::cmp::min(remaining, CHUNK_SIZE);
-                    let mut chunk = vec![0u8; to_read];
+				while remaining > 0 {
+					let to_read = std::cmp::min(remaining, CHUNK_SIZE);
+					let mut chunk = vec![0u8; to_read];
 
-                    self.stdout.read_exact(&mut chunk).await.map_err(|e| {
-                        Error::TransportError(format!("Failed to read message chunk: {}", e))
-                    })?;
+					self.stdout.read_exact(&mut chunk).await.map_err(|e| {
+						Error::TransportError(format!("Failed to read message chunk: {}", e))
+					})?;
 
-                    buf.extend_from_slice(&chunk);
-                    remaining -= to_read;
-                }
+					buf.extend_from_slice(&chunk);
+					remaining -= to_read;
+				}
 
-                buf
-            };
+				buf
+			};
 
-            // Parse JSON
-            // Matches: obj = json.loads(data.decode("utf-8"))
-            let message: JsonValue = serde_json::from_slice(&message_buf)
-                .map_err(|e| Error::ProtocolError(format!("Failed to parse JSON: {}", e)))?;
+			// Parse JSON
+			// Matches: obj = json.loads(data.decode("utf-8"))
+			let message: JsonValue = serde_json::from_slice(&message_buf)
+				.map_err(|e| Error::ProtocolError(format!("Failed to parse JSON: {}", e)))?;
 
-            // Dispatch message
-            // Matches: self.on_message(obj)
-            if self.message_tx.send(message).is_err() {
-                // Channel closed, stop reading
-                break;
-            }
-        }
+			// Dispatch message
+			// Matches: self.on_message(obj)
+			if self.message_tx.send(message).is_err() {
+				// Channel closed, stop reading
+				break;
+			}
+		}
 
-        Ok(())
-    }
+		Ok(())
+	}
 }
 
 impl<W> PipeTransportSender<W>
 where
-    W: AsyncWrite + Unpin + Send + Sync + 'static,
+	W: AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    /// Send a message to the server using length-prefixed framing
-    async fn send_internal(&mut self, message: JsonValue) -> Result<()> {
-        let json_bytes = serde_json::to_vec(&message)
-            .map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
+	/// Send a message to the server using length-prefixed framing
+	async fn send_internal(&mut self, message: JsonValue) -> Result<()> {
+		let json_bytes = serde_json::to_vec(&message)
+			.map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
 
-        let length = json_bytes.len() as u32;
+		let length = json_bytes.len() as u32;
 
-        self.stdin
-            .write_all(&length.to_le_bytes())
-            .await
-            .map_err(|e| Error::TransportError(format!("Failed to write length: {}", e)))?;
+		self.stdin
+			.write_all(&length.to_le_bytes())
+			.await
+			.map_err(|e| Error::TransportError(format!("Failed to write length: {}", e)))?;
 
-        self.stdin
-            .write_all(&json_bytes)
-            .await
-            .map_err(|e| Error::TransportError(format!("Failed to write message: {}", e)))?;
+		self.stdin
+			.write_all(&json_bytes)
+			.await
+			.map_err(|e| Error::TransportError(format!("Failed to write message: {}", e)))?;
 
-        self.stdin
-            .flush()
-            .await
-            .map_err(|e| Error::TransportError(format!("Failed to flush: {}", e)))?;
+		self.stdin
+			.flush()
+			.await
+			.map_err(|e| Error::TransportError(format!("Failed to flush: {}", e)))?;
 
-        Ok(())
-    }
+		Ok(())
+	}
 }
 
 impl<W> Transport for PipeTransportSender<W>
 where
-    W: AsyncWrite + Unpin + Send + Sync + 'static,
+	W: AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    fn send(
-        &mut self,
-        message: JsonValue,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-        Box::pin(self.send_internal(message))
-    }
+	fn send(
+		&mut self,
+		message: JsonValue,
+	) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+		Box::pin(self.send_internal(message))
+	}
 }
 
 impl<R> TransportReceiver for PipeTransportReceiver<R>
 where
-    R: AsyncRead + Unpin + Send + Sync + 'static,
+	R: AsyncRead + Unpin + Send + Sync + 'static,
 {
-    fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        Box::pin(async move { PipeTransportReceiver::run(*self).await })
-    }
+	fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+		Box::pin(async move { PipeTransportReceiver::run(*self).await })
+	}
 }
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 pub struct WebSocketTransport {
-    sender: WebSocketTransportSender,
-    receiver: WebSocketTransportReceiver,
+	sender: WebSocketTransportSender,
+	receiver: WebSocketTransportReceiver,
 }
 
 pub struct WebSocketTransportSender {
-    sink: SplitSink<WsStream, Message>,
+	sink: SplitSink<WsStream, Message>,
 }
 
 pub struct WebSocketTransportReceiver {
-    stream: SplitStream<WsStream>,
-    message_tx: mpsc::UnboundedSender<JsonValue>,
+	stream: SplitStream<WsStream>,
+	message_tx: mpsc::UnboundedSender<JsonValue>,
 }
 
 impl WebSocketTransport {
-    pub async fn connect(url: &str) -> Result<(Self, mpsc::UnboundedReceiver<JsonValue>)> {
-        let (stream, _) = connect_async(url)
-            .await
-            .map_err(|e| Error::TransportError(format!("Failed to connect websocket: {}", e)))?;
+	pub async fn connect(url: &str) -> Result<(Self, mpsc::UnboundedReceiver<JsonValue>)> {
+		let (stream, _) = connect_async(url)
+			.await
+			.map_err(|e| Error::TransportError(format!("Failed to connect websocket: {}", e)))?;
 
-        let (sink, stream) = stream.split();
-        let (message_tx, message_rx) = mpsc::unbounded_channel();
+		let (sink, stream) = stream.split();
+		let (message_tx, message_rx) = mpsc::unbounded_channel();
 
-        Ok((
-            Self {
-                sender: WebSocketTransportSender { sink },
-                receiver: WebSocketTransportReceiver { stream, message_tx },
-            },
-            message_rx,
-        ))
-    }
+		Ok((
+			Self {
+				sender: WebSocketTransportSender { sink },
+				receiver: WebSocketTransportReceiver { stream, message_tx },
+			},
+			message_rx,
+		))
+	}
 
-    pub fn into_parts(self) -> (WebSocketTransportSender, WebSocketTransportReceiver) {
-        (self.sender, self.receiver)
-    }
+	pub fn into_parts(self) -> (WebSocketTransportSender, WebSocketTransportReceiver) {
+		(self.sender, self.receiver)
+	}
 
-    pub fn into_transport_parts(
-        self,
-        message_rx: mpsc::UnboundedReceiver<JsonValue>,
-    ) -> TransportParts {
-        let (sender, receiver) = self.into_parts();
-        TransportParts {
-            sender: Box::new(sender),
-            receiver: Box::new(receiver),
-            message_rx,
-        }
-    }
+	pub fn into_transport_parts(
+		self,
+		message_rx: mpsc::UnboundedReceiver<JsonValue>,
+	) -> TransportParts {
+		let (sender, receiver) = self.into_parts();
+		TransportParts {
+			sender: Box::new(sender),
+			receiver: Box::new(receiver),
+			message_rx,
+		}
+	}
 }
 
 impl Transport for WebSocketTransportSender {
-    fn send(
-        &mut self,
-        message: JsonValue,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-        Box::pin(async move {
-            let payload = serde_json::to_string(&message)
-                .map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
+	fn send(
+		&mut self,
+		message: JsonValue,
+	) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+		Box::pin(async move {
+			let payload = serde_json::to_string(&message)
+				.map_err(|e| Error::TransportError(format!("Failed to serialize JSON: {}", e)))?;
 
-            self.sink.send(Message::Text(payload)).await.map_err(|e| {
-                Error::TransportError(format!("Failed to send websocket message: {}", e))
-            })?;
+			self.sink.send(Message::Text(payload)).await.map_err(|e| {
+				Error::TransportError(format!("Failed to send websocket message: {}", e))
+			})?;
 
-            self.sink.flush().await.map_err(|e| {
-                Error::TransportError(format!("Failed to flush websocket sink: {}", e))
-            })?;
+			self.sink.flush().await.map_err(|e| {
+				Error::TransportError(format!("Failed to flush websocket sink: {}", e))
+			})?;
 
-            Ok(())
-        })
-    }
+			Ok(())
+		})
+	}
 }
 
 impl TransportReceiver for WebSocketTransportReceiver {
-    fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        Box::pin(async move {
-            let Self {
-                mut stream,
-                message_tx,
-            } = *self;
+	fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+		Box::pin(async move {
+			let Self {
+				mut stream,
+				message_tx,
+			} = *self;
 
-            while let Some(frame) = stream.next().await {
-                let frame = match frame {
-                    Ok(frame) => frame,
-                    Err(WsError::ConnectionClosed) | Err(WsError::AlreadyClosed) => break,
-                    Err(e) => {
-                        return Err(Error::TransportError(format!(
-                            "WebSocket read error: {}",
-                            e
-                        )));
-                    }
-                };
+			while let Some(frame) = stream.next().await {
+				let frame = match frame {
+					Ok(frame) => frame,
+					Err(WsError::ConnectionClosed) | Err(WsError::AlreadyClosed) => break,
+					Err(e) => {
+						return Err(Error::TransportError(format!(
+							"WebSocket read error: {}",
+							e
+						)));
+					}
+				};
 
-                let value = match frame {
-                    Message::Text(text) => {
-                        serde_json::from_str::<JsonValue>(&text).map_err(|e| {
-                            Error::ProtocolError(format!("Failed to parse websocket text: {}", e))
-                        })?
-                    }
-                    Message::Binary(bin) => {
-                        serde_json::from_slice::<JsonValue>(&bin).map_err(|e| {
-                            Error::ProtocolError(format!("Failed to parse websocket binary: {}", e))
-                        })?
-                    }
-                    Message::Close(_) => break,
-                    Message::Ping(_) | Message::Pong(_) => {
-                        continue;
-                    }
-                    other => {
-                        return Err(Error::TransportError(format!(
-                            "Unexpected websocket message: {:?}",
-                            other
-                        )));
-                    }
-                };
+				let value = match frame {
+					Message::Text(text) => {
+						serde_json::from_str::<JsonValue>(&text).map_err(|e| {
+							Error::ProtocolError(format!("Failed to parse websocket text: {}", e))
+						})?
+					}
+					Message::Binary(bin) => {
+						serde_json::from_slice::<JsonValue>(&bin).map_err(|e| {
+							Error::ProtocolError(format!("Failed to parse websocket binary: {}", e))
+						})?
+					}
+					Message::Close(_) => break,
+					Message::Ping(_) | Message::Pong(_) => {
+						continue;
+					}
+					other => {
+						return Err(Error::TransportError(format!(
+							"Unexpected websocket message: {:?}",
+							other
+						)));
+					}
+				};
 
-                if message_tx.send(value).is_err() {
-                    break;
-                }
-            }
+				if message_tx.send(value).is_err() {
+					break;
+				}
+			}
 
-            Ok(())
-        })
-    }
+			Ok(())
+		})
+	}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+	use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    #[test]
-    fn test_length_prefix_encoding() {
-        // Test that we match Python's little-endian encoding
-        let length: u32 = 1234;
-        let bytes = length.to_le_bytes();
+	use super::*;
 
-        // Verify little-endian byte order
-        assert_eq!(bytes[0], (length & 0xFF) as u8);
-        assert_eq!(bytes[1], ((length >> 8) & 0xFF) as u8);
-        assert_eq!(bytes[2], ((length >> 16) & 0xFF) as u8);
-        assert_eq!(bytes[3], ((length >> 24) & 0xFF) as u8);
+	#[test]
+	fn test_length_prefix_encoding() {
+		// Test that we match Python's little-endian encoding
+		let length: u32 = 1234;
+		let bytes = length.to_le_bytes();
 
-        // Verify round-trip
-        assert_eq!(u32::from_le_bytes(bytes), length);
-    }
+		// Verify little-endian byte order
+		assert_eq!(bytes[0], (length & 0xFF) as u8);
+		assert_eq!(bytes[1], ((length >> 8) & 0xFF) as u8);
+		assert_eq!(bytes[2], ((length >> 16) & 0xFF) as u8);
+		assert_eq!(bytes[3], ((length >> 24) & 0xFF) as u8);
 
-    #[test]
-    fn test_message_framing_format() {
-        // Verify our framing matches Python's format:
-        // len(data).to_bytes(4, byteorder="little") + data
-        let message = serde_json::json!({"test": "hello"});
-        let json_bytes = serde_json::to_vec(&message).unwrap();
-        let length = json_bytes.len() as u32;
-        let length_bytes = length.to_le_bytes();
+		// Verify round-trip
+		assert_eq!(u32::from_le_bytes(bytes), length);
+	}
 
-        // Frame should be: [length (4 bytes LE)][JSON bytes]
-        let mut frame = Vec::new();
-        frame.extend_from_slice(&length_bytes);
-        frame.extend_from_slice(&json_bytes);
+	#[test]
+	fn test_message_framing_format() {
+		// Verify our framing matches Python's format:
+		// len(data).to_bytes(4, byteorder="little") + data
+		let message = serde_json::json!({"test": "hello"});
+		let json_bytes = serde_json::to_vec(&message).unwrap();
+		let length = json_bytes.len() as u32;
+		let length_bytes = length.to_le_bytes();
 
-        // Verify structure
-        assert_eq!(frame.len(), 4 + json_bytes.len());
-        assert_eq!(&frame[0..4], &length_bytes);
-        assert_eq!(&frame[4..], &json_bytes);
-    }
+		// Frame should be: [length (4 bytes LE)][JSON bytes]
+		let mut frame = Vec::new();
+		frame.extend_from_slice(&length_bytes);
+		frame.extend_from_slice(&json_bytes);
 
-    #[tokio::test]
-    async fn test_send_message() {
-        // Create TWO separate duplex pipes:
-        // 1. For stdin: transport writes, we read
-        // 2. For stdout: we write, transport reads
-        let (stdin_read, stdin_write) = tokio::io::duplex(1024);
-        let (stdout_read, stdout_write) = tokio::io::duplex(1024);
+		// Verify structure
+		assert_eq!(frame.len(), 4 + json_bytes.len());
+		assert_eq!(&frame[0..4], &length_bytes);
+		assert_eq!(&frame[4..], &json_bytes);
+	}
 
-        // Give transport the write end of stdin pipe and read end of stdout pipe
-        let (_stdin_read, mut _stdout_write) = (stdin_read, stdout_write);
-        let (transport, _rx) = PipeTransport::new(stdin_write, stdout_read);
-        let (mut sender, _receiver) = transport.into_parts();
+	#[tokio::test]
+	async fn test_send_message() {
+		// Create TWO separate duplex pipes:
+		// 1. For stdin: transport writes, we read
+		// 2. For stdout: we write, transport reads
+		let (stdin_read, stdin_write) = tokio::io::duplex(1024);
+		let (stdout_read, stdout_write) = tokio::io::duplex(1024);
 
-        // Test message
-        let test_message = serde_json::json!({
-            "id": 1,
-            "method": "test",
-            "params": {"foo": "bar"}
-        });
+		// Give transport the write end of stdin pipe and read end of stdout pipe
+		let (_stdin_read, mut _stdout_write) = (stdin_read, stdout_write);
+		let (transport, _rx) = PipeTransport::new(stdin_write, stdout_read);
+		let (mut sender, _receiver) = transport.into_parts();
 
-        // Send message
-        sender.send(test_message.clone()).await.unwrap();
+		// Test message
+		let test_message = serde_json::json!({
+			"id": 1,
+			"method": "test",
+			"params": {"foo": "bar"}
+		});
 
-        // Read what transport wrote to stdin from our read end
-        let (mut read_half, _write_half) = tokio::io::split(_stdin_read);
-        let mut len_buf = [0u8; 4];
-        read_half.read_exact(&mut len_buf).await.unwrap();
-        let length = u32::from_le_bytes(len_buf) as usize;
+		// Send message
+		sender.send(test_message.clone()).await.unwrap();
 
-        let mut msg_buf = vec![0u8; length];
-        read_half.read_exact(&mut msg_buf).await.unwrap();
+		// Read what transport wrote to stdin from our read end
+		let (mut read_half, _write_half) = tokio::io::split(_stdin_read);
+		let mut len_buf = [0u8; 4];
+		read_half.read_exact(&mut len_buf).await.unwrap();
+		let length = u32::from_le_bytes(len_buf) as usize;
 
-        let received: serde_json::Value = serde_json::from_slice(&msg_buf).unwrap();
-        assert_eq!(received, test_message);
-    }
+		let mut msg_buf = vec![0u8; length];
+		read_half.read_exact(&mut msg_buf).await.unwrap();
 
-    #[tokio::test]
-    async fn test_multiple_messages_in_sequence() {
-        // Create two duplex pipes for bidirectional communication
-        let (_stdin_read, stdin_write) = tokio::io::duplex(4096);
-        let (stdout_read, mut stdout_write) = tokio::io::duplex(4096);
+		let received: serde_json::Value = serde_json::from_slice(&msg_buf).unwrap();
+		assert_eq!(received, test_message);
+	}
 
-        let (mut transport, mut rx) = PipeTransport::new(stdin_write, stdout_read);
+	#[tokio::test]
+	async fn test_multiple_messages_in_sequence() {
+		// Create two duplex pipes for bidirectional communication
+		let (_stdin_read, stdin_write) = tokio::io::duplex(4096);
+		let (stdout_read, mut stdout_write) = tokio::io::duplex(4096);
 
-        // Spawn reader task
-        let read_task = tokio::spawn(async move { transport.run().await });
+		let (mut transport, mut rx) = PipeTransport::new(stdin_write, stdout_read);
 
-        // Send multiple messages (simulating server sending to transport)
-        let messages = vec![
-            serde_json::json!({"id": 1, "method": "first"}),
-            serde_json::json!({"id": 2, "method": "second"}),
-            serde_json::json!({"id": 3, "method": "third"}),
-        ];
+		// Spawn reader task
+		let read_task = tokio::spawn(async move { transport.run().await });
 
-        for msg in &messages {
-            let json_bytes = serde_json::to_vec(msg).unwrap();
-            let length = json_bytes.len() as u32;
+		// Send multiple messages (simulating server sending to transport)
+		let messages = vec![
+			serde_json::json!({"id": 1, "method": "first"}),
+			serde_json::json!({"id": 2, "method": "second"}),
+			serde_json::json!({"id": 3, "method": "third"}),
+		];
 
-            stdout_write.write_all(&length.to_le_bytes()).await.unwrap();
-            stdout_write.write_all(&json_bytes).await.unwrap();
-        }
-        stdout_write.flush().await.unwrap();
+		for msg in &messages {
+			let json_bytes = serde_json::to_vec(msg).unwrap();
+			let length = json_bytes.len() as u32;
 
-        // Receive all messages
-        for expected in &messages {
-            let received = rx.recv().await.unwrap();
-            assert_eq!(&received, expected);
-        }
+			stdout_write.write_all(&length.to_le_bytes()).await.unwrap();
+			stdout_write.write_all(&json_bytes).await.unwrap();
+		}
+		stdout_write.flush().await.unwrap();
 
-        // Clean up
-        drop(stdout_write);
-        drop(rx);
-        let _ = read_task.await;
-    }
+		// Receive all messages
+		for expected in &messages {
+			let received = rx.recv().await.unwrap();
+			assert_eq!(&received, expected);
+		}
 
-    #[tokio::test]
-    async fn test_large_message() {
-        let (_stdin_read, stdin_write) = tokio::io::duplex(1024 * 1024); // 1MB buffer
-        let (stdout_read, mut stdout_write) = tokio::io::duplex(1024 * 1024);
+		// Clean up
+		drop(stdout_write);
+		drop(rx);
+		let _ = read_task.await;
+	}
 
-        let (mut transport, mut rx) = PipeTransport::new(stdin_write, stdout_read);
+	#[tokio::test]
+	async fn test_large_message() {
+		let (_stdin_read, stdin_write) = tokio::io::duplex(1024 * 1024); // 1MB buffer
+		let (stdout_read, mut stdout_write) = tokio::io::duplex(1024 * 1024);
 
-        // Spawn reader
-        let read_task = tokio::spawn(async move { transport.run().await });
+		let (mut transport, mut rx) = PipeTransport::new(stdin_write, stdout_read);
 
-        // Create a large message (>32KB to test chunked reading note in code)
-        let large_string = "x".repeat(100_000);
-        let large_message = serde_json::json!({
-            "id": 1,
-            "data": large_string
-        });
+		// Spawn reader
+		let read_task = tokio::spawn(async move { transport.run().await });
 
-        let json_bytes = serde_json::to_vec(&large_message).unwrap();
-        let length = json_bytes.len() as u32;
+		// Create a large message (>32KB to test chunked reading note in code)
+		let large_string = "x".repeat(100_000);
+		let large_message = serde_json::json!({
+			"id": 1,
+			"data": large_string
+		});
 
-        // Should be > 32KB
-        assert!(length > 32_768, "Test message should be > 32KB");
+		let json_bytes = serde_json::to_vec(&large_message).unwrap();
+		let length = json_bytes.len() as u32;
 
-        stdout_write.write_all(&length.to_le_bytes()).await.unwrap();
-        stdout_write.write_all(&json_bytes).await.unwrap();
-        stdout_write.flush().await.unwrap();
+		// Should be > 32KB
+		assert!(length > 32_768, "Test message should be > 32KB");
 
-        // Verify we can receive it
-        let received = rx.recv().await.unwrap();
-        assert_eq!(received, large_message);
+		stdout_write.write_all(&length.to_le_bytes()).await.unwrap();
+		stdout_write.write_all(&json_bytes).await.unwrap();
+		stdout_write.flush().await.unwrap();
 
-        drop(stdout_write);
-        drop(rx);
-        let _ = read_task.await;
-    }
+		// Verify we can receive it
+		let received = rx.recv().await.unwrap();
+		assert_eq!(received, large_message);
 
-    #[tokio::test]
-    async fn test_malformed_length_prefix() {
-        let (_stdin_read, stdin_write) = tokio::io::duplex(1024);
-        let (stdout_read, mut stdout_write) = tokio::io::duplex(1024);
+		drop(stdout_write);
+		drop(rx);
+		let _ = read_task.await;
+	}
 
-        let (mut transport, _rx) = PipeTransport::new(stdin_write, stdout_read);
+	#[tokio::test]
+	async fn test_malformed_length_prefix() {
+		let (_stdin_read, stdin_write) = tokio::io::duplex(1024);
+		let (stdout_read, mut stdout_write) = tokio::io::duplex(1024);
 
-        // Write only 2 bytes instead of 4 (incomplete length prefix)
-        // This simulates server sending malformed data
-        stdout_write.write_all(&[0x01, 0x02]).await.unwrap();
-        stdout_write.flush().await.unwrap();
+		let (mut transport, _rx) = PipeTransport::new(stdin_write, stdout_read);
 
-        // Close the pipe to trigger EOF
-        drop(stdout_write);
+		// Write only 2 bytes instead of 4 (incomplete length prefix)
+		// This simulates server sending malformed data
+		stdout_write.write_all(&[0x01, 0x02]).await.unwrap();
+		stdout_write.flush().await.unwrap();
 
-        // Run should error on incomplete read
-        let result = transport.run().await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to read length prefix")
-        );
-    }
+		// Close the pipe to trigger EOF
+		drop(stdout_write);
 
-    #[tokio::test]
-    async fn test_broken_pipe() {
-        let (_stdin_read, stdin_write) = tokio::io::duplex(1024);
-        let (stdout_read, stdout_write) = tokio::io::duplex(1024);
+		// Run should error on incomplete read
+		let result = transport.run().await;
+		assert!(result.is_err());
+		assert!(
+			result
+				.unwrap_err()
+				.to_string()
+				.contains("Failed to read length prefix")
+		);
+	}
 
-        let (mut transport, _rx) = PipeTransport::new(stdin_write, stdout_read);
+	#[tokio::test]
+	async fn test_broken_pipe() {
+		let (_stdin_read, stdin_write) = tokio::io::duplex(1024);
+		let (stdout_read, stdout_write) = tokio::io::duplex(1024);
 
-        // Close the stdout write side immediately
-        drop(stdout_write);
+		let (mut transport, _rx) = PipeTransport::new(stdin_write, stdout_read);
 
-        // Spawn run() - it should error when trying to read from closed pipe
-        let read_task = tokio::spawn(async move { transport.run().await });
+		// Close the stdout write side immediately
+		drop(stdout_write);
 
-        // Wait for it to complete - should be an error
-        let result = read_task.await.unwrap();
-        assert!(result.is_err());
-    }
+		// Spawn run() - it should error when trying to read from closed pipe
+		let read_task = tokio::spawn(async move { transport.run().await });
 
-    #[tokio::test]
-    async fn test_graceful_shutdown() {
-        let (_stdin_read, stdin_write) = tokio::io::duplex(1024);
-        let (stdout_read, mut stdout_write) = tokio::io::duplex(1024);
+		// Wait for it to complete - should be an error
+		let result = read_task.await.unwrap();
+		assert!(result.is_err());
+	}
 
-        let (mut transport, mut rx) = PipeTransport::new(stdin_write, stdout_read);
+	#[tokio::test]
+	async fn test_graceful_shutdown() {
+		let (_stdin_read, stdin_write) = tokio::io::duplex(1024);
+		let (stdout_read, mut stdout_write) = tokio::io::duplex(1024);
 
-        // Spawn reader
-        let read_task = tokio::spawn(async move { transport.run().await });
+		let (mut transport, mut rx) = PipeTransport::new(stdin_write, stdout_read);
 
-        // Send a message
-        let message = serde_json::json!({"id": 1, "method": "test"});
-        let json_bytes = serde_json::to_vec(&message).unwrap();
-        let length = json_bytes.len() as u32;
+		// Spawn reader
+		let read_task = tokio::spawn(async move { transport.run().await });
 
-        stdout_write.write_all(&length.to_le_bytes()).await.unwrap();
-        stdout_write.write_all(&json_bytes).await.unwrap();
-        stdout_write.flush().await.unwrap();
+		// Send a message
+		let message = serde_json::json!({"id": 1, "method": "test"});
+		let json_bytes = serde_json::to_vec(&message).unwrap();
+		let length = json_bytes.len() as u32;
 
-        // Receive the message
-        let received = rx.recv().await.unwrap();
-        assert_eq!(received, message);
+		stdout_write.write_all(&length.to_le_bytes()).await.unwrap();
+		stdout_write.write_all(&json_bytes).await.unwrap();
+		stdout_write.flush().await.unwrap();
 
-        // Drop the receiver (simulates connection closing)
-        drop(rx);
+		// Receive the message
+		let received = rx.recv().await.unwrap();
+		assert_eq!(received, message);
 
-        // Close stdout pipe
-        drop(stdout_write);
+		// Drop the receiver (simulates connection closing)
+		drop(rx);
 
-        // Reader should exit cleanly (channel closed)
-        let result = read_task.await.unwrap();
-        // Should succeed - channel closed is expected shutdown
-        assert!(result.is_ok() || result.unwrap_err().to_string().contains("Failed to read"));
-    }
+		// Close stdout pipe
+		drop(stdout_write);
+
+		// Reader should exit cleanly (channel closed)
+		let result = read_task.await.unwrap();
+		// Should succeed - channel closed is expected shutdown
+		assert!(result.is_ok() || result.unwrap_err().to_string().contains("Failed to read"));
+	}
 }
