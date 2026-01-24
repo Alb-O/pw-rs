@@ -1,3 +1,4 @@
+#!/usr/bin/env nu
 # chatgpt.nu - ChatGPT automation workflows
 #
 # Usage:

@@ -1,6 +1,20 @@
-# chatgpt.nu Reference
+---
+name: pw-chatgpt
+description: Agent-to-ChatGPT conversation using `pw` (send messages, attach files, download artifacts). Trigger when user wants to interact with ChatGPT.
+---
 
-Requires CDP connection: `pw --cdp-endpoint http://localhost:9222`
+# ChatGPT Automation
+
+Automate ChatGPT conversations using `pw` browser automation and the `chatgpt.nu` Nushell script.
+
+## Setup
+
+Requires CDP connection to your browser with an active ChatGPT session:
+
+```bash
+pw connect --launch    # launch browser with debugging
+pw navigate https://chatgpt.com
+```
 
 ## Invocation
 
@@ -10,7 +24,7 @@ use chatgpt.nu *
 chatgpt ask "Hello"
 
 # from anywhere (bash)
-nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt ask "Hello"'
+nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; chatgpt ask "Hello"'
 ```
 
 ## Connecting to Existing Session
@@ -59,11 +73,11 @@ chatgpt attach --file codemap.md --prompt "Review this" --send
 open file.txt | chatgpt attach --name "doc.txt"
 ```
 
-**From bash**: Use `--file` for complex text (avoids shell escaping issues):
+From bash, use `--file` for complex text (avoids shell escaping issues):
 
 ```bash
-nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt ask --file prompt.md'
-nu -I ~/.claude/skills/pw/scripts -c 'use chatgpt.nu *; chatgpt attach --file doc.md --send'
+nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; chatgpt ask --file prompt.md'
+nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; chatgpt attach --file doc.md --send'
 ```
 
 ### chatgpt paste
@@ -111,8 +125,7 @@ Get full conversation history (all user and assistant messages).
 chatgpt history                  # readable transcript
 chatgpt history --last 2         # last user/assistant exchange
 chatgpt history --json           # JSON
-# nushell records (for piping)
-chatgpt history --raw | where role == "user"
+chatgpt history --raw | where role == "user"   # nushell records
 ```
 
 ### chatgpt refresh
@@ -132,7 +145,26 @@ chatgpt download --index 0            # download specific file by index
 
 Note: You can ask for downloadable files from ChatGPT by explicitly prompting them to use the `python_user_visible` tool and providing a link in chat like: `sandbox:/mnt/data/<filename>`.
 
-Use this technique if we want a new file from ChatGPT, e.g. ChatGPT to make a detailed plan markdown doc, or a src code file, we want to download the artifact to our local project.
+## Collaborative Discussions
+
+For agent-to-ChatGPT collaboration (e.g., planning, code review):
+
+1. Attach context first - upload a codemap or relevant file to give ChatGPT background
+2. Be collaborative - switch between checking real code and talking to ChatGPT; have back-and-forths
+3. Ask for clarification - ask if ChatGPT needs more detail in specific areas for better guidance
+4. Request deliverables - when wrapping up, ask for a comprehensive plan with checkboxes and code sketches
+5. Download artifacts - use `chatgpt download` to save generated plans/code to disk
+
+Example workflow:
+
+```bash
+chatgpt attach --file codemap.md --prompt "Review this codebase structure" --send
+chatgpt wait
+chatgpt get-response
+# ... discuss, iterate ...
+chatgpt ask "Give me a multi-phased implementation plan with checkboxes"
+chatgpt download -o plan.md
+```
 
 ## Selectors
 
@@ -153,3 +185,4 @@ Use this technique if we want a new file from ChatGPT, e.g. ChatGPT to make a de
 - UI sometimes stuck with loading dot; `chatgpt refresh` to recover
 - `#prompt-textarea` is contentEditable div, not textarea
 - Attachment filenames show as UUIDs in UI but content works
+- Strip time estimates from downloaded plans (they're usually inaccurate)

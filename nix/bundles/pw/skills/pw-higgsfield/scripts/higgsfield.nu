@@ -1,3 +1,4 @@
+#!/usr/bin/env nu
 # higgsfield.nu - Higgsfield AI automation workflows
 #
 # Usage:

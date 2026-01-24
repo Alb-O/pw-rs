@@ -1,0 +1,1 @@
+../../pw/scripts/start-daemon.sh

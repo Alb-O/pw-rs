@@ -1,3 +1,4 @@
+#!/usr/bin/env nu
 # pw.nu - Nushell module for pw browser automation
 #
 # Usage:

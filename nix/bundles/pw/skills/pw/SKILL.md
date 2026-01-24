@@ -1,6 +1,6 @@
 ---
 name: pw
-description: Browser automation with pw-cli (Playwrite CLI tool). Use for web scraping, screenshots, filling forms, clicking elements, extracting text/HTML, and automating web workflows. Trigger when user requests browser related tasks.
+description: Core usage of pw (Playwright CLI). Use when user requests browser tasks.
 ---
 
 # pw
@@ -51,10 +51,3 @@ pw page text -s h1     # uses cached URL
 pw click -s ".next"    # still same page
 pw screenshot -o s.png # still same page
 ```
-
-## Site-specific Nushell Scripts
-
-Read these references and run relevant nu scripts when user mentions these sites:
-
-- **ChatGPT**: See [references/chatgpt.md](references/chatgpt.md) - discussions with GPT AI models, sending messages & getting feedback, attaching files to ChatGPT
-- **Higgsfield**: See [references/higgsfield.md](references/higgsfield.md) - image/video generation
