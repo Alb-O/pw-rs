@@ -129,3 +129,35 @@ command_registry! {
 	PageCoords => crate::commands::page::coords::CoordsCommand { names: ["page.coords"] },
 	PageCoordsAll => crate::commands::page::coords::CoordsAllCommand { names: ["page.coords-all"] },
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn lookup_command_by_primary_name() {
+		assert_eq!(lookup_command("navigate"), Some(CommandId::Navigate));
+		assert_eq!(lookup_command("click"), Some(CommandId::Click));
+		assert_eq!(lookup_command("page.text"), Some(CommandId::PageText));
+	}
+
+	#[test]
+	fn lookup_command_by_alias() {
+		assert_eq!(lookup_command("nav"), Some(CommandId::Navigate));
+		assert_eq!(lookup_command("ss"), Some(CommandId::Screenshot));
+	}
+
+	#[test]
+	fn lookup_command_unknown_returns_none() {
+		assert_eq!(lookup_command("unknown"), None);
+		assert_eq!(lookup_command(""), None);
+		assert_eq!(lookup_command("navigat"), None);
+	}
+
+	#[test]
+	fn command_name_returns_primary() {
+		assert_eq!(command_name(CommandId::Navigate), "navigate");
+		assert_eq!(command_name(CommandId::Screenshot), "screenshot");
+		assert_eq!(command_name(CommandId::PageText), "text");
+	}
+}
