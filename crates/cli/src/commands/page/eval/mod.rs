@@ -1,22 +1,15 @@
 //! JavaScript evaluation command.
 
-use std::time::Instant;
-
 use pw::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-use crate::context::CommandContext;
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
 use crate::error::{PwError, Result};
-use crate::output::{
-	CommandInputs, ErrorCode, EvalData, OutputFormat, ResultBuilder, print_result,
-};
-use crate::session_broker::{SessionBroker, SessionRequest};
-use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
-
-// ---------------------------------------------------------------------------
-// Raw and Resolved Types
-// ---------------------------------------------------------------------------
+use crate::output::{CommandInputs, EvalData};
+use crate::session_broker::SessionRequest;
+use crate::session_helpers::{with_session, ArtifactsPolicy};
+use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
 
 /// Raw inputs from CLI or batch JSON.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -55,20 +48,20 @@ pub struct EvalResolved {
 	pub expression: String,
 }
 
-impl EvalResolved {
-	pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
-		self.target.preferred_url(last_url)
-	}
-}
+pub struct EvalCommand;
 
-impl Resolve for EvalRaw {
-	type Output = EvalResolved;
+impl CommandDef for EvalCommand {
+	const NAME: &'static str = "eval";
 
-	fn resolve(self, env: &ResolveEnv<'_>) -> Result<EvalResolved> {
-		let url = self.url_flag.or(self.url);
+	type Raw = EvalRaw;
+	type Resolved = EvalResolved;
+	type Data = EvalData;
+
+	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
+		let url = raw.url_flag.or(raw.url);
 		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
 
-		let expression = self.expression_flag.or(self.expression).ok_or_else(|| {
+		let expression = raw.expression_flag.or(raw.expression).ok_or_else(|| {
 			PwError::Context(
 				"expression is required (provide positionally, via --expr, or via --file)".into(),
 			)
@@ -76,83 +69,70 @@ impl Resolve for EvalRaw {
 
 		Ok(EvalResolved { target, expression })
 	}
-}
 
-// ---------------------------------------------------------------------------
-// Execution
-// ---------------------------------------------------------------------------
+	fn execute<'exec, 'ctx>(
+		args: &'exec Self::Resolved,
+		mut exec: ExecCtx<'exec, 'ctx>,
+	) -> BoxFut<'exec, Result<CommandOutcome<Self::Data>>>
+	where
+		'ctx: 'exec,
+	{
+		Box::pin(async move {
+			let url_display = args.target.url_str().unwrap_or("<current page>");
+			info!(target = "pw", url = %url_display, browser = %exec.ctx.browser, "eval js");
+			debug!(target = "pw", expression = %args.expression, "expression");
 
-/// Execute eval with resolved arguments.
-pub async fn execute_resolved(
-	args: &EvalResolved,
-	ctx: &CommandContext,
-	broker: &mut SessionBroker<'_>,
-	format: OutputFormat,
-	last_url: Option<&str>,
-) -> Result<()> {
-	let _start = Instant::now();
-	let url_display = args.target.url_str().unwrap_or("<current page>");
-	info!(target = "pw", url = %url_display, browser = %ctx.browser, "eval js");
-	debug!(target = "pw", expression = %args.expression, "expression");
+			let preferred_url = args.target.preferred_url(exec.last_url);
+			let timeout_ms = exec.ctx.timeout_ms();
+			let target = args.target.target.clone();
+			let expression = args.expression.clone();
+			let expression_for_inputs = truncate_expression(&expression);
 
-	let preferred_url = args.preferred_url(last_url);
-	let session = broker
-		.session(
-			SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
-				.with_preferred_url(preferred_url),
-		)
-		.await?;
-	session
-		.goto_target(&args.target.target, ctx.timeout_ms())
-		.await?;
+			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx)
+				.with_preferred_url(preferred_url);
 
-	let wrapped_expr = format!("JSON.stringify({})", args.expression);
-	let raw_result = session.page().evaluate_value(&wrapped_expr).await;
+			let data = with_session(
+				&mut exec,
+				req,
+				ArtifactsPolicy::Never,
+				move |session| {
+					let expression = expression.clone();
+					Box::pin(async move {
+						session.goto_target(&target, timeout_ms).await?;
 
-	match raw_result {
-		Ok(json_str) => {
-			let value: serde_json::Value =
-				serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+						let wrapped_expr = format!("JSON.stringify({})", expression);
+						let raw_result = session.page().evaluate_value(&wrapped_expr).await;
 
-			let result = ResultBuilder::new("eval")
-				.inputs(CommandInputs {
+						let json_str = raw_result.map_err(|e| PwError::JsEval(e.to_string()))?;
+						let value: serde_json::Value =
+							serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+
+						Ok(EvalData {
+							result: value,
+							expression,
+						})
+					})
+				},
+			)
+			.await?;
+
+			let inputs = CommandInputs {
+				url: args.target.url_str().map(String::from),
+				expression: Some(expression_for_inputs),
+				..Default::default()
+			};
+
+			Ok(CommandOutcome {
+				inputs,
+				data,
+				delta: ContextDelta {
 					url: args.target.url_str().map(String::from),
-					expression: Some(truncate_expression(&args.expression)),
-					..Default::default()
-				})
-				.data(EvalData {
-					result: value,
-					expression: args.expression.clone(),
-				})
-				.build();
-
-			print_result(&result, format);
-		}
-		Err(e) => {
-			let error_msg = e.to_string();
-
-			let result = ResultBuilder::<EvalData>::new("eval")
-				.inputs(CommandInputs {
-					url: args.target.url_str().map(String::from),
-					expression: Some(truncate_expression(&args.expression)),
-					..Default::default()
-				})
-				.error_with_details(
-					ErrorCode::JsEvalFailed,
-					format!("Evaluation failed: {error_msg}"),
-					serde_json::json!({
-						"expression": truncate_expression(&args.expression),
-					}),
-				)
-				.build();
-
-			print_result(&result, format);
-			session.close().await?;
-			return Err(PwError::JsEval(error_msg));
-		}
+					selector: None,
+					output: None,
+				},
+			})
+		})
 	}
-
-	session.close().await
 }
 
 /// Truncate expression for output (avoid huge expressions in output)

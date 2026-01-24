@@ -118,4 +118,7 @@ command_registry! {
 	Fill => crate::commands::fill::FillCommand { names: ["fill"] },
 	Wait => crate::commands::wait::WaitCommand { names: ["wait"] },
 	Screenshot => crate::commands::screenshot::ScreenshotCommand { names: ["screenshot", "ss"] },
+	PageText => crate::commands::page::text::TextCommand { names: ["page.text"] },
+	PageHtml => crate::commands::page::html::HtmlCommand { names: ["page.html"] },
+	PageEval => crate::commands::page::eval::EvalCommand { names: ["page.eval"] },
 }

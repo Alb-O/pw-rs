@@ -1,24 +1,16 @@
 //! Text content extraction command.
 
-use std::path::Path;
-
 use pw::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::args;
-use crate::context::CommandContext;
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
 use crate::error::{PwError, Result};
-use crate::output::{
-	CommandInputs, ErrorCode, FailureWithArtifacts, OutputFormat, ResultBuilder, TextData,
-	print_failure_with_artifacts, print_result,
-};
-use crate::session_broker::{SessionBroker, SessionHandle, SessionRequest};
-use crate::target::{Resolve, ResolveEnv, ResolvedTarget, TargetPolicy};
-
-// ---------------------------------------------------------------------------
-// Raw and Resolved Types
-// ---------------------------------------------------------------------------
+use crate::output::{CommandInputs, TextData};
+use crate::session_broker::SessionRequest;
+use crate::session_helpers::{with_session, ArtifactsPolicy};
+use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
 
 /// Raw inputs from CLI or batch JSON.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -57,26 +49,93 @@ pub struct TextResolved {
 	pub selector: String,
 }
 
-impl TextResolved {
-	pub fn preferred_url<'a>(&'a self, last_url: Option<&'a str>) -> Option<&'a str> {
-		self.target.preferred_url(last_url)
-	}
-}
+pub struct TextCommand;
 
-impl Resolve for TextRaw {
-	type Output = TextResolved;
+impl CommandDef for TextCommand {
+	const NAME: &'static str = "text";
 
-	fn resolve(self, env: &ResolveEnv<'_>) -> Result<TextResolved> {
+	type Raw = TextRaw;
+	type Resolved = TextResolved;
+	type Data = TextData;
+
+	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
 		let resolved = args::resolve_url_and_selector(
-			self.url.clone(),
-			self.url_flag,
-			self.selector_flag.or(self.selector),
+			raw.url.clone(),
+			raw.url_flag,
+			raw.selector_flag.or(raw.selector),
 		);
 
 		let target = env.resolve_target(resolved.url, TargetPolicy::AllowCurrentPage)?;
 		let selector = env.resolve_selector(resolved.selector, None)?;
 
 		Ok(TextResolved { target, selector })
+	}
+
+	fn execute<'exec, 'ctx>(
+		args: &'exec Self::Resolved,
+		mut exec: ExecCtx<'exec, 'ctx>,
+	) -> BoxFut<'exec, Result<CommandOutcome<Self::Data>>>
+	where
+		'ctx: 'exec,
+	{
+		Box::pin(async move {
+			let url_display = args.target.url_str().unwrap_or("<current page>");
+			info!(target = "pw", url = %url_display, selector = %args.selector, browser = %exec.ctx.browser, "get text");
+
+			let preferred_url = args.target.preferred_url(exec.last_url);
+			let timeout_ms = exec.ctx.timeout_ms();
+			let target = args.target.target.clone();
+			let selector = args.selector.clone();
+
+			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx)
+				.with_preferred_url(preferred_url);
+
+			let data = with_session(
+				&mut exec,
+				req,
+				ArtifactsPolicy::Never,
+				move |session| {
+					let selector = selector.clone();
+					Box::pin(async move {
+						session.goto_target(&target, timeout_ms).await?;
+
+						let locator = session.page().locator(&selector).await;
+						let count = locator.count().await?;
+
+						if count == 0 {
+							return Err(PwError::ElementNotFound { selector });
+						}
+
+						let text = locator.inner_text().await?;
+						let filtered = filter_garbage(&text);
+						let trimmed = filtered.trim().to_string();
+
+						Ok(TextData {
+							text: trimmed,
+							selector,
+							match_count: count,
+						})
+					})
+				},
+			)
+			.await?;
+
+			let inputs = CommandInputs {
+				url: args.target.url_str().map(String::from),
+				selector: Some(args.selector.clone()),
+				..Default::default()
+			};
+
+			Ok(CommandOutcome {
+				inputs,
+				data,
+				delta: ContextDelta {
+					url: args.target.url_str().map(String::from),
+					selector: Some(args.selector.clone()),
+					output: None,
+				},
+			})
+		})
 	}
 }
 
@@ -150,112 +209,6 @@ fn filter_garbage(text: &str) -> String {
 	}
 
 	result.join("\n")
-}
-
-// ---------------------------------------------------------------------------
-// Execution
-// ---------------------------------------------------------------------------
-
-/// Execute the text command with resolved arguments.
-pub async fn execute_resolved(
-	args: &TextResolved,
-	ctx: &CommandContext,
-	broker: &mut SessionBroker<'_>,
-	format: OutputFormat,
-	artifacts_dir: Option<&Path>,
-	last_url: Option<&str>,
-) -> Result<()> {
-	let url_display = args.target.url_str().unwrap_or("<current page>");
-	info!(target = "pw", url = %url_display, selector = %args.selector, browser = %ctx.browser, "get text");
-
-	let preferred_url = args.preferred_url(last_url);
-	let session = broker
-		.session(
-			SessionRequest::from_context(WaitUntil::NetworkIdle, ctx)
-				.with_preferred_url(preferred_url),
-		)
-		.await?;
-
-	match execute_inner(
-		&session,
-		&args.target,
-		&args.selector,
-		format,
-		ctx.timeout_ms(),
-	)
-	.await
-	{
-		Ok(()) => session.close().await,
-		Err(e) => {
-			let artifacts = session
-				.collect_failure_artifacts(artifacts_dir, "text")
-				.await;
-
-			if !artifacts.is_empty() {
-				let failure = FailureWithArtifacts::new(e.to_command_error())
-					.with_artifacts(artifacts.artifacts);
-				print_failure_with_artifacts("text", &failure, format);
-				let _ = session.close().await;
-				return Err(PwError::OutputAlreadyPrinted);
-			}
-
-			let _ = session.close().await;
-			Err(e)
-		}
-	}
-}
-
-async fn execute_inner(
-	session: &SessionHandle,
-	target: &ResolvedTarget,
-	selector: &str,
-	format: OutputFormat,
-	timeout_ms: Option<u64>,
-) -> Result<()> {
-	session.goto_target(&target.target, timeout_ms).await?;
-
-	let locator = session.page().locator(selector).await;
-	let count = locator.count().await?;
-
-	if count == 0 {
-		let result = ResultBuilder::<TextData>::new("text")
-			.inputs(CommandInputs {
-				url: target.url_str().map(String::from),
-				selector: Some(selector.to_string()),
-				..Default::default()
-			})
-			.error(
-				ErrorCode::SelectorNotFound,
-				format!("No elements matched selector: {selector}"),
-			)
-			.build();
-
-		print_result(&result, format);
-
-		return Err(PwError::ElementNotFound {
-			selector: selector.to_string(),
-		});
-	}
-
-	let text = locator.inner_text().await?;
-	let filtered = filter_garbage(&text);
-	let trimmed = filtered.trim().to_string();
-
-	let result = ResultBuilder::new("text")
-		.inputs(CommandInputs {
-			url: target.url_str().map(String::from),
-			selector: Some(selector.to_string()),
-			..Default::default()
-		})
-		.data(TextData {
-			text: trimmed,
-			selector: selector.to_string(),
-			match_count: count,
-		})
-		.build();
-
-	print_result(&result, format);
-	Ok(())
 }
 
 #[cfg(test)]
