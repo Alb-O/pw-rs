@@ -15,31 +15,21 @@ flake-parts.lib.mkFlake { inherit inputs; } {
 
   systems = import inputs.systems;
 
-  # Apply rust-overlay to pkgs for all perSystem modules
-  perSystem =
-    { system, ... }:
-    {
-      _module.args.pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-    };
-
   # imp configuration
   imp = {
-    src = ../outputs;
+    bundles.src = ../bundles;
 
     # Extra args available in all output files
     args = {
       inherit nixpkgs;
       rootSrc = ../..;
-      treefmt-nix = inputs.treefmt-nix;
-      imp-fmt-lib = inputs.imp.formatterLib;
-      rust-overlay = inputs.rust-overlay;
     };
 
     # Disable exports (not used in this project)
     exports.enable = false;
+
+    # Auto-generate default devShell composing all bundle devShells
+    impShell.enable = true;
 
     # Auto-generate flake.nix from __inputs declarations
     flakeFile = {

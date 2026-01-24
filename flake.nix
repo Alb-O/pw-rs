@@ -4,6 +4,8 @@
 {
   description = "pw-tool: Playwright CLI in Rust";
   inputs = {
+    self.submodules = true;
+
     # Core inputs
     flake-parts.url = "github:hercules-ci/flake-parts";
     imp.url = "github:imp-nix/imp-nix";
@@ -13,7 +15,6 @@
     # Collected from __inputs
     rust-overlay.url = "github:oxalica/rust-overlay";
     rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
-    treefmt-nix.url = "github:numtide/treefmt-nix";
   };
   outputs = inputs: import ./nix/flake inputs;
 }
