@@ -41,7 +41,6 @@ pub struct NavigateCommand;
 
 impl CommandDef for NavigateCommand {
 	const NAME: &'static str = "navigate";
-	const ALIASES: &'static [&'static str] = &["nav"];
 
 	type Raw = NavigateRaw;
 	type Resolved = NavigateResolved;

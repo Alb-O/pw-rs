@@ -1,15 +1,18 @@
+//! Session lifecycle helpers for command execution.
+
 use crate::commands::def::ExecCtx;
 use crate::error::{PwError, Result};
 use crate::output::FailureWithArtifacts;
 use crate::session_broker::{SessionHandle, SessionRequest};
 
-/// Policy for collecting failure artifacts.
+/// When to collect failure artifacts (screenshots, traces).
 #[derive(Debug, Clone, Copy)]
 pub enum ArtifactsPolicy {
 	Never,
 	OnError { command: &'static str },
 }
 
+/// Execute a callback with a session, collecting artifacts on failure.
 pub async fn with_session<'exec, 'ctx, T>(
 	exec: &mut ExecCtx<'exec, 'ctx>,
 	req: SessionRequest<'_>,

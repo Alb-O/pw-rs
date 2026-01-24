@@ -98,11 +98,11 @@ pub struct BrowserSession {
 	keep_browser_running: bool,
 	/// Active HAR recording, if any
 	har_recording: Option<HarRecording>,
-	/// Route subscriptions for request blocking; held to keep handlers alive.
-	#[allow(dead_code)]
+	/// Route subscriptions for request blocking.
+	#[allow(dead_code, reason = "RAII: stored to keep handlers alive until drop")]
 	route_subscriptions: Vec<Subscription>,
-	/// Download handler subscription; held to keep handler alive.
-	#[allow(dead_code)]
+	/// Download handler subscription.
+	#[allow(dead_code, reason = "RAII: stored to keep handler alive until drop")]
 	download_subscription: Option<Subscription>,
 	/// Collected download information (shared with download handler).
 	downloads: Arc<Mutex<Vec<DownloadInfo>>>,

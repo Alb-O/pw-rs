@@ -1,11 +1,8 @@
 //! Command registry and generated dispatch glue.
 
-use crate::error::PwError;
-use crate::output::{
-	CommandInputs, OutputFormat, ResultBuilder, print_failure_with_artifacts, print_result,
-};
+use crate::output::{CommandInputs, OutputFormat, ResultBuilder, print_result};
 
-/// Centralized printing for success.
+/// Print success result in the given format.
 pub fn emit_success(
 	command: &'static str,
 	inputs: CommandInputs,
@@ -17,16 +14,6 @@ pub fn emit_success(
 		.data(data)
 		.build();
 	print_result(&result, format);
-}
-
-/// Centralized printing for failure.
-#[allow(dead_code)]
-pub fn emit_failure(command: &'static str, err: &PwError, format: OutputFormat) {
-	if let Some(failure) = err.failure_with_artifacts() {
-		print_failure_with_artifacts(command, failure, format);
-	} else {
-		eprintln!("{command}: {err}");
-	}
 }
 
 /// The registry macro: generates a `CommandId` enum, `lookup_command`, and `run_command`.

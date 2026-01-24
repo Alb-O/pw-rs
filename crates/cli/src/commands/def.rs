@@ -1,4 +1,7 @@
-//! Command plumbing: resolve + execute contract and common outcome types.
+//! Command trait and execution context types.
+//!
+//! Defines [`CommandDef`] for standardized command resolution and execution,
+//! plus supporting types for context propagation and state updates.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -42,8 +45,9 @@ pub struct ExecCtx<'exec, 'ctx> {
 	pub last_url: Option<&'exec str>,
 }
 
-/// Declarative mutation of `ContextState` after success.
-/// This deletes the repeated `ctx_state.record(ContextUpdate { ... })` blocks in dispatch.
+/// State mutations to apply after successful command execution.
+///
+/// Consolidates repeated `ctx_state.record(ContextUpdate { ... })` calls.
 #[derive(Debug, Clone, Default)]
 pub struct ContextDelta {
 	pub url: Option<String>,
@@ -82,6 +86,7 @@ pub struct ErasedOutcome {
 }
 
 impl<T: Serialize> CommandOutcome<T> {
+	/// Convert to [`ErasedOutcome`] for dispatcher output.
 	pub fn erase(self, command: &'static str) -> Result<ErasedOutcome> {
 		Ok(ErasedOutcome {
 			command,
@@ -95,12 +100,14 @@ impl<T: Serialize> CommandOutcome<T> {
 /// Boxing alias: stable async in trait without `async_trait`.
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
-/// Canonical command trait. Each command module becomes
-/// `pub struct XxxCommand; impl CommandDef for XxxCommand { ... }`
+/// Standardized command interface.
+///
+/// Each command implements this trait with:
+/// - [`Raw`](Self::Raw): CLI/JSON input before resolution
+/// - [`Resolved`](Self::Resolved): Validated inputs ready for execution
+/// - [`Data`](Self::Data): Command-specific output payload
 pub trait CommandDef: 'static {
 	const NAME: &'static str;
-	#[allow(dead_code)]
-	const ALIASES: &'static [&'static str] = &[];
 	const INTERACTIVE_ONLY: bool = false;
 
 	type Raw: DeserializeOwned;

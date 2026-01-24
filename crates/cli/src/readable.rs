@@ -35,7 +35,7 @@ static PARTIAL_PATTERN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 	}
 });
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "fields accessed via serde deserialization")]
 #[derive(Debug, Deserialize)]
 struct ClutterPatterns {
 	content_selectors: ContentSelectors,
@@ -50,21 +50,21 @@ struct ContentSelectors {
 	selectors: Vec<String>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "fields accessed via serde deserialization")]
 #[derive(Debug, Deserialize)]
 struct RemovePatterns {
 	exact_selectors: Vec<String>,
 	partial_patterns: PartialPatterns,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "fields accessed via serde deserialization")]
 #[derive(Debug, Deserialize)]
 struct PartialPatterns {
 	check_attributes: Vec<String>,
 	patterns: std::collections::HashMap<String, Vec<String>>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "fields accessed via serde deserialization")]
 #[derive(Debug, Deserialize)]
 struct PreservePatterns {
 	preserve_elements: Vec<String>,
@@ -73,7 +73,7 @@ struct PreservePatterns {
 	allowed_attributes: Vec<String>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "fields accessed via serde deserialization")]
 #[derive(Debug, Deserialize)]
 struct ScoringPatterns {
 	content_indicators: Vec<String>,

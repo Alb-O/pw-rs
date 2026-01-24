@@ -20,11 +20,11 @@ pub fn execute(args: Vec<String>) -> Result<()> {
     })?;
 
 	let node_modules = ensure_node_modules(&paths)?;
-	let cli_js = node_modules
-		.join("playwright/cli.js")
-		.exists()
-		.then(|| node_modules.join("playwright/cli.js"))
-		.unwrap_or_else(|| paths.test_cli_js.clone());
+	let cli_js = if node_modules.join("playwright/cli.js").exists() {
+		node_modules.join("playwright/cli.js")
+	} else {
+		paths.test_cli_js.clone()
+	};
 
 	let mut cmd = Command::new(&paths.node_exe);
 	cmd.arg(&cli_js)
@@ -38,7 +38,7 @@ pub fn execute(args: Vec<String>) -> Result<()> {
 		// that can interfere with Playwright's webServer spawning logic.
 		use std::os::unix::process::CommandExt;
 		let err = cmd.exec();
-		return Err(err.into());
+		Err(err.into())
 	}
 
 	#[cfg(not(unix))]
@@ -79,7 +79,7 @@ fn is_writable(path: &Path) -> bool {
 		}
 		false
 	} else {
-		path.parent().is_some_and(|p| is_writable(p))
+		path.parent().is_some_and(is_writable)
 	}
 }
 
