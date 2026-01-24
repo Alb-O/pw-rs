@@ -290,13 +290,21 @@ impl ContextState {
 			.ok_or_else(|| PwError::Context("No selector available".into()))
 	}
 
+	/// Returns the CDP endpoint from the global context.
+	///
+	/// CDP endpoints are system-wide browser connections, stored globally
+	/// rather than per-project to prevent stale endpoint issues when
+	/// switching between project directories.
 	pub fn cdp_endpoint(&self) -> Option<&str> {
 		if self.no_context {
 			return None;
 		}
-		self.selected
-			.as_ref()
-			.and_then(|s| s.data.cdp_endpoint.as_deref())
+		self.stores
+			.global
+			.file
+			.contexts
+			.get("default")
+			.and_then(|ctx| ctx.cdp_endpoint.as_deref())
 	}
 
 	/// Get the last URL from the context (for page selection preference).
@@ -309,13 +317,20 @@ impl ContextState {
 			.and_then(|s| s.data.last_url.as_deref())
 	}
 
+	/// Sets the CDP endpoint in the global context.
+	///
+	/// See [`cdp_endpoint`](Self::cdp_endpoint) for why this is global.
 	pub fn set_cdp_endpoint(&mut self, endpoint: Option<String>) {
 		if self.no_save || self.no_context {
 			return;
 		}
-		if let Some(selected) = self.selected.as_mut() {
-			selected.data.cdp_endpoint = endpoint;
-		}
+		self.stores
+			.global
+			.file
+			.contexts
+			.entry("default".to_string())
+			.or_default()
+			.cdp_endpoint = endpoint;
 	}
 
 	/// Get the list of protected URL patterns
@@ -587,4 +602,75 @@ fn is_session_stale(selected: Option<&SelectedContext>) -> bool {
 		return false;
 	};
 	now_ts().saturating_sub(last_used) > SESSION_TIMEOUT_SECS
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn test_context_state(stores: ContextBook, selected: Option<SelectedContext>) -> ContextState {
+		ContextState {
+			stores,
+			selected,
+			project_root: None,
+			base_url_override: None,
+			no_context: false,
+			no_save: false,
+			refresh: false,
+		}
+	}
+
+	fn empty_global_store() -> ContextStore {
+		ContextStore {
+			scope: ContextScope::Global,
+			path: PathBuf::from("/tmp/global.json"),
+			file: ContextStoreFile::default(),
+		}
+	}
+
+	#[test]
+	fn cdp_endpoint_reads_from_global_not_project() {
+		let mut store = empty_global_store();
+		store.file.contexts.insert(
+			"default".to_string(),
+			StoredContext {
+				cdp_endpoint: Some("ws://global-endpoint".to_string()),
+				..Default::default()
+			},
+		);
+
+		let selected = SelectedContext {
+			name: "default".to_string(),
+			scope: ContextScope::Project,
+			data: StoredContext {
+				cdp_endpoint: Some("ws://project-endpoint".to_string()),
+				..Default::default()
+			},
+		};
+
+		let state = test_context_state(
+			ContextBook { global: store, project: None },
+			Some(selected),
+		);
+
+		assert_eq!(state.cdp_endpoint(), Some("ws://global-endpoint"));
+	}
+
+	#[test]
+	fn cdp_endpoint_writes_to_global_not_project() {
+		let selected = SelectedContext {
+			name: "default".to_string(),
+			scope: ContextScope::Project,
+			data: StoredContext::default(),
+		};
+
+		let mut state = test_context_state(
+			ContextBook { global: empty_global_store(), project: None },
+			Some(selected),
+		);
+
+		state.set_cdp_endpoint(Some("ws://new-endpoint".to_string()));
+
+		assert_eq!(state.cdp_endpoint(), Some("ws://new-endpoint"));
+	}
 }
