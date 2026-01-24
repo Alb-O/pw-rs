@@ -9,11 +9,6 @@ pub type Result<T> = std::result::Result<T, PwError>;
 
 #[derive(Debug, Error)]
 pub enum PwError {
-	/// Command failed but output has already been printed (e.g., with artifacts).
-	/// Used to signal exit code 1 without additional output.
-	#[error("")]
-	OutputAlreadyPrinted,
-
 	#[error("")]
 	FailureWithArtifacts {
 		command: &'static str,
@@ -127,12 +122,6 @@ fn clean_strict_mode_error(msg: &str) -> Option<String> {
 }
 
 impl PwError {
-	/// Check if this error indicates output has already been printed.
-	/// When true, the caller should exit with code 1 without printing additional output.
-	pub fn is_output_already_printed(&self) -> bool {
-		matches!(self, PwError::OutputAlreadyPrinted)
-	}
-
 	pub fn failure_with_artifacts(&self) -> Option<&crate::output::FailureWithArtifacts> {
 		match self {
 			PwError::FailureWithArtifacts { failure, .. } => Some(failure),
@@ -143,10 +132,6 @@ impl PwError {
 	/// Convert this error to a CommandError for structured output
 	pub fn to_command_error(&self) -> CommandError {
 		let (code, message, details) = match self {
-			PwError::OutputAlreadyPrinted => {
-				// This should never be called - caller should check is_output_already_printed()
-				(ErrorCode::InternalError, String::new(), None)
-			}
 			PwError::FailureWithArtifacts { failure, .. } => {
 				return failure.error.clone();
 			}

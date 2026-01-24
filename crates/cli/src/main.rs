@@ -14,7 +14,7 @@ async fn main() {
 	if let Err(err) = commands::dispatch(cli, format).await {
 		if let PwError::FailureWithArtifacts { command, failure } = &err {
 			output::print_failure_with_artifacts(command, failure, format);
-		} else if !err.is_output_already_printed() {
+		} else {
 			handle_error(err, format);
 		}
 		std::process::exit(1);
