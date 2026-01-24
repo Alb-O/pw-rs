@@ -5,7 +5,7 @@ description: Core usage of pw (Playwright CLI). Use when user requests browser t
 
 # pw
 
-`pw` is a Rust-based CLI for Playwright browser automation.
+`pw` is a Rust-based Playwright CLI for AI agents.
 
 ## Agent Setup
 
@@ -43,11 +43,17 @@ pw page read https://example.com     # extract readable content (strips clutter)
 
 ## Context Caching
 
-Commands use a persistent session cache and remember the last URL/selector - no need to repeat:
+Commands remember the last URL/selector between invocations.
 
-```bash
-pw navigate https://example.com
-pw page text -s h1     # uses cached URL
-pw click -s ".next"    # still same page
-pw screenshot -o s.png # still same page
-```
+## References
+
+Read for more info when needed:
+
+- [Full CLI reference with common patterns](references/cli.md)
+- [Authentication and session management](references/auth.md)
+- [Browser connection options](references/connect.md)
+- [Daemon lifecycle management](references/daemon.md)
+- [Page content extraction](references/page.md)
+- [Tab protection from CLI access](references/protect.md)
+- [Batch mode for high-throughput](references/run.md)
+- [Running Playwright tests](references/test.md)

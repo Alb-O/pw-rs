@@ -1,4 +1,3 @@
-mod agents;
 mod auth;
 mod click;
 mod connect;
@@ -16,8 +15,7 @@ pub mod test;
 mod wait;
 
 use crate::cli::{
-    AgentsAction, AuthAction, Cli, Commands, DaemonAction, PageAction, ProtectAction,
-    SessionAction, TabsAction,
+    AuthAction, Cli, Commands, DaemonAction, PageAction, ProtectAction, SessionAction, TabsAction,
 };
 use crate::context::CommandContext;
 use crate::context_store::{ContextState, ContextUpdate};
@@ -40,21 +38,6 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
     // Handle test command - doesn't need browser runtime
     if let Commands::Test { ref args } = cli.command {
         return test::execute(args.clone());
-    }
-
-    // Handle agents docs - doesn't need runtime
-    if let Commands::Agents { ref action } = cli.command {
-        return match action {
-            None => agents::show_main(),
-            Some(AgentsAction::Pw) => agents::show_main(),
-            Some(AgentsAction::Auth) => agents::show_auth(),
-            Some(AgentsAction::Connect) => agents::show_connect(),
-            Some(AgentsAction::Daemon) => agents::show_daemon(),
-            Some(AgentsAction::Page) => agents::show_page(),
-            Some(AgentsAction::Protect) => agents::show_protect(),
-            Some(AgentsAction::Run) => agents::show_run(),
-            Some(AgentsAction::Test) => agents::show_test(),
-        };
     }
 
     // Build runtime once (single source of truth for setup)
@@ -332,7 +315,6 @@ async fn dispatch_command_inner(
             ProtectAction::Remove { pattern } => protect::remove(ctx_state, format, &pattern),
             ProtectAction::List => protect::list(ctx_state, format),
         },
-        Commands::Agents { .. } => unreachable!("handled earlier"),
         Commands::Test { .. } => unreachable!("handled earlier"),
     }
 }

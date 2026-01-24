@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# higgsfield.nu - Higgsfield AI automation workflows
+# higgsfield.nu - Higgsfield AI workflows
 #
 # Usage:
 #   use pw.nu

@@ -3,9 +3,9 @@ name: pw-higgsfield
 description: Higgsfield AI image/video generation using `pw`. Trigger when user wants to generate images or videos.
 ---
 
-# Higgsfield AI Automation
+# Higgsfield AI
 
-Automate Higgsfield AI image and video generation using `pw` browser automation and the `higgsfield.nu` Nushell script.
+Generate images and videos with Higgsfield AI using `pw` and the `higgsfield.nu` Nushell script.
 
 ## Setup
 

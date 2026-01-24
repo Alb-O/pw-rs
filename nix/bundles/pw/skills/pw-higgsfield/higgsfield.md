@@ -1,6 +1,6 @@
-# Higgsfield AI Automation
+# Higgsfield AI
 
-Workflows for Higgsfield AI image and video generation.
+Image and video generation with Higgsfield AI.
 
 ## Setup
 

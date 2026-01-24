@@ -1,6 +1,6 @@
 # pw skills
 
-Agent skills for browser automation with `pw`.
+AI agent skills for `pw` (Playwright CLI).
 
 ## Skills
 

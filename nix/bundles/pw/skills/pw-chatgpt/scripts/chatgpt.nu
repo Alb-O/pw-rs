@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# chatgpt.nu - ChatGPT automation workflows
+# chatgpt.nu - ChatGPT interaction workflows
 #
 # Usage:
 #   use pw.nu

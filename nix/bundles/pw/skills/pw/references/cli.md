@@ -1,6 +1,6 @@
-# pw
+# pw CLI Reference
 
-Browser automation CLI for AI agents.
+Common patterns and flags.
 
 ## Quick Start
 
@@ -72,7 +72,7 @@ HAR options:
 
 ### Block requests (ads, trackers, etc.)
 
-Use `--block` to intercept and abort requests matching URL patterns during automation:
+Use `--block` to intercept and abort requests matching URL patterns:
 
 ```bash
 # Block a single pattern
@@ -103,7 +103,7 @@ Common patterns for blocking:
 
 ### Track downloads
 
-Use `--downloads-dir` to track and save files downloaded during automation:
+Use `--downloads-dir` to track and save downloaded files:
 
 ```bash
 # Click a download link and save the file
@@ -195,20 +195,3 @@ Disable caching with `--no-context` for isolated commands.
 | `--block-file`      | Load block patterns from file       |
 | `--downloads-dir`   | Directory to save downloaded files  |
 | `--timeout <ms>`    | Timeout for navigation (ms)         |
-
-## Best Practices for Agents
-
-1. **Use context caching**: Let URLs and selectors carry over between related commands
-2. **Parse JSON output**: All commands return structured JSON for reliable parsing
-3. **Handle errors gracefully**: Check `ok` field before accessing `data`
-
-## Further Reading
-
-Documentation is embedded into `pw agents <subcommand>` and prints when run:
-
-- [pw agents auth](../auth/AGENTS.md) - Authentication and session management
-- [pw agents connect](../connect/AGENTS.md) - Browser connection options
-- [pw agents daemon](../daemon/AGENTS.md) - Daemon lifecycle management
-- [pw agents page](../page/AGENTS.md) - Page content extraction commands
-- [pw agents protect](../protect/AGENTS.md) - Request blocking and protection
-- [pw agents run](../run/AGENTS.md) - Running JavaScript in the browser

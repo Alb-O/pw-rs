@@ -3,9 +3,9 @@ name: pw-chatgpt
 description: Agent-to-ChatGPT conversation using `pw` (send messages, attach files, download artifacts). Trigger when user wants to interact with ChatGPT.
 ---
 
-# ChatGPT Automation
+# ChatGPT
 
-Automate ChatGPT conversations using `pw` browser automation and the `chatgpt.nu` Nushell script.
+Interact with ChatGPT using `pw` and the `chatgpt.nu` Nushell script.
 
 ## Setup
 

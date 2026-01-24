@@ -357,37 +357,6 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-
-    /// Show documentation for AI agents
-    ///
-    /// Outputs embedded markdown documentation for AI coding agents.
-    /// Use subcommands to see docs for specific commands.
-    Agents {
-        #[command(subcommand)]
-        action: Option<AgentsAction>,
-    },
-}
-
-/// Agent documentation subcommands
-#[derive(Subcommand, Debug)]
-pub enum AgentsAction {
-    /// Show main pw documentation for agents
-    #[command(name = "pw")]
-    Pw,
-    /// Show auth command documentation
-    Auth,
-    /// Show connect command documentation
-    Connect,
-    /// Show daemon command documentation
-    Daemon,
-    /// Show page commands documentation
-    Page,
-    /// Show protect command documentation
-    Protect,
-    /// Show run (batch mode) documentation
-    Run,
-    /// Show test command documentation
-    Test,
 }
 
 /// Project template type for init command
