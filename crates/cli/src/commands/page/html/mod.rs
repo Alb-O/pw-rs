@@ -30,23 +30,6 @@ pub struct HtmlRaw {
 	pub selector_flag: Option<String>,
 }
 
-impl HtmlRaw {
-	/// Create from CLI arguments.
-	pub fn from_cli(
-		url: Option<String>,
-		selector: Option<String>,
-		url_flag: Option<String>,
-		selector_flag: Option<String>,
-	) -> Self {
-		Self {
-			url,
-			selector,
-			url_flag,
-			selector_flag,
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct HtmlResolved {
@@ -180,15 +163,4 @@ mod tests {
 		assert_eq!(raw.selector_flag, Some(".content".into()));
 	}
 
-	#[test]
-	fn html_raw_from_cli() {
-		let raw = HtmlRaw::from_cli(
-			Some("https://example.com".into()),
-			None,
-			None,
-			Some(".content".into()),
-		);
-		assert_eq!(raw.url, Some("https://example.com".into()));
-		assert_eq!(raw.selector_flag, Some(".content".into()));
-	}
 }

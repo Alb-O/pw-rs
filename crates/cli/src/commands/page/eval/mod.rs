@@ -25,22 +25,6 @@ pub struct EvalRaw {
 	pub expression_flag: Option<String>,
 }
 
-impl EvalRaw {
-	pub fn from_cli(
-		url: Option<String>,
-		url_flag: Option<String>,
-		expression: Option<String>,
-		expression_flag: Option<String>,
-	) -> Self {
-		Self {
-			url,
-			url_flag,
-			expression,
-			expression_flag,
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct EvalResolved {

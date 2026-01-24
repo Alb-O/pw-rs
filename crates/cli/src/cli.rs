@@ -371,7 +371,7 @@ pub enum InitTemplate {
 }
 
 /// Output format for the read command
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, serde::Serialize)]
 pub enum ReadOutputFormat {
 	/// Plain text
 	Text,
@@ -639,6 +639,148 @@ pub enum ProtectAction {
 	},
 	/// List all protected URL patterns
 	List,
+}
+
+impl Commands {
+	/// Returns registry [`CommandId`] and JSON args for registry-backed commands.
+	///
+	/// [`CommandId`]: crate::commands::registry::CommandId
+	pub fn into_registry_args(
+		&self,
+	) -> Option<(crate::commands::registry::CommandId, serde_json::Value)> {
+		use crate::commands::registry::CommandId as Id;
+
+		let result = match self {
+			Commands::Navigate { url, url_flag } => (
+				Id::Navigate,
+				serde_json::json!({ "url": url, "urlFlag": url_flag }),
+			),
+			Commands::Screenshot {
+				url,
+				output,
+				full_page,
+				url_flag,
+			} => (
+				Id::Screenshot,
+				serde_json::json!({
+					"url": url,
+					"output": output,
+					"fullPage": full_page,
+					"urlFlag": url_flag
+				}),
+			),
+			Commands::Click {
+				url,
+				selector,
+				url_flag,
+				selector_flag,
+				wait_ms,
+			} => (
+				Id::Click,
+				serde_json::json!({
+					"url": url,
+					"selector": selector,
+					"urlFlag": url_flag,
+					"selectorFlag": selector_flag,
+					"waitMs": wait_ms
+				}),
+			),
+			Commands::Fill {
+				text,
+				selector,
+				url,
+			} => (
+				Id::Fill,
+				serde_json::json!({ "text": text, "selector": selector, "url": url }),
+			),
+			Commands::Wait {
+				url,
+				condition,
+				url_flag,
+			} => {
+				let resolved_url = url_flag.clone().or_else(|| url.clone());
+				(
+					Id::Wait,
+					serde_json::json!({ "url": resolved_url, "condition": condition }),
+				)
+			}
+			Commands::Page(action) => return action.into_registry_args(),
+			_ => return None,
+		};
+		Some(result)
+	}
+}
+
+impl PageAction {
+	/// Returns registry [`CommandId`] and JSON args.
+	///
+	/// [`CommandId`]: crate::commands::registry::CommandId
+	pub fn into_registry_args(
+		&self,
+	) -> Option<(crate::commands::registry::CommandId, serde_json::Value)> {
+		use crate::commands::registry::CommandId as Id;
+
+		let result = match self {
+			PageAction::Console { url, timeout_ms, url_flag } => (
+				Id::PageConsole,
+				serde_json::json!({ "url": url_flag.clone().or_else(|| url.clone()), "timeoutMs": timeout_ms }),
+			),
+			PageAction::Eval { expression, url, expression_flag, file, url_flag } => {
+				let expr = file
+					.as_ref()
+					.and_then(|p| std::fs::read_to_string(p).ok())
+					.or_else(|| expression_flag.clone())
+					.or_else(|| expression.clone());
+				(
+					Id::PageEval,
+					serde_json::json!({ "url": url, "urlFlag": url_flag, "expression": expr }),
+				)
+			}
+			PageAction::Html { url, selector, url_flag, selector_flag } => (
+				Id::PageHtml,
+				serde_json::json!({ "url": url, "selector": selector, "urlFlag": url_flag, "selectorFlag": selector_flag }),
+			),
+			PageAction::Coords { url, selector, url_flag, selector_flag } => (
+				Id::PageCoords,
+				serde_json::json!({
+					"url": url_flag.clone().or_else(|| url.clone()),
+					"selector": selector_flag.clone().or_else(|| selector.clone())
+				}),
+			),
+			PageAction::CoordsAll { url, selector, url_flag, selector_flag } => (
+				Id::PageCoordsAll,
+				serde_json::json!({
+					"url": url_flag.clone().or_else(|| url.clone()),
+					"selector": selector_flag.clone().or_else(|| selector.clone())
+				}),
+			),
+			PageAction::Text { url, selector, url_flag, selector_flag } => (
+				Id::PageText,
+				serde_json::json!({ "url": url, "selector": selector, "urlFlag": url_flag, "selectorFlag": selector_flag }),
+			),
+			PageAction::Read { url, url_flag, output_format, metadata } => (
+				Id::PageRead,
+				serde_json::json!({
+					"url": url_flag.clone().or_else(|| url.clone()),
+					"outputFormat": output_format,
+					"metadata": metadata
+				}),
+			),
+			PageAction::Elements { url, wait, timeout_ms, url_flag } => (
+				Id::PageElements,
+				serde_json::json!({
+					"url": url_flag.clone().or_else(|| url.clone()),
+					"wait": wait,
+					"timeoutMs": timeout_ms
+				}),
+			),
+			PageAction::Snapshot { url, url_flag, text_only, full, max_text_length } => (
+				Id::PageSnapshot,
+				serde_json::json!({ "url": url, "urlFlag": url_flag, "textOnly": text_only, "full": full, "maxTextLength": max_text_length }),
+			),
+		};
+		Some(result)
+	}
 }
 
 #[cfg(test)]

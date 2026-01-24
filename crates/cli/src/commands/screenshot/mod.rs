@@ -27,22 +27,6 @@ pub struct ScreenshotRaw {
 	pub full_page: Option<bool>,
 }
 
-impl ScreenshotRaw {
-	pub fn from_cli(
-		url: Option<String>,
-		url_flag: Option<String>,
-		output: Option<PathBuf>,
-		full_page: bool,
-	) -> Self {
-		Self {
-			url,
-			url_flag,
-			output,
-			full_page: Some(full_page),
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct ScreenshotResolved {

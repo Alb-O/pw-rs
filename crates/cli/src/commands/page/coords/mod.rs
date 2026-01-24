@@ -42,13 +42,6 @@ pub struct CoordsRaw {
 	pub selector: Option<String>,
 }
 
-impl CoordsRaw {
-	/// Creates a [`CoordsRaw`] from CLI arguments.
-	pub fn from_cli(url: Option<String>, selector: Option<String>) -> Self {
-		Self { url, selector }
-	}
-}
-
 /// Resolved inputs ready for execution.
 ///
 /// The [`selector`](Self::selector) has been validated as present.

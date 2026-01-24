@@ -26,22 +26,6 @@ pub struct TextRaw {
 	pub selector_flag: Option<String>,
 }
 
-impl TextRaw {
-	pub fn from_cli(
-		url: Option<String>,
-		selector: Option<String>,
-		url_flag: Option<String>,
-		selector_flag: Option<String>,
-	) -> Self {
-		Self {
-			url,
-			selector,
-			url_flag,
-			selector_flag,
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct TextResolved {

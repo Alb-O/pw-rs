@@ -37,17 +37,6 @@ pub struct FillRaw {
 	pub text: Option<String>,
 }
 
-impl FillRaw {
-	/// Creates a [`FillRaw`] from CLI arguments.
-	pub fn from_cli(url: Option<String>, selector: Option<String>, text: Option<String>) -> Self {
-		Self {
-			url,
-			selector,
-			text,
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct FillResolved {

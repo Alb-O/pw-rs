@@ -69,27 +69,6 @@ pub struct SnapshotRaw {
 	pub max_text_length: Option<usize>,
 }
 
-impl SnapshotRaw {
-	/// Constructs [`SnapshotRaw`] from CLI arguments.
-	///
-	/// The `url_flag` takes precedence over `url` when both are provided,
-	/// matching the CLI convention where `--url` overrides positional args.
-	pub fn from_cli(
-		url: Option<String>,
-		url_flag: Option<String>,
-		text_only: bool,
-		full: bool,
-		max_text_length: Option<usize>,
-	) -> Self {
-		Self {
-			url: url_flag.or(url),
-			text_only: Some(text_only),
-			full: Some(full),
-			max_text_length,
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 ///
 /// All optional fields have been validated and defaults applied.

@@ -46,26 +46,6 @@ pub struct ReadRaw {
 	pub metadata: Option<bool>,
 }
 
-impl ReadRaw {
-	/// Creates a [`ReadRaw`] from CLI arguments.
-	pub fn from_cli(
-		url: Option<String>,
-		output_format: ReadOutputFormat,
-		include_metadata: bool,
-	) -> Self {
-		let format_str = match output_format {
-			ReadOutputFormat::Text => "text",
-			ReadOutputFormat::Html => "html",
-			ReadOutputFormat::Markdown => "markdown",
-		};
-		Self {
-			url,
-			output_format: Some(format_str.to_string()),
-			metadata: Some(include_metadata),
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 ///
 /// The [`output_format`](Self::output_format) defaults to markdown if not specified.

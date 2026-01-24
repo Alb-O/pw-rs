@@ -30,24 +30,6 @@ pub struct ClickRaw {
 	pub wait_ms: Option<u64>,
 }
 
-impl ClickRaw {
-	pub fn from_cli(
-		url: Option<String>,
-		selector: Option<String>,
-		url_flag: Option<String>,
-		selector_flag: Option<String>,
-		wait_ms: Option<u64>,
-	) -> Self {
-		Self {
-			url,
-			selector,
-			url_flag,
-			selector_flag,
-			wait_ms,
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct ClickResolved {

@@ -38,16 +38,6 @@ pub struct ConsoleRaw {
 	pub timeout_ms: Option<u64>,
 }
 
-impl ConsoleRaw {
-	/// Creates a [`ConsoleRaw`] from CLI arguments.
-	pub fn from_cli(url: Option<String>, timeout_ms: u64) -> Self {
-		Self {
-			url,
-			timeout_ms: Some(timeout_ms),
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 ///
 /// The [`timeout_ms`](Self::timeout_ms) defaults to 3000 if not specified.

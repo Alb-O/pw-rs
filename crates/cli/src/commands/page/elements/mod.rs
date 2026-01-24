@@ -45,17 +45,6 @@ pub struct ElementsRaw {
 	pub timeout_ms: Option<u64>,
 }
 
-impl ElementsRaw {
-	/// Creates an [`ElementsRaw`] from CLI arguments.
-	pub fn from_cli(url: Option<String>, wait: bool, timeout_ms: u64) -> Self {
-		Self {
-			url,
-			wait: Some(wait),
-			timeout_ms: Some(timeout_ms),
-		}
-	}
-}
-
 /// Resolved inputs ready for execution.
 ///
 /// All arguments have been validated with defaults applied.

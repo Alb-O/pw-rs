@@ -25,12 +25,6 @@ pub struct NavigateRaw {
 	pub url_flag: Option<String>,
 }
 
-impl NavigateRaw {
-	pub fn from_cli(url: Option<String>, url_flag: Option<String>) -> Self {
-		Self { url, url_flag }
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct NavigateResolved {

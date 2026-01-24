@@ -39,13 +39,6 @@ pub struct WaitRaw {
 	pub condition: Option<String>,
 }
 
-impl WaitRaw {
-	/// Creates a [`WaitRaw`] from CLI arguments.
-	pub fn from_cli(url: Option<String>, condition: Option<String>) -> Self {
-		Self { url, condition }
-	}
-}
-
 /// Resolved inputs ready for execution.
 #[derive(Debug, Clone)]
 pub struct WaitResolved {
