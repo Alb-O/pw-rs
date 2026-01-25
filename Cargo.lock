@@ -1432,6 +1432,7 @@ dependencies = [
  "downcast-rs",
  "futures-util",
  "glob",
+ "indexmap",
  "parking_lot",
  "pw-protocol",
  "pw-runtime",
