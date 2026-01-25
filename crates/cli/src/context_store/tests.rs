@@ -1,117 +1,214 @@
-use std::path::PathBuf;
+use super::storage::LoadedState;
+use super::types::{CliCache, CliConfig, CliSecrets};
+use super::ContextState;
 
-use super::*;
-
-fn empty_global_store() -> ContextStore {
-	ContextStore {
-		scope: ContextScope::Global,
-		path: PathBuf::from("/tmp/global.json"),
-		file: ContextStoreFile::default(),
+fn test_state() -> LoadedState {
+	LoadedState {
+		config: CliConfig::new(),
+		cache: CliCache::new(),
+		secrets: CliSecrets::new(),
+		is_project: false,
+		paths: super::storage::StatePaths::new(None),
 	}
 }
 
 #[test]
-fn cdp_endpoint_reads_from_global_not_project() {
-	let mut store = empty_global_store();
-	store.file.contexts.insert(
-		"default".to_string(),
-		StoredContext {
-			cdp_endpoint: Some("ws://global-endpoint".to_string()),
-			..Default::default()
-		},
-	);
+fn cdp_endpoint_reads_from_config_defaults() {
+	let mut state = test_state();
+	state.config.defaults.cdp_endpoint = Some("ws://test-endpoint".to_string());
 
-	let selected = SelectedContext {
-		name: "default".to_string(),
-		scope: ContextScope::Project,
-		data: StoredContext {
-			cdp_endpoint: Some("ws://project-endpoint".to_string()),
-			..Default::default()
-		},
-	};
+	let ctx_state = ContextState::test_new(state);
 
-	let state = ContextState::test_new(
-		ContextBook {
-			global: store,
-			project: None,
-		},
-		Some(selected),
-	);
-
-	assert_eq!(state.cdp_endpoint(), Some("ws://global-endpoint"));
+	assert_eq!(ctx_state.cdp_endpoint(), Some("ws://test-endpoint"));
 }
 
 #[test]
-fn cdp_endpoint_writes_to_global_not_project() {
-	let selected = SelectedContext {
-		name: "default".to_string(),
-		scope: ContextScope::Project,
-		data: StoredContext::default(),
-	};
+fn cdp_endpoint_writes_to_config_defaults() {
+	let state = test_state();
+	let mut ctx_state = ContextState::test_new(state);
 
-	let mut state = ContextState::test_new(
-		ContextBook {
-			global: empty_global_store(),
-			project: None,
-		},
-		Some(selected),
-	);
+	ctx_state.set_cdp_endpoint(Some("ws://new-endpoint".to_string()));
 
-	state.set_cdp_endpoint(Some("ws://new-endpoint".to_string()));
-
-	assert_eq!(state.cdp_endpoint(), Some("ws://new-endpoint"));
-}
-
-#[test]
-fn cdp_endpoint_updates_selected_when_global_default() {
-	// When selected context IS the global default, set_cdp_endpoint
-	// must also update selected.data so persist() doesn't overwrite it
-	let selected = SelectedContext {
-		name: "default".to_string(),
-		scope: ContextScope::Global,
-		data: StoredContext::default(),
-	};
-
-	let mut state = ContextState::test_new(
-		ContextBook {
-			global: empty_global_store(),
-			project: None,
-		},
-		Some(selected),
-	);
-
-	state.set_cdp_endpoint(Some("ws://new-endpoint".to_string()));
-
-	// Both the store and selected.data should have the new endpoint
-	assert_eq!(state.cdp_endpoint(), Some("ws://new-endpoint"));
+	assert_eq!(ctx_state.cdp_endpoint(), Some("ws://new-endpoint"));
 	assert_eq!(
-		state.selected().unwrap().data.cdp_endpoint,
+		ctx_state.state().config.defaults.cdp_endpoint,
 		Some("ws://new-endpoint".to_string())
 	);
 }
 
 #[test]
-fn cdp_endpoint_does_not_update_selected_when_project_context() {
-	// When selected context is project-scoped, set_cdp_endpoint
-	// should NOT update selected.data (CDP is only in global)
-	let selected = SelectedContext {
-		name: "myproject".to_string(),
-		scope: ContextScope::Project,
-		data: StoredContext::default(),
-	};
+fn last_url_reads_from_cache() {
+	let mut state = test_state();
+	state.cache.last_url = Some("https://example.com".to_string());
 
-	let mut state = ContextState::test_new(
-		ContextBook {
-			global: empty_global_store(),
-			project: None,
-		},
-		Some(selected),
+	let ctx_state = ContextState::test_new(state);
+
+	assert_eq!(ctx_state.last_url(), Some("https://example.com"));
+}
+
+#[test]
+fn base_url_prefers_override() {
+	let mut state = test_state();
+	state.config.defaults.base_url = Some("https://config.com".to_string());
+
+	let mut ctx_state = ContextState::test_new(state);
+	ctx_state.base_url_override = Some("https://override.com".to_string());
+
+	assert_eq!(ctx_state.base_url(), Some("https://override.com"));
+}
+
+#[test]
+fn base_url_falls_back_to_config() {
+	let mut state = test_state();
+	state.config.defaults.base_url = Some("https://config.com".to_string());
+
+	let ctx_state = ContextState::test_new(state);
+
+	assert_eq!(ctx_state.base_url(), Some("https://config.com"));
+}
+
+#[test]
+fn protected_urls_from_config() {
+	let mut state = test_state();
+	state.config.protected_urls = vec!["admin".to_string(), "settings".to_string()];
+
+	let ctx_state = ContextState::test_new(state);
+
+	assert_eq!(ctx_state.protected_urls(), &["admin", "settings"]);
+	assert!(ctx_state.is_protected("https://example.com/admin/dashboard"));
+	assert!(!ctx_state.is_protected("https://example.com/public"));
+}
+
+#[test]
+fn add_protected_url() {
+	let state = test_state();
+	let mut ctx_state = ContextState::test_new(state);
+
+	assert!(ctx_state.add_protected("admin".to_string()));
+	assert!(ctx_state.protected_urls().contains(&"admin".to_string()));
+
+	// Adding duplicate returns false
+	assert!(!ctx_state.add_protected("admin".to_string()));
+}
+
+#[test]
+fn remove_protected_url() {
+	let mut state = test_state();
+	state.config.protected_urls = vec!["admin".to_string(), "settings".to_string()];
+
+	let mut ctx_state = ContextState::test_new(state);
+
+	assert!(ctx_state.remove_protected("admin"));
+	assert!(!ctx_state.protected_urls().contains(&"admin".to_string()));
+	assert!(ctx_state.protected_urls().contains(&"settings".to_string()));
+
+	// Removing non-existent returns false
+	assert!(!ctx_state.remove_protected("admin"));
+}
+
+#[test]
+fn apply_delta_updates_cache() {
+	let state = test_state();
+	let mut ctx_state = ContextState::test_new(state);
+
+	ctx_state.apply_delta(crate::commands::def::ContextDelta {
+		url: Some("https://new-url.com".to_string()),
+		selector: Some("#button".to_string()),
+		output: Some(std::path::PathBuf::from("screenshot.png")),
+	});
+
+	assert_eq!(ctx_state.last_url(), Some("https://new-url.com"));
+	assert_eq!(
+		ctx_state.state().cache.last_selector,
+		Some("#button".to_string())
 	);
+	assert_eq!(
+		ctx_state.state().cache.last_output,
+		Some("screenshot.png".to_string())
+	);
+	assert!(ctx_state.state().cache.last_used_at.is_some());
+}
 
-	state.set_cdp_endpoint(Some("ws://new-endpoint".to_string()));
+#[test]
+fn session_descriptor_path_uses_profile() {
+	let mut state = test_state();
+	state.cache.active_profile = Some("dev".to_string());
 
-	// Store has the endpoint
-	assert_eq!(state.cdp_endpoint(), Some("ws://new-endpoint"));
-	// But selected.data does not (it's a project context)
-	assert_eq!(state.selected().unwrap().data.cdp_endpoint, None);
+	let ctx_state = ContextState::test_new(state);
+
+	let path = ctx_state.session_descriptor_path().unwrap();
+	assert!(path.ends_with("dev.json"));
+}
+
+#[test]
+fn session_descriptor_path_defaults_to_default() {
+	let state = test_state();
+	let ctx_state = ContextState::test_new(state);
+
+	let path = ctx_state.session_descriptor_path().unwrap();
+	assert!(path.ends_with("default.json"));
+}
+
+#[test]
+fn no_context_mode_disables_everything() {
+	let mut state = test_state();
+	state.config.defaults.cdp_endpoint = Some("ws://test".to_string());
+	state.cache.last_url = Some("https://example.com".to_string());
+	state.config.protected_urls = vec!["admin".to_string()];
+
+	let mut ctx_state = ContextState::test_new(state);
+	ctx_state.no_context = true;
+
+	assert_eq!(ctx_state.cdp_endpoint(), None);
+	assert_eq!(ctx_state.last_url(), None);
+	assert!(ctx_state.protected_urls().is_empty());
+	assert!(!ctx_state.has_context_url());
+}
+
+#[test]
+fn resolve_selector_from_cache() {
+	let mut state = test_state();
+	state.cache.last_selector = Some("#cached".to_string());
+
+	let ctx_state = ContextState::test_new(state);
+
+	assert_eq!(
+		ctx_state.resolve_selector(None, None).unwrap(),
+		"#cached"
+	);
+}
+
+#[test]
+fn resolve_selector_prefers_provided() {
+	let mut state = test_state();
+	state.cache.last_selector = Some("#cached".to_string());
+
+	let ctx_state = ContextState::test_new(state);
+
+	assert_eq!(
+		ctx_state
+			.resolve_selector(Some("#provided".to_string()), None)
+			.unwrap(),
+		"#provided"
+	);
+}
+
+#[test]
+fn has_context_url_with_base_url() {
+	let mut state = test_state();
+	state.config.defaults.base_url = Some("https://example.com".to_string());
+
+	let ctx_state = ContextState::test_new(state);
+
+	assert!(ctx_state.has_context_url());
+}
+
+#[test]
+fn has_context_url_with_last_url() {
+	let mut state = test_state();
+	state.cache.last_url = Some("https://example.com".to_string());
+
+	let ctx_state = ContextState::test_new(state);
+
+	assert!(ctx_state.has_context_url());
 }
