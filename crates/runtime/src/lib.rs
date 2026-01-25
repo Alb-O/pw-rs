@@ -48,7 +48,7 @@ pub use channel::Channel;
 pub use channel_owner::{ChannelOwner, ChannelOwnerImpl, DisposeReason, ParentOrConnection};
 pub use connection::{
 	AsyncChannelOwnerResult, Connection, ConnectionLike, Event, Message, Metadata, ObjectFactory,
-	Request, Response,
+	ObjectStore, Request, Response,
 };
 pub use driver::{TestRunnerPaths, get_driver_executable, get_test_runner_paths};
 pub use error::{Error, Result};

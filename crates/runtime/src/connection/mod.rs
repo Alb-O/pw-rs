@@ -17,21 +17,24 @@
 //! 6. Response is correlated by ID and sent via oneshot channel
 //! 7. Client receives result
 
+mod object_store;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+pub use object_store::ObjectStore;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use parking_lot::Mutex as ParkingLotMutex;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{Mutex as TokioMutex, Notify, mpsc, oneshot};
+use tokio::sync::{Mutex as TokioMutex, mpsc, oneshot};
 
 use crate::channel_owner::{ChannelOwner, DisposeReason, ParentOrConnection};
 use crate::error::{Error, Result};
@@ -246,11 +249,7 @@ pub enum Message {
 	Unknown(Value),
 }
 
-/// Type alias for the object registry mapping GUIDs to ChannelOwner objects
-type ObjectRegistry = HashMap<Arc<str>, Arc<dyn ChannelOwner>>;
-
-/// Pending request callbacks keyed by request ID.
-type CallbackMap = Arc<TokioMutex<HashMap<u32, oneshot::Sender<Result<Value>>>>>;
+type CallbackMap = Arc<DashMap<u32, oneshot::Sender<Result<Value>>>>;
 
 /// RAII guard ensuring callback cleanup when a request future is dropped.
 struct CancelGuard {
@@ -261,11 +260,7 @@ struct CancelGuard {
 
 impl CancelGuard {
 	fn new(id: u32, callbacks: CallbackMap) -> Self {
-		Self {
-			id,
-			callbacks,
-			completed: false,
-		}
+		Self { id, callbacks, completed: false }
 	}
 
 	fn complete(&mut self) {
@@ -275,19 +270,8 @@ impl CancelGuard {
 
 impl Drop for CancelGuard {
 	fn drop(&mut self) {
-		if self.completed {
-			return;
-		}
-
-		let id = self.id;
-		let callbacks = Arc::clone(&self.callbacks);
-
-		if let Ok(handle) = tokio::runtime::Handle::try_current() {
-			handle.spawn(async move {
-				if callbacks.lock().await.remove(&id).is_some() {
-					tracing::debug!(id, "CancelGuard: removed orphaned callback");
-				}
-			});
+		if !self.completed && self.callbacks.remove(&self.id).is_some() {
+			tracing::debug!(id = self.id, "CancelGuard: removed orphaned callback");
 		}
 	}
 }
@@ -312,63 +296,47 @@ impl Future for ResponseFuture {
 	}
 }
 
-/// JSON-RPC connection to Playwright server
+/// JSON-RPC connection to Playwright server.
 ///
-/// Manages request/response correlation and event dispatch.
-/// Uses sequential request IDs and oneshot channels for correlation.
+/// Manages request/response correlation and event dispatch using
+/// sequential request IDs and oneshot channels.
 pub struct Connection {
-	/// Sequential request ID counter (atomic for thread safety)
 	last_id: AtomicU32,
-	/// Pending request callbacks keyed by request ID
-	callbacks: Arc<TokioMutex<HashMap<u32, oneshot::Sender<Result<Value>>>>>,
-	/// Channel for sending outbound messages to the writer task
+	callbacks: CallbackMap,
 	outbound_tx: mpsc::UnboundedSender<Value>,
-	/// Transport sender (taken by run() to start writer task)
 	transport_sender: Arc<TokioMutex<Option<Box<dyn Transport>>>>,
-	/// Receiver for incoming messages from transport
 	message_rx: Arc<TokioMutex<Option<mpsc::UnboundedReceiver<Value>>>>,
-	/// Receiver half of transport (owned by run loop, only needed once)
 	transport_receiver: Arc<TokioMutex<Option<Box<dyn TransportReceiver>>>>,
-	/// Receiver for outbound messages (taken by run() to start writer task)
 	outbound_rx: Arc<TokioMutex<Option<mpsc::UnboundedReceiver<Value>>>>,
-	/// Registry of all protocol objects by GUID (parking_lot for sync+async access)
-	objects: Arc<ParkingLotMutex<ObjectRegistry>>,
-	/// Notification broadcast when any object is registered
-	object_registered: Arc<Notify>,
-	/// Factory for creating protocol objects (set via set_factory before run())
-	factory: Arc<TokioMutex<Option<Arc<dyn ObjectFactory>>>>,
+	objects: Arc<ObjectStore>,
+	factory: OnceLock<Arc<dyn ObjectFactory>>,
 }
 
 impl Connection {
-	/// Create a new Connection with the given transport
 	pub fn new(parts: TransportParts) -> Self {
-		let TransportParts {
-			sender,
-			receiver,
-			message_rx,
-		} = parts;
-
 		let (outbound_tx, outbound_rx) = mpsc::unbounded_channel();
-
 		Self {
 			last_id: AtomicU32::new(0),
-			callbacks: Arc::new(TokioMutex::new(HashMap::new())),
+			callbacks: Arc::new(DashMap::new()),
 			outbound_tx,
-			transport_sender: Arc::new(TokioMutex::new(Some(sender))),
-			message_rx: Arc::new(TokioMutex::new(Some(message_rx))),
-			transport_receiver: Arc::new(TokioMutex::new(Some(receiver))),
+			transport_sender: Arc::new(TokioMutex::new(Some(parts.sender))),
+			message_rx: Arc::new(TokioMutex::new(Some(parts.message_rx))),
+			transport_receiver: Arc::new(TokioMutex::new(Some(parts.receiver))),
 			outbound_rx: Arc::new(TokioMutex::new(Some(outbound_rx))),
-			objects: Arc::new(ParkingLotMutex::new(HashMap::new())),
-			object_registered: Arc::new(Notify::new()),
-			factory: Arc::new(TokioMutex::new(None)),
+			objects: Arc::new(ObjectStore::new()),
+			factory: OnceLock::new(),
 		}
 	}
 
-	/// Set the object factory for creating protocol objects.
+	/// Sets the object factory for creating protocol objects.
 	///
-	/// This must be called before `run()` for `__create__` messages to work.
-	pub async fn set_factory(&self, factory: Arc<dyn ObjectFactory>) {
-		*self.factory.lock().await = Some(factory);
+	/// # Panics
+	///
+	/// Panics if called more than once.
+	pub fn set_factory(&self, factory: Arc<dyn ObjectFactory>) {
+		if self.factory.set(factory).is_err() {
+			panic!("set_factory can only be called once");
+		}
 	}
 
 	/// Sends a message to the Playwright server and awaits the response.
@@ -383,7 +351,7 @@ impl Connection {
 		);
 
 		let (tx, rx) = oneshot::channel();
-		self.callbacks.lock().await.insert(id, tx);
+		self.callbacks.insert(id, tx);
 
 		let guard = CancelGuard::new(id, Arc::clone(&self.callbacks));
 
@@ -481,17 +449,12 @@ impl Connection {
 		match message {
 			Message::Response(response) => {
 				tracing::debug!("Processing response for ID: {}", response.id);
-				let callback = self
-					.callbacks
-					.lock()
-					.await
-					.remove(&response.id)
-					.ok_or_else(|| {
-						Error::ProtocolError(format!(
-							"Cannot find request to respond: id={}",
-							response.id
-						))
-					})?;
+				let (_, callback) = self.callbacks.remove(&response.id).ok_or_else(|| {
+					Error::ProtocolError(format!(
+						"Cannot find request to respond: id={}",
+						response.id
+					))
+				})?;
 
 				let result = if let Some(error_wrapper) = response.error {
 					Err(parse_protocol_error(error_wrapper.error))
@@ -506,7 +469,7 @@ impl Connection {
 				"__create__" => self.handle_create(&event).await,
 				"__dispose__" => self.handle_dispose(&event).await,
 				"__adopt__" => self.handle_adopt(&event).await,
-				_ => match self.objects.lock().get(&event.guid).cloned() {
+				_ => match self.objects.try_get(&event.guid) {
 					Some(object) => {
 						object.on_event(&event.method, event.params);
 						Ok(())
@@ -554,65 +517,31 @@ impl Connection {
 
 		let initializer = event.params["initializer"].clone();
 
-		// Get parent object
-		let parent_obj = self
-			.objects
-			.lock()
-			.get(&event.guid)
-			.cloned()
-			.ok_or_else(|| {
-				tracing::debug!(
-					"Parent object not found for type={}, parent_guid={}",
-					type_name,
-					event.guid
-				);
-				Error::ProtocolError(format!("Parent object not found: {}", event.guid))
-			})?;
+		let parent_obj = self.objects.try_get(&event.guid).ok_or_else(|| {
+			tracing::debug!("Parent object not found for type={type_name}, parent_guid={}", event.guid);
+			Error::ProtocolError(format!("Parent object not found: {}", event.guid))
+		})?;
 
-		// Determine parent or connection
 		let parent_or_conn = if type_name == "Playwright" && event.guid.is_empty() {
 			ParentOrConnection::Connection(Arc::clone(self) as Arc<dyn ConnectionLike>)
 		} else {
 			ParentOrConnection::Parent(parent_obj.clone())
 		};
 
-		// Get factory and create object
-		let factory = self.factory.lock().await;
-		let factory = factory.as_ref().ok_or_else(|| {
-			Error::ProtocolError(
-				"ObjectFactory not set - call set_factory() before run()".to_string(),
-			)
+		let factory = self.factory.get().ok_or_else(|| {
+			Error::ProtocolError("ObjectFactory not set - call set_factory() before run()".into())
 		})?;
 
-		let object = match factory
-			.create_object(
-				parent_or_conn,
-				type_name.clone(),
-				object_guid.clone(),
-				initializer,
-			)
+		let object = factory
+			.create_object(parent_or_conn, type_name.clone(), object_guid.clone(), initializer)
 			.await
-		{
-			Ok(obj) => obj,
-			Err(e) => {
-				tracing::debug!(
-					"Failed to create object type={}, guid={}, error={}",
-					type_name,
-					object_guid,
-					e
-				);
-				return Err(e);
-			}
-		};
+			.inspect_err(|e| {
+				tracing::debug!("Failed to create object type={type_name}, guid={object_guid}, error={e}");
+			})?;
 
-		// Register in connection
-		self.register_object(Arc::clone(&object_guid), object.clone())
-			.await;
-
-		// Register in parent
+		self.register_object(Arc::clone(&object_guid), object.clone()).await;
 		parent_obj.add_child(Arc::clone(&object_guid), object);
-
-		tracing::debug!("Created object: type={}, guid={}", type_name, object_guid);
+		tracing::debug!("Created object: type={type_name}, guid={object_guid}");
 
 		Ok(())
 	}
@@ -624,9 +553,7 @@ impl Connection {
 			_ => DisposeReason::Closed,
 		};
 
-		let object = self.objects.lock().get(&event.guid).cloned();
-
-		if let Some(obj) = object {
+		if let Some(obj) = self.objects.try_get(&event.guid) {
 			obj.dispose(reason);
 			tracing::debug!("Disposed object: guid={}", event.guid);
 		} else {
@@ -644,8 +571,8 @@ impl Connection {
 				.ok_or_else(|| Error::ProtocolError("__adopt__ missing 'guid'".to_string()))?,
 		);
 
-		let new_parent = self.objects.lock().get(&event.guid).cloned();
-		let child = self.objects.lock().get(&child_guid).cloned();
+		let new_parent = self.objects.try_get(&event.guid);
+		let child = self.objects.try_get(&child_guid);
 
 		match (new_parent, child) {
 			(Some(parent), Some(child_obj)) => {
@@ -697,80 +624,40 @@ impl ConnectionLike for Connection {
 		object: Arc<dyn ChannelOwner>,
 	) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
 		Box::pin(async move {
-			self.objects.lock().insert(guid, object);
-			self.object_registered.notify_waiters();
+			self.objects.insert(guid, object);
 		})
 	}
 
 	fn unregister_object(&self, guid: &str) {
-		let guid_arc: Arc<str> = Arc::from(guid);
-		self.objects.lock().remove(&guid_arc);
+		self.objects.remove(guid);
 	}
 
 	fn get_object(&self, guid: &str) -> AsyncChannelOwnerResult<'_> {
-		let guid_arc: Arc<str> = Arc::from(guid);
+		let guid_owned = guid.to_string();
 		Box::pin(async move {
-			self.objects.lock().get(&guid_arc).cloned().ok_or_else(|| {
-				let target_type = if guid_arc.starts_with("page@") {
+			self.objects.try_get(&guid_owned).ok_or_else(|| {
+				let target_type = if guid_owned.starts_with("page@") {
 					"Page"
-				} else if guid_arc.starts_with("frame@") {
+				} else if guid_owned.starts_with("frame@") {
 					"Frame"
-				} else if guid_arc.starts_with("browser-context@") {
+				} else if guid_owned.starts_with("browser-context@") {
 					"BrowserContext"
-				} else if guid_arc.starts_with("browser@") {
+				} else if guid_owned.starts_with("browser@") {
 					"Browser"
 				} else {
-					return Error::ProtocolError(format!("Object not found: {}", guid_arc));
+					return Error::ProtocolError(format!("Object not found: {}", guid_owned));
 				};
 
 				Error::TargetClosed {
 					target_type: target_type.to_string(),
-					context: format!("Object not found: {}", guid_arc),
+					context: format!("Object not found: {}", guid_owned),
 				}
 			})
 		})
 	}
 
 	fn wait_for_object(&self, guid: &str, timeout: Duration) -> AsyncChannelOwnerResult<'_> {
-		let guid_arc: Arc<str> = Arc::from(guid);
-		Box::pin(async move {
-			let deadline = tokio::time::Instant::now() + timeout;
-
-			loop {
-				if let Some(obj) = self.objects.lock().get(&guid_arc).cloned() {
-					return Ok(obj);
-				}
-
-				let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-				if remaining.is_zero() {
-					let target_type = if guid_arc.starts_with("page@") {
-						"Page"
-					} else if guid_arc.starts_with("frame@") {
-						"Frame"
-					} else if guid_arc.starts_with("browser-context@") {
-						"BrowserContext"
-					} else if guid_arc.starts_with("browser@") {
-						"Browser"
-					} else if guid_arc.starts_with("response@") {
-						"Response"
-					} else {
-						return Err(Error::Timeout(format!(
-							"Timeout waiting for object: {}",
-							guid_arc
-						)));
-					};
-
-					return Err(Error::Timeout(format!(
-						"Timeout waiting for {} object: {}",
-						target_type, guid_arc
-					)));
-				}
-
-				tokio::select! {
-					_ = self.object_registered.notified() => {}
-					_ = tokio::time::sleep(remaining) => {}
-				}
-			}
-		})
+		let guid_owned = guid.to_string();
+		Box::pin(async move { self.objects.wait_for(&guid_owned, timeout).await })
 	}
 }

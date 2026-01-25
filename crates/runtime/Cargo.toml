@@ -12,6 +12,7 @@ description = "Playwright driver lifecycle, connection, and registry"
 doctest = false
 
 [dependencies]
+dashmap = "6.1"
 downcast-rs = "2.0"
 futures-util = "0.3"
 parking_lot = "0.12"

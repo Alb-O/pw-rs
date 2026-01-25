@@ -37,7 +37,7 @@ use crate::{Playwright, Root};
 /// - Timeout after 30 seconds
 pub async fn initialize_playwright(connection: &Arc<Connection>) -> Result<Arc<dyn ChannelOwner>> {
 	// Set the object factory before running
-	connection.set_factory(Arc::new(DefaultObjectFactory)).await;
+	connection.set_factory(Arc::new(DefaultObjectFactory));
 
 	// Create temporary Root object for initialization
 	let root = Arc::new(Root::new(

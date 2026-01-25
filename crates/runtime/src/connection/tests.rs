@@ -53,7 +53,7 @@ async fn test_dispatch_response_success() {
 	let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
 
 	let (tx, rx) = tokio::sync::oneshot::channel();
-	connection.callbacks.lock().await.insert(id, tx);
+	connection.callbacks.insert(id, tx);
 
 	let response = Message::Response(Response {
 		id,
@@ -74,7 +74,7 @@ async fn test_dispatch_response_error() {
 	let id = connection.last_id.fetch_add(1, Ordering::SeqCst);
 
 	let (tx, rx) = tokio::sync::oneshot::channel();
-	connection.callbacks.lock().await.insert(id, tx);
+	connection.callbacks.insert(id, tx);
 
 	let response = Message::Response(Response {
 		id,
