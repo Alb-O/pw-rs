@@ -202,7 +202,7 @@ export def "chatgpt attach" [
     for f in $files {
         $attachments = ($attachments | append {
             name: ($f | path basename),
-            content: (open $f)
+            content: (open --raw $f | into string)
         })
     }
     
@@ -211,7 +211,7 @@ export def "chatgpt attach" [
         let name = if ($name | is-not-empty) { $name } else { "document.txt" }
         $attachments = ($attachments | append {
             name: $name,
-            content: $pipeline_input
+            content: ($pipeline_input | into string)
         })
     }
     
