@@ -222,7 +222,7 @@ export def "chatgpt attach" [
     # Build JS with embedded text using concatenation (avoids nushell interpolation issues)
     let attachments_json = ($attachments | to json)
 
-    let js_head = "(function() {
+    let js_head = "(async function() {
         const el = document.querySelector(\"#prompt-textarea\");
         if (!el) return { error: \"textarea not found\" };
         el.focus();
@@ -230,26 +230,29 @@ export def "chatgpt attach" [
         const attachments = "
     let js_tail = ";
 
-        // Create DataTransfer
-        const dt = new DataTransfer();
         const filenames = [];
         let totalSize = 0;
 
+        // Dispatch individual paste events with delay to ensure all files are processed
         for (const item of attachments) {
+            const dt = new DataTransfer();
             const file = new File([item.content], item.name, { type: \"text/plain\" });
             dt.items.add(file);
+
+            const pasteEvent = new ClipboardEvent(\"paste\", {
+                bubbles: true,
+                cancelable: true,
+                clipboardData: dt
+            });
+
+            el.dispatchEvent(pasteEvent);
             filenames.push(item.name);
             totalSize += item.content.length;
+            
+            // 500ms debounce between files
+            await new Promise(r => setTimeout(r, 500));
         }
 
-        // Dispatch paste event with file
-        const pasteEvent = new ClipboardEvent(\"paste\", {
-            bubbles: true,
-            cancelable: true,
-            clipboardData: dt
-        });
-
-        el.dispatchEvent(pasteEvent);
         return { attached: true, filenames: filenames, size: totalSize };
     })()"
 
