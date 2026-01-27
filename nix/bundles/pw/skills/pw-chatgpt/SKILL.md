@@ -1,189 +1,81 @@
 ---
 name: pw-chatgpt
-description: Agent-to-ChatGPT conversation using `pw` (send messages, attach files, download artifacts). Trigger when user wants to interact with ChatGPT.
+description: agent-to-chatgpt conversation using `pw` (send messages, attach files, download artifacts). trigger when user wants to interact with chatgpt.
 ---
 
-# ChatGPT
+# pw-chatgpt
 
-Interact with ChatGPT using `pw` and the `chatgpt.nu` Nushell script.
+interact with chatgpt using `pw` and the `chatgpt.nu` nushell script.
 
-## Setup
+setup: requires cdp connection to debug-enabled browser with an active chatgpt session; user should already have this set up.
 
-Requires CDP connection to your browser with an active ChatGPT session:
-
-```bash
-pw connect --launch    # launch browser with debugging
-pw navigate https://chatgpt.com
-```
-
-## Invocation
+## invocation
 
 ```bash
-# from scripts dir
-use chatgpt.nu *
-chatgpt ask "Hello"
-
-# from anywhere (bash)
-nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; chatgpt ask "Hello"'
+# invoking from global ~/.claude/skills dir (bash)
+nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; chatgpt send "Hello"'
 ```
 
-## Connecting to Existing Session
+## session connection
 
-When user has an open ChatGPT tab and wants to continue a conversation:
+when user has an open chatgpt tab and wants to continue a previous conversation:
 
 ```bash
 chatgpt history                  # get full conversation context
-chatgpt history --last 4         # or just recent exchanges
+chatgpt history --last 4         # or just recently
 ```
 
-If user claims session already open, commands above should just work with no extra setup.
+if user claims session already open, get history. otherwise, you can immediately start sending messages
 
-## Commands
+## commands
 
-### chatgpt ask
+`chatgpt send` msg. `--file` for prompt file.
+`chatgpt attach` docs (max 10). `--prompt` msg, `--send` trigger.
+`chatgpt paste` inline text. `--send` trigger, `--clear` reset.
+`chatgpt new` start fresh. `--model=thinking` (default).
+`chatgpt set-model` change default (`auto` | `instant` | `thinking`).
+`chatgpt wait` wait for completion and print response. `--timeout` (default 600000).
+`chatgpt get-response` print last assistant message.
+`chatgpt history` transcript. `--last n` exchange, `--json` json.
+`chatgpt refresh` reload ui when stuck.
+`chatgpt download` get artifacts. `--list` files, `--index n` specific, `-o` file.
 
-Send message, wait for response, return response text.
+## collaboration
+
+1. technical opening - provide code context, no fluff.
+2. back-and-forth - check code, talk to chatgpt, treat as supervisor.
+3. feed context - ask what it needs, fetch implementations, provide as much as possible.
+4. get plan - request comprehensive design/plan once ready.
+5. download - use `chatgpt download` for plans/code.
+
+## workflow
+
+1. write msg to temp file e.g. `tmp/chatgpt_prompt.txt`
+2. send prompt + files:
 
 ```bash
-chatgpt ask "Simple question"             # returns response text
-chatgpt ask --file prompt.md              # complex text with backticks/escapes
-"multi\nline" | chatgpt ask               # stdin
-chatgpt ask "Hello" --model=instant --new
-chatgpt ask "Hello" --json                # full record with metadata
+$ nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; 
+let full_prompt = ((open tmp/chatgpt_prompt.txt)
+    + "\n\n[FILE: src/main.rs]\n" + (open src/main.rs)
+    + "\n\n[FILE: src/lib.rs]\n" + (open src/lib.rs));
+$full_prompt | chatgpt send; chatgpt wait'
 ```
 
-Note: do not attempt to send multiple consecutive messages in a row, this will not work. You must compile everything needed into 1 message. Multiple attachments allowed.
+## selectors
 
-### chatgpt send
-
-Send message without waiting.
-
-```bash
-chatgpt send "Hello"
-chatgpt send --file prompt.md
-"text" | chatgpt send --model=thinking
-```
-
-### chatgpt attach
-
-Attach one or multiple files as documents. Best for large text (250KB+).
-Maximum 10 files per command.
-
-```bash
-chatgpt attach file1.rs file2.rs --prompt "Review these" --send
-chatgpt attach src/*.rs --send
-open file.txt | chatgpt attach --name "doc.txt"
-```
-
-From bash, use positional arguments to pass multiple files:
-
-```bash
-nu -I ~/.claude/skills/pw-chatgpt/scripts -c 'use chatgpt.nu *; chatgpt attach file1.md file2.md --send'
-```
-
-### chatgpt paste
-
-Inline text paste. Limit ~50KB (UI freezes on larger).
-
-```bash
-"short text" | chatgpt paste --send
-cat file.rs | chatgpt paste --clear
-```
-
-### chatgpt set-model
-
-```bash
-chatgpt set-model thinking  # auto | instant | thinking
-```
-
-### chatgpt new
-
-Start fresh temp chat.
-
-```bash
-chatgpt new                # defaults to thinking model
-chatgpt new --model=auto
-```
-
-### chatgpt wait
-
-Wait for response completion. Use 10min+ timeout; thinking model can take a while.
-
-```bash
-chatgpt wait                   # default 20min
-chatgpt wait --timeout=600000  # 10min minimum recommended
-```
-
-### chatgpt get-response
-
-Get last assistant message text.
-
-### chatgpt history
-
-Get full conversation history (all user and assistant messages).
-
-```bash
-chatgpt history                  # readable transcript
-chatgpt history --last 2         # last user/assistant exchange
-chatgpt history --json           # JSON
-chatgpt history --raw | where role == "user"   # nushell records
-```
-
-### chatgpt refresh
-
-Reload page when UI stuck.
-
-### chatgpt download
-
-Download files generated by ChatGPT.
-
-```bash
-chatgpt download                      # download last file to stdout
-chatgpt download -o output.md         # save to file
-chatgpt download --list               # list all available downloads
-chatgpt download --index 0            # download specific file by index
-```
-
-Note: You can ask for downloadable files from ChatGPT by explicitly prompting them to use the `python_user_visible` tool and providing a link in chat like: `sandbox:/mnt/data/<filename>`.
-
-## Collaborative Discussions
-
-For agent-to-ChatGPT collaboration (e.g., planning, code review):
-
-1. Attach context first - upload a codemap or relevant file to give ChatGPT background
-2. Be collaborative - switch between checking real code and talking to ChatGPT; have back-and-forths
-3. Ask for clarification - ask if ChatGPT needs more detail in specific areas for better guidance
-4. Request deliverables - when wrapping up, ask for a comprehensive plan with checkboxes and code sketches
-5. Download artifacts - use `chatgpt download` to save generated plans/code to disk
-
-Example workflow:
-
-```bash
-chatgpt attach codemap.md --prompt "Review this codebase structure" --send
-chatgpt wait
-chatgpt get-response
-# ... discuss, iterate ...
-chatgpt ask "Give me a multi-phased implementation plan with checkboxes"
-chatgpt download -o plan.md
-```
-
-## Selectors
-
-| Element       | Selector                                 |
+| element       | selector                                 |
 | ------------- | ---------------------------------------- |
-| Input         | `#prompt-textarea`                       |
-| Model button  | `button[aria-label^="Model selector"]`   |
-| Send button   | `[data-testid="send-button"]`            |
-| Stop button   | `button[aria-label="Stop streaming"]`    |
-| Thinking      | `.result-thinking`                       |
-| Assistant msg | `[data-message-author-role="assistant"]` |
+| input         | `#prompt-textarea`                       |
+| model button  | `button[aria-label^="Model selector"]`   |
+| send button   | `[data-testid="send-button"]`            |
+| stop button   | `button[aria-label="Stop streaming"]`    |
+| thinking      | `.result-thinking`                       |
+| assistant msg | `[data-message-author-role="assistant"]` |
 
-## Gotchas
+## gotchas
 
-- Use `--file` for prompts with backticks/code blocks; complex inlines can break nushell
-- Always timeout 10min+ for responses; thinking model takes time
-- Radix dropdowns close between `pw` commands; script uses async polling
-- UI sometimes stuck with loading dot; `chatgpt refresh` to recover
-- `#prompt-textarea` is contentEditable div, not textarea
-- Attachment filenames show as UUIDs in UI but content works
-- Strip time estimates from downloaded plans (they're usually inaccurate)
+- use `--file` for prompts with backticks/code blocks; complex inlines can break nushell
+- always timeout 10min+ for responses; thinking model takes time
+- ui sometimes stuck with loading dot; `chatgpt refresh` to recover
+- `#prompt-textarea` is contenteditable div, not textarea
+- attachment filenames show as uuids in ui but content works

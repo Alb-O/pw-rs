@@ -7,7 +7,7 @@
 #   chatgpt send "Explain quantum computing"
 #   chatgpt set-model thinking
 #
-# Deduplication: send/ask skip re-sending if the last user message matches.
+# Deduplication: send skips re-sending if the last user message matches.
 # This prevents retry spam if an agent disconnects mid-operation. Use --force to bypass.
 
 use pw.nu
@@ -424,7 +424,7 @@ def message-count []: nothing -> int {
 # Wait for ChatGPT response to complete
 export def "chatgpt wait" [
     --timeout (-t): int = 1200000  # Timeout in ms (default: 20 minutes for thinking model)
-]: nothing -> record {
+]: nothing -> any {
     ensure-tab
     let start = (date now)
     let initial_count = (message-count)
@@ -442,26 +442,25 @@ export def "chatgpt wait" [
     }
 
     if not $started {
-        return { complete: false, timeout: true, reason: "streaming never started" }
+        error make { msg: "streaming never started" }
     }
 
     # Wait for streaming to complete (stop button disappears)
     for _ in 1..600 {
         if ((date now) - $start) > $timeout_dur {
-            return { complete: false, timeout: true, reason: "streaming timeout" }
+            error make { msg: "streaming timeout" }
         }
         if not (is-generating) {
-            let elapsed = ((date now) - $start) | format duration ms | str replace ' ms' '' | into int
-            return { complete: true, elapsed: $elapsed }
+            return (chatgpt get-response)
         }
         sleep 300ms
     }
 
-    { complete: false, timeout: true, reason: "loop exhausted" }
+    error make { msg: "loop exhausted" }
 }
 
 # Get the last response from ChatGPT
-export def "chatgpt get-response" []: nothing -> string {
+export def "chatgpt get-response" []: nothing -> any {
     ensure-tab
     let js = "(() => {
         const messages = document.querySelectorAll(\"[data-message-author-role='assistant']\");
@@ -654,74 +653,3 @@ export def "chatgpt download" [
     }
 }
 
-# Send message and wait for response
-export def "chatgpt ask" [
-    message?: string               # Message to send (or use --file or stdin)
-    --model (-m): string
-    --new (-n)
-    --send (-s)                    # No-op (ask always sends), for flag compatibility
-    --file (-f): path              # Read message from file (avoids shell escaping)
-    --timeout (-t): int = 1200000  # Default: 20 minutes for thinking model
-    --json (-j)                    # Return full record with metadata instead of just response
-    --force                        # Bypass dedup check (send even if last message matches)
-]: nothing -> any {
-    # Resolve message: --file > positional > stdin
-    let msg = if ($file | is-not-empty) {
-        open $file
-    } else if ($message | is-not-empty) {
-        $message
-    } else {
-        $in
-    }
-    if ($msg | is-empty) {
-        error make { msg: "No message provided (use positional arg, --file, or stdin)" }
-    }
-
-    let initial_count = (message-count)
-    let send_result = (chatgpt send $msg --model=$model --new=$new --force=$force)
-
-    # If message was already sent (dedup triggered), check if response exists
-    let already_sent = ($send_result | get -o already_sent | default false)
-    if $already_sent {
-        # Response may already be complete - check before waiting
-        if not (is-generating) and (message-count) > 0 {
-            let response = (chatgpt get-response)
-            if ($response | is-not-empty) {
-                if $json {
-                    return {
-                        success: true
-                        message: $msg
-                        response: $response
-                        already_sent: true
-                    }
-                } else {
-                    return $response
-                }
-            }
-        }
-    }
-
-    let wait_result = (chatgpt wait --timeout=$timeout)
-    let response = (chatgpt get-response)
-
-    # Consider successful if we have a new response, even if wait timed out (fast responses)
-    let has_new_response = (message-count) > $initial_count and ($response | is-not-empty)
-    # For already_sent case, we just need a non-empty response
-    let success = $wait_result.complete or $has_new_response or ($already_sent and ($response | is-not-empty))
-
-    if not $success {
-        error make { msg: "Failed to get response (timeout or no new message)" }
-    }
-
-    if $json {
-        {
-            success: $success
-            message: $msg
-            response: $response
-            elapsed_ms: ($wait_result | get -o elapsed)
-            already_sent: $already_sent
-        }
-    } else {
-        $response
-    }
-}

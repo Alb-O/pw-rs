@@ -1,54 +1,42 @@
 ---
 name: pw-higgsfield
-description: Higgsfield AI image/video generation using `pw`. Trigger when user wants to generate images or videos.
+description: higgsfield ai image/video generation using `pw`. trigger when user wants to generate images or videos.
 ---
 
-# Higgsfield AI
+# higgsfield ai
 
-Generate images and videos with Higgsfield AI using `pw` and the `higgsfield.nu` Nushell script.
+generate images and videos with higgsfield ai using `pw` and the `higgsfield.nu` nushell script.
 
-## Setup
+## setup
 
-Requires CDP connection to your browser with an active Higgsfield session:
+requires cdp connection to your browser with an active higgsfield session:
 
 ```bash
 pw connect --launch    # launch browser with debugging
 pw navigate https://higgsfield.ai
 ```
 
-## Invocation
+## invocation
 
 ```nu
 use pw.nu
 use higgsfield.nu *
 ```
 
-## Image Generation
+## generation
 
-```nu
-higgsfield create-image "A dragon in a cyberpunk city"
-higgsfield create-image "Portrait of a cat" --model nano_banana_2 --wait-for-result
-```
+`higgsfield create-image` generate image.
+- `--model (-m)`: default `nano_banana_2`.
+- `--wait-for-result (-w)`: wait for completion.
+- `--spend`: allow credit usage.
 
-Options:
-- `--model (-m)`: Model name (default: `nano_banana_2`)
-- `--wait-for-result (-w)`: Wait for generation to complete
-- `--spend`: Allow credit usage if Unlimited mode unavailable
+`higgsfield create-video` generate video.
+- `--model (-m)`: default `wan_2_6`.
+- `--wait-for-result (-w)`: wait for completion (5min timeout).
+- `--spend`: allow credit usage.
 
-## Video Generation
+## unlimited mode
 
-```nu
-higgsfield create-video "Flying through clouds"
-higgsfield create-video "Ocean waves" --model wan_2_6 --wait-for-result
-```
+commands auto-check/enable "unlimited" toggle. use `--spend` if unlimited unavailable.
 
-Options:
-- `--model (-m)`: Model name (default: `wan_2_6`)
-- `--wait-for-result (-w)`: Wait for generation (up to 5 min timeout)
-- `--spend`: Allow credit usage if Unlimited mode unavailable
-
-## Unlimited Mode
-
-Both commands automatically check for and enable the "Unlimited" toggle to prevent accidental credit usage. Use `--spend` to allow credit usage if Unlimited mode is unavailable.
-
-See [higgsfield.md](higgsfield.md) for full reference.
+see [higgsfield.md](higgsfield.md) for full reference.
