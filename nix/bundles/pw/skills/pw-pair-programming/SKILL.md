@@ -90,37 +90,18 @@ let prompt = ((open --raw tmp/navigator_prompt.txt)
 $prompt | pp send; pp wait'
 ```
 
-### advanced: slicing specific line ranges
+### advanced: slicing specific line ranges (concise + low-error)
 
-use `lines | slice` to extract specific sections.
+use `lines | slice` to extract specific sections. this pattern avoids `+` parsing issues and keeps everything on one line.
 
 ```bash
-nu -I ~/.claude/skills/pw-pair-programming/scripts -c '
-use pp.nu *;
-
-def snip [path: path, start: int, end: int]: nothing -> string {
-  open --raw $path | lines | slice (($start - 1)..($end - 1)) | str join "\n"
-}
-
-let preamble = (open --raw tmp/navigator_prompt.txt);
-
-# full file
-let config = "\n\n[FILE: src/config.rs]\n" + (open --raw src/config.rs);
-
-# specific ranges
-let parser = "\n\n[FILE: src/parser.rs (lines 45-67 - parse_expr fn)]\n"
-  + (snip src/parser.rs 45 67);
-
-let handler = "\n\n[FILE: src/handler.rs (lines 120-135 - error handling)]\n"
-  + (snip src/handler.rs 120 135);
-
-($preamble + $config + $parser + $handler) | pp send; pp wait
-'
+nu -I ~/.claude/skills/pw-pair-programming/scripts -c 'use pp.nu *; def snip [path: path, start: int, end: int]: nothing -> string { open --raw $path | lines | slice (($start - 1)..($end - 1)) | str join "\n" }; let preamble = (open --raw tmp/navigator_prompt.txt); let parts = [ $preamble, "\n\n[FILE: src/config.rs]\n", (open --raw src/config.rs), "\n\n[FILE: src/parser.rs (lines 45-67 - parse_expr fn)]\n", (snip src/parser.rs 45 67), "\n\n[FILE: src/handler.rs (lines 120-135 - error handling)]\n", (snip src/handler.rs 120 135) ]; ($parts | str join "") | pp send; pp wait'
 ```
 
 syntax notes:
 - function signature: `def snip [...]: nothing -> string { ... }` (note the `: nothing ->` part)
 - use `--raw` with `open` to avoid auto-parsing
+- prefer `($parts | str join "")` when building strings
 - nushell ranges are 0-indexed, so subtract 1 from line numbers
 - `range` is old nushell, don't try to use it
 

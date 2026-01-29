@@ -380,14 +380,14 @@ export def "pp send" [
     --new (-n)             # Start new temporary chat
     --file (-f): path      # Read message from file (avoids shell escaping)
     --force                # Send even if last message matches (bypass dedup)
-]: nothing -> record {
+]: string -> record {
     # Resolve message: --file > positional > stdin
     let msg = if ($file | is-not-empty) {
         open --raw $file | into string
     } else if ($message | is-not-empty) {
         $message
     } else {
-        $in
+        $in | into string
     }
     if ($msg | is-empty) {
         error make { msg: "No message provided (use positional arg, --file, or stdin)" }
