@@ -152,9 +152,10 @@ def insert-text [text: string, --clear (-c)]: nothing -> record {
         const el = document.querySelector('#prompt-textarea');
         if (!el) return { error: 'textarea not found' };
         el.focus();
-        if (" + $do_clear + ") el.innerHTML = '';
-        document.execCommand('insertText', false, " + $js_text + ");
-        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        if (" + $do_clear + ") el.textContent = '';
+        el.textContent = " + $js_text + ";
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
         return { inserted: el.textContent.length };
     })()"
 
