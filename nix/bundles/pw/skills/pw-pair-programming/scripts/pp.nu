@@ -488,7 +488,7 @@ export def "pp wait" [
     }
 
     # Wait for streaming to complete (stop button disappears)
-    for _ in 1..600 {
+    loop {
         if ((date now) - $start) > $timeout_dur {
             error make { msg: "streaming timeout" }
         }
@@ -497,8 +497,6 @@ export def "pp wait" [
         }
         sleep 300ms
     }
-
-    error make { msg: "loop exhausted" }
 }
 
 # Get the last response from the Navigator
