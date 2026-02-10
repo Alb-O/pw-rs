@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use clap::Args;
-use pw_rs::WaitUntil;
+use pw_rs::{ClickOptions, WaitUntil};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -114,12 +114,46 @@ impl CommandDef for ClickCommand {
 							.await
 							.unwrap_or_else(|_| session.page().url());
 
-						let locator = session.page().locator(&selector).await;
-						locator.click(None).await?;
+							let locator = session.page().locator(&selector).await;
+							let click_opts = ClickOptions::builder()
+								// We compute navigation ourselves via before/after URL checks.
+								// Disabling auto-wait avoids false 30s timeouts on non-navigating clicks.
+								.no_wait_after(true)
+								.timeout(
+									timeout_ms
+										.unwrap_or(pw_protocol::options::DEFAULT_TIMEOUT_MS as u64)
+										as f64,
+								)
+								.build();
+							match locator.click(Some(click_opts)).await {
+								Ok(()) => {}
+								Err(err) => {
+									let msg = err.to_string();
+									if msg.to_lowercase().contains("timeout") {
+										// Playwright 1.57+ can intermittently hang on locator click
+										// for simple static elements. Fallback to a DOM click.
+										let selector_json = serde_json::to_string(&selector)?;
+										let expr = format!(
+											r#"(() => {{
+                                                const el = document.querySelector({selector});
+                                                if (!el) {{
+                                                    throw new Error("selector not found for click fallback");
+                                                }}
+                                                el.click();
+                                                return true;
+                                            }})()"#,
+											selector = selector_json
+										);
+										session.page().evaluate_value(&expr).await?;
+									} else {
+										return Err(err.into());
+									}
+								}
+							}
 
-						if wait_ms > 0 {
-							tokio::time::sleep(Duration::from_millis(wait_ms)).await;
-						}
+							if wait_ms > 0 {
+								tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+							}
 
 						let after_url = session
 							.page()

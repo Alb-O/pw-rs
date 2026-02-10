@@ -6,6 +6,7 @@
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use pw_rs::dirs;
 use serde::Deserialize;
 use serde_json::json;
 use tracing::debug;
@@ -13,6 +14,7 @@ use tracing::debug;
 use crate::context_store::ContextState;
 use crate::error::{PwError, Result};
 use crate::output::{OutputFormat, ResultBuilder, print_result};
+use crate::workspace::STATE_VERSION_DIR;
 
 /// Options for the connect command.
 pub struct ConnectOptions {
@@ -93,33 +95,42 @@ fn find_chrome_executable() -> Option<String> {
 
 /// Fetch CDP endpoint from a remote debugging port
 async fn fetch_cdp_endpoint(port: u16) -> Result<CdpVersionInfo> {
-	let url = format!("http://127.0.0.1:{}/json/version", port);
-
 	let client = reqwest::Client::builder()
-		.timeout(Duration::from_secs(2))
+		.timeout(Duration::from_millis(400))
 		.build()
 		.map_err(|e| PwError::Context(format!("Failed to create HTTP client: {}", e)))?;
+	let mut last_error = "no response".to_string();
 
-	let response = client
-		.get(&url)
-		.send()
-		.await
-		.map_err(|e| PwError::Context(format!("Failed to connect to port {}: {}", port, e)))?;
+	// Try loopback hostnames in order; environments vary on IPv4/IPv6 binding.
+	for url in [
+		format!("http://127.0.0.1:{}/json/version", port),
+		format!("http://localhost:{}/json/version", port),
+		format!("http://[::1]:{}/json/version", port),
+	] {
+		let response = match client.get(&url).send().await {
+			Ok(r) => r,
+			Err(e) => {
+				last_error = e.to_string();
+				continue;
+			}
+		};
 
-	if !response.status().is_success() {
-		return Err(PwError::Context(format!(
-			"Unexpected response from port {}: {}",
-			port,
-			response.status()
-		)));
+		if !response.status().is_success() {
+			last_error = format!("unexpected status {}", response.status());
+			continue;
+		}
+
+		let info: CdpVersionInfo = response
+			.json()
+			.await
+			.map_err(|e| PwError::Context(format!("Failed to parse CDP response: {}", e)))?;
+		return Ok(info);
 	}
 
-	let info: CdpVersionInfo = response
-		.json()
-		.await
-		.map_err(|e| PwError::Context(format!("Failed to parse CDP response: {}", e)))?;
-
-	Ok(info)
+	Err(PwError::Context(format!(
+		"Failed to connect to port {}: {}",
+		port, last_error
+	)))
 }
 
 /// Discover Chrome instances running with remote debugging enabled
@@ -181,28 +192,67 @@ async fn launch_chrome(
 	#[cfg(unix)]
 	std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
 
-	cmd.spawn().map_err(|e| {
+	let mut child = cmd.spawn().map_err(|e| {
 		PwError::Context(format!("Failed to launch Chrome at {}: {}", chrome_path, e))
 	})?;
 
 	// Wait for Chrome to start and expose the debugging endpoint
-	let max_attempts = 30;
-	for attempt in 0..max_attempts {
+	let max_attempts = 8;
+	let mut last_error = "endpoint not reachable".to_string();
+	for _ in 0..max_attempts {
 		tokio::time::sleep(Duration::from_millis(200)).await;
+
+		if let Ok(Some(status)) = child.try_wait() {
+			return Err(PwError::Context(format!(
+				"Chrome exited before debugging endpoint became available (status: {}). \
+	             Launch it manually with --remote-debugging-port={} and retry `pw connect --discover`.",
+				status, port
+			)));
+		}
 
 		match fetch_cdp_endpoint(port).await {
 			Ok(info) => return Ok(info),
-			Err(_) if attempt < max_attempts - 1 => continue,
-			Err(e) => return Err(e),
+			Err(e) => {
+				last_error = match e {
+					PwError::Context(msg) => msg,
+					other => other.to_string(),
+				};
+				continue;
+			}
 		}
 	}
 
 	Err(PwError::Context(format!(
 		"Chrome launched but debugging endpoint not available on port {}. \n\
-         Chrome may already be running. Try closing all Chrome windows first, \n\
-         or use: pw connect --discover",
-		port
+         Last error: {}\n\
+         If Chrome/Chromium recently updated, remote debugging may require a dedicated \
+         --user-data-dir. Try: pw connect --launch --user-data-dir <path>",
+		port, last_error
 	)))
+}
+
+fn resolve_user_data_dir(
+	ctx_state: &ContextState,
+	user_data_dir: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf> {
+	let resolved = if let Some(dir) = user_data_dir {
+		if dir.is_absolute() {
+			dir.to_path_buf()
+		} else {
+			ctx_state.workspace_root().join(dir)
+		}
+	} else {
+		ctx_state
+			.workspace_root()
+			.join(dirs::PLAYWRIGHT)
+			.join(STATE_VERSION_DIR)
+			.join("namespaces")
+			.join(ctx_state.namespace())
+			.join("connect-user-data")
+	};
+
+	std::fs::create_dir_all(&resolved)?;
+	Ok(resolved)
 }
 
 /// Kill Chrome process listening on the debugging port
@@ -352,7 +402,8 @@ pub async fn run(
 
 	// Launch Chrome with remote debugging
 	if launch {
-		let info = launch_chrome(port, user_data_dir.as_deref()).await?;
+		let launch_data_dir = resolve_user_data_dir(ctx_state, user_data_dir.as_deref())?;
+		let info = launch_chrome(port, Some(launch_data_dir.as_path())).await?;
 		ctx_state.set_cdp_endpoint(Some(info.web_socket_debugger_url.clone()));
 
 		let result = ResultBuilder::<serde_json::Value>::new("connect")
@@ -361,6 +412,7 @@ pub async fn run(
 				"endpoint": info.web_socket_debugger_url,
 				"browser": info.browser,
 				"port": port,
+				"user_data_dir": launch_data_dir,
 				"message": format!("Chrome launched and connected on port {}", port)
 			}))
 			.build();
@@ -424,4 +476,52 @@ pub async fn run(
 	}
 
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use tempfile::TempDir;
+
+	use super::*;
+
+	#[test]
+	fn resolve_user_data_dir_defaults_to_namespace_scoped_path() {
+		let temp = TempDir::new().unwrap();
+		let ctx_state = ContextState::new(
+			temp.path().to_path_buf(),
+			"workspace-id".to_string(),
+			"agent-a".to_string(),
+			None,
+			false,
+			true,
+			false,
+		)
+		.unwrap();
+
+		let dir = resolve_user_data_dir(&ctx_state, None).unwrap();
+		assert!(
+			dir.ends_with("playwright/.pw-cli-v3/namespaces/agent-a/connect-user-data"),
+			"resolved path was {}",
+			dir.display()
+		);
+	}
+
+	#[test]
+	fn resolve_user_data_dir_makes_relative_paths_workspace_relative() {
+		let temp = TempDir::new().unwrap();
+		let ctx_state = ContextState::new(
+			temp.path().to_path_buf(),
+			"workspace-id".to_string(),
+			"default".to_string(),
+			None,
+			false,
+			true,
+			false,
+		)
+		.unwrap();
+
+		let dir = resolve_user_data_dir(&ctx_state, Some(std::path::Path::new("profiles/debug")));
+		let expected = temp.path().join("profiles/debug");
+		assert_eq!(dir.unwrap(), expected);
+	}
 }
