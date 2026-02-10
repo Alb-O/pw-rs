@@ -15,6 +15,8 @@ use crate::types::BrowserKind;
 pub const DEFAULT_NAMESPACE: &str = "default";
 pub const STATE_VERSION_DIR: &str = ".pw-cli-v3";
 pub const STATE_GITIGNORE_CONTENT: &str = "*\n";
+pub const CDP_PORT_RANGE_START: u16 = 9222;
+pub const CDP_PORT_RANGE_SIZE: u16 = 1000;
 
 /// Canonical identity for a workspace namespace.
 #[derive(Debug, Clone)]
@@ -181,6 +183,17 @@ fn hash_hex(input: &str) -> String {
 	format!("{:016x}", hasher.finish())
 }
 
+/// Compute a deterministic CDP port for a namespace identity.
+///
+/// Uses a bounded range starting at [`CDP_PORT_RANGE_START`], sized by
+/// [`CDP_PORT_RANGE_SIZE`].
+pub fn compute_cdp_port(namespace_id: &str) -> u16 {
+	let mut hasher = DefaultHasher::new();
+	namespace_id.hash(&mut hasher);
+	let hash = hasher.finish();
+	CDP_PORT_RANGE_START + (hash % u64::from(CDP_PORT_RANGE_SIZE)) as u16
+}
+
 #[cfg(test)]
 mod tests {
 	use tempfile::TempDir;
@@ -288,5 +301,13 @@ mod tests {
 				.join(".gitignore")
 				.exists()
 		);
+	}
+
+	#[test]
+	fn compute_cdp_port_is_stable_and_bounded() {
+		let namespace_id = "workspace:agent-a";
+		let port = compute_cdp_port(namespace_id);
+		assert_eq!(port, compute_cdp_port(namespace_id));
+		assert!((CDP_PORT_RANGE_START..CDP_PORT_RANGE_START + CDP_PORT_RANGE_SIZE).contains(&port));
 	}
 }

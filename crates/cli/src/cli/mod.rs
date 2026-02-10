@@ -266,9 +266,9 @@ pub enum Commands {
 		/// Kill Chrome process on the debugging port
 		#[arg(long)]
 		kill: bool,
-		/// Remote debugging port (default: 9222)
-		#[arg(long, short, default_value = "9222")]
-		port: u16,
+		/// Remote debugging port (default: deterministic from workspace + namespace)
+		#[arg(long, short)]
+		port: Option<u16>,
 		/// Browser user data directory (for --launch). If omitted, pw uses a managed profile.
 		#[arg(long)]
 		user_data_dir: Option<PathBuf>,

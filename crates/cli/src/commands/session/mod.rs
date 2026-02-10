@@ -1,6 +1,4 @@
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
 
 use pw_rs::WaitUntil;
 use serde_json::json;
@@ -11,15 +9,7 @@ use crate::error::{PwError, Result};
 use crate::output::{OutputFormat, ResultBuilder, SessionStartData, print_result};
 use crate::session_broker::{SessionBroker, SessionDescriptor, SessionRequest};
 use crate::types::BrowserKind;
-
-/// Compute a deterministic CDP port for a namespace identity.
-/// Uses port range 9222-10221 (1000 ports).
-fn compute_cdp_port(namespace_id: &str) -> u16 {
-	let mut hasher = DefaultHasher::new();
-	namespace_id.hash(&mut hasher);
-	let hash = hasher.finish();
-	9222 + (hash % 1000) as u16
-}
+use crate::workspace::compute_cdp_port;
 
 pub async fn status(ctx_state: &ContextState, format: OutputFormat) -> Result<()> {
 	let Some(path) = ctx_state.session_descriptor_path() else {

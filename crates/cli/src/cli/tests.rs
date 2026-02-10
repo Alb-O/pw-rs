@@ -136,6 +136,32 @@ fn parse_relay_command() {
 }
 
 #[test]
+fn parse_connect_port_is_optional() {
+	let args = vec!["pw", "connect", "--launch"];
+	let cli = Cli::try_parse_from(args).unwrap();
+	match cli.command {
+		Commands::Connect { launch, port, .. } => {
+			assert!(launch);
+			assert_eq!(port, None);
+		}
+		_ => panic!("Expected Connect command"),
+	}
+}
+
+#[test]
+fn parse_connect_with_explicit_port() {
+	let args = vec!["pw", "connect", "--launch", "--port", "9444"];
+	let cli = Cli::try_parse_from(args).unwrap();
+	match cli.command {
+		Commands::Connect { launch, port, .. } => {
+			assert!(launch);
+			assert_eq!(port, Some(9444));
+		}
+		_ => panic!("Expected Connect command"),
+	}
+}
+
+#[test]
 fn invalid_command_fails() {
 	let args = vec!["pw", "unknown-command", "https://example.com"];
 	assert!(Cli::try_parse_from(args).is_err());

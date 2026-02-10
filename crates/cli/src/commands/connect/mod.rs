@@ -15,7 +15,7 @@ use tracing::debug;
 use crate::context_store::ContextState;
 use crate::error::{PwError, Result};
 use crate::output::{OutputFormat, ResultBuilder, print_result};
-use crate::workspace::{STATE_VERSION_DIR, ensure_state_root_gitignore};
+use crate::workspace::{STATE_VERSION_DIR, compute_cdp_port, ensure_state_root_gitignore};
 
 /// Options for the connect command.
 pub struct ConnectOptions {
@@ -24,7 +24,7 @@ pub struct ConnectOptions {
 	pub launch: bool,
 	pub discover: bool,
 	pub kill: bool,
-	pub port: u16,
+	pub port: Option<u16>,
 	pub user_data_dir: Option<PathBuf>,
 	pub auth_file: Option<PathBuf>,
 }
@@ -206,27 +206,15 @@ async fn fetch_cdp_endpoint(port: u16) -> Result<CdpVersionInfo> {
 
 /// Discover Chrome instances running with remote debugging enabled
 async fn discover_chrome(port: u16) -> Result<CdpVersionInfo> {
-	// First try the specified port
-	if let Ok(info) = fetch_cdp_endpoint(port).await {
-		return Ok(info);
-	}
-
-	// Scan common ports
-	let ports_to_try = [9222, 9223, 9224, 9225, 9226, 9227, 9228, 9229, 9230];
-	for &p in &ports_to_try {
-		if p != port {
-			if let Ok(info) = fetch_cdp_endpoint(p).await {
-				return Ok(info);
-			}
-		}
-	}
-
-	Err(PwError::Context(
-		"No Chrome instance with remote debugging found. \n\
-         Try running: google-chrome --remote-debugging-port=9222\n\
-         Or use: pw connect --launch"
-			.into(),
-	))
+	fetch_cdp_endpoint(port).await.map_err(|e| {
+		PwError::Context(format!(
+			"No Chrome instance with remote debugging found on port {}. \n\
+             Last error: {}\n\
+             Try running: google-chrome --remote-debugging-port={}\n\
+             Or use: pw connect --launch --port {}",
+			port, e, port, port
+		))
+	})
 }
 
 /// Launch Chrome with remote debugging enabled
@@ -326,6 +314,10 @@ fn resolve_user_data_dir(
 
 	std::fs::create_dir_all(&resolved)?;
 	Ok(resolved)
+}
+
+fn resolve_connect_port(ctx_state: &ContextState, requested_port: Option<u16>) -> u16 {
+	requested_port.unwrap_or_else(|| compute_cdp_port(&ctx_state.namespace_id()))
 }
 
 /// Kill Chrome process listening on the debugging port
@@ -428,10 +420,12 @@ pub async fn run(
 		launch,
 		discover,
 		kill,
-		port,
+		port: requested_port,
 		user_data_dir,
 		auth_file,
 	} = opts;
+
+	let port = resolve_connect_port(ctx_state, requested_port);
 
 	if kill {
 		match kill_chrome(port).await? {
@@ -522,6 +516,7 @@ pub async fn run(
 				"action": "discovered",
 				"endpoint": info.web_socket_debugger_url,
 				"browser": info.browser,
+				"port": port,
 				"auth": auth_applied.as_ref().map(|s| json!({
 					"file": s.auth_file,
 					"cookiesApplied": s.cookies_applied,
@@ -673,5 +668,40 @@ mod tests {
 		let state = load_auth_state(&auth).unwrap();
 		assert_eq!(state.cookies.len(), 1);
 		assert_eq!(state.origins.len(), 0);
+	}
+
+	#[test]
+	fn resolve_connect_port_uses_namespace_identity_when_unspecified() {
+		let temp = TempDir::new().unwrap();
+		let ctx_state = ContextState::new(
+			temp.path().to_path_buf(),
+			"workspace-id".to_string(),
+			"agent-a".to_string(),
+			None,
+			false,
+			true,
+			false,
+		)
+		.unwrap();
+
+		let expected = compute_cdp_port(&ctx_state.namespace_id());
+		assert_eq!(resolve_connect_port(&ctx_state, None), expected);
+	}
+
+	#[test]
+	fn resolve_connect_port_prefers_explicit_port() {
+		let temp = TempDir::new().unwrap();
+		let ctx_state = ContextState::new(
+			temp.path().to_path_buf(),
+			"workspace-id".to_string(),
+			"agent-a".to_string(),
+			None,
+			false,
+			true,
+			false,
+		)
+		.unwrap();
+
+		assert_eq!(resolve_connect_port(&ctx_state, Some(9555)), 9555);
 	}
 }
