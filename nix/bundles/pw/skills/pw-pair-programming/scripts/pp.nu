@@ -388,10 +388,7 @@ export def "pp brief" [
     }
 
     if $wait {
-        {
-            sent: $sent
-            response: (pp wait --timeout $timeout)
-        }
+        pp wait --timeout $timeout
     } else {
         $sent
     }
@@ -635,6 +632,14 @@ def message-count []: nothing -> int {
     (pw eval $js).data.result
 }
 
+# Normalize Navigator text for terminal output.
+def clean-response-text [text: string]: nothing -> string {
+    $text
+    | lines
+    | where { |line| ($line | str trim | is-not-empty) }
+    | str join "\n"
+}
+
 # Wait for Navigator response to complete
 export def "pp wait" [
     --timeout (-t): int = 1200000  # Timeout in ms (default: 20 minutes for thinking model)
@@ -680,7 +685,8 @@ export def "pp get-response" []: nothing -> any {
         const last = messages[messages.length - 1];
         return last.innerText;
     })()"
-    (pw eval $js).data.result
+    let response = (pw eval $js).data.result
+    if ($response | is-empty) { "" } else { clean-response-text $response }
 }
 
 # Get conversation history (all driver and navigator messages)
@@ -714,7 +720,8 @@ export def "pp history" [
         # Transcript format (default)
         $filtered | each { |msg|
             let role_label = if $msg.role == "user" { "DRIVER" } else { "NAVIGATOR" }
-            $"--- ($role_label) ---\n($msg.text)\n"
+            let text = (if ($msg.text | is-empty) { "" } else { clean-response-text $msg.text })
+            $"--- ($role_label) ---\n($text)"
         } | str join "\n"
     }
 }
