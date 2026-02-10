@@ -19,7 +19,7 @@ pub fn emit_success(
 /// The registry macro: generates a `CommandId` enum, `lookup_command`, and `run_command`.
 ///
 /// Usage example:
-/// ```rust
+/// ```ignore
 /// command_registry! {
 ///   Navigate => crate::commands::navigate::NavigateCommand { names: ["navigate", "nav"] },
 ///   Click => crate::commands::click::ClickCommand { names: ["click"] },

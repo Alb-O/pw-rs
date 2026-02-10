@@ -222,6 +222,7 @@ mod tests {
 
 	#[test]
 	fn default_workspace_uses_current_directory_not_project_root() {
+		let _cwd_lock = crate::test_sync::lock_cwd();
 		let temp = TempDir::new().unwrap();
 		let project_root = temp.path().join("project");
 		let nested = project_root.join("agents").join("agent-a");
@@ -248,6 +249,7 @@ mod tests {
 
 	#[test]
 	fn auto_workspace_still_detects_project_root() {
+		let _cwd_lock = crate::test_sync::lock_cwd();
 		let temp = TempDir::new().unwrap();
 		let project_root = temp.path().join("project");
 		let nested = project_root.join("agents").join("agent-a");

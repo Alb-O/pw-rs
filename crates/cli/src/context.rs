@@ -445,6 +445,7 @@ mod tests {
 
 	#[test]
 	fn test_screenshot_path_in_project() {
+		let _cwd_lock = crate::test_sync::lock_cwd();
 		let temp = TempDir::new().unwrap();
 		fs::write(temp.path().join(dirs::CONFIG_JS), "export default {}").unwrap();
 		fs::create_dir_all(temp.path().join(dirs::PLAYWRIGHT).join(dirs::SCREENSHOTS)).unwrap();

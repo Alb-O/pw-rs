@@ -31,80 +31,101 @@ use crate::error::{Error, Result};
 pub fn get_driver_executable() -> Result<(PathBuf, PathBuf)> {
 	// 1. Try PLAYWRIGHT_NODE_EXE and PLAYWRIGHT_CLI_JS environment variables (runtime override)
 	if let Some((node, cli)) = try_node_cli_env()? {
-		let usable = node_is_usable(&node);
-		debug_candidate("env node/cli", &node, &cli, usable);
-		if usable {
-			return Ok((node, cli));
+		if let Some(paths) = resolve_candidate_with_fallback(
+			"PLAYWRIGHT_NODE_EXE/PLAYWRIGHT_CLI_JS",
+			node,
+			cli,
+			find_node_executable,
+		) {
+			return Ok(paths);
 		}
-		warn!(
-			target = "pw",
-			node = %node.display(),
-			cli = %cli.display(),
-			"PLAYWRIGHT_NODE_EXE is set but node is not runnable; falling back"
-		);
 	}
 
 	// 2. Try PLAYWRIGHT_DRIVER_PATH environment variable (runtime override)
 	if let Some((node, cli)) = try_driver_path_env()? {
-		let usable = node_is_usable(&node);
-		debug_candidate("PLAYWRIGHT_DRIVER_PATH", &node, &cli, usable);
-		if usable {
-			return Ok((node, cli));
+		if let Some(paths) = resolve_candidate_with_fallback(
+			"PLAYWRIGHT_DRIVER_PATH",
+			node,
+			cli,
+			find_node_executable,
+		) {
+			return Ok(paths);
 		}
-		warn!(
-			target = "pw",
-			node = %node.display(),
-			cli = %cli.display(),
-			"PLAYWRIGHT_DRIVER_PATH is set but node is not runnable; falling back"
-		);
 	}
 
 	// 3. Try bundled driver from build.rs (matches official bindings)
 	if let Some((node, cli)) = try_bundled_driver()? {
-		let usable = node_is_usable(&node);
-		debug_candidate("bundled driver", &node, &cli, usable);
-		if usable {
-			return Ok((node, cli));
+		if let Some(paths) =
+			resolve_candidate_with_fallback("bundled driver", node, cli, find_node_executable)
+		{
+			return Ok(paths);
 		}
-		warn!(
-			target = "pw",
-			node = %node.display(),
-			cli = %cli.display(),
-			"Bundled Playwright driver not runnable; falling back"
-		);
 	}
 
 	// 4. Try npm global installation (development fallback)
 	if let Some((node, cli)) = try_npm_global()? {
-		let usable = node_is_usable(&node);
-		debug_candidate("npm global", &node, &cli, usable);
-		if usable {
-			return Ok((node, cli));
+		if let Some(paths) =
+			resolve_candidate_with_fallback("npm global", node, cli, find_node_executable)
+		{
+			return Ok(paths);
 		}
-		warn!(
-			target = "pw",
-			node = %node.display(),
-			cli = %cli.display(),
-			"Global npm Playwright driver not runnable; falling back"
-		);
 	}
 
 	// 5. Try npm local installation (development fallback)
 	if let Some((node, cli)) = try_npm_local()? {
-		let usable = node_is_usable(&node);
-		debug_candidate("npm local", &node, &cli, usable);
-		if usable {
-			return Ok((node, cli));
+		if let Some(paths) =
+			resolve_candidate_with_fallback("npm local", node, cli, find_node_executable)
+		{
+			return Ok(paths);
 		}
-		warn!(
-			target = "pw",
-			node = %node.display(),
-			cli = %cli.display(),
-			"Local npm Playwright driver not runnable; falling back"
-		);
 	}
 
 	Err(Error::ServerNotFound)
+}
+
+fn resolve_candidate_with_fallback<F>(
+	label: &str,
+	node: PathBuf,
+	cli: PathBuf,
+	find_node: F,
+) -> Option<(PathBuf, PathBuf)>
+where
+	F: Fn() -> Result<PathBuf>,
+{
+	let usable = node_is_usable(&node);
+	debug_candidate(label, &node, &cli, usable);
+	if usable {
+		return Some((node, cli));
+	}
+
+	warn!(
+		target = "pw",
+		source = label,
+		node = %node.display(),
+		cli = %cli.display(),
+		"Playwright driver candidate node is not runnable; trying fallback node"
+	);
+
+	let fallback_node = find_node().ok()?;
+	if fallback_node == node {
+		return None;
+	}
+
+	let fallback_usable = node_is_usable(&fallback_node);
+	let fallback_label = format!("{label} (fallback node)");
+	debug_candidate(&fallback_label, &fallback_node, &cli, fallback_usable);
+	if fallback_usable {
+		warn!(
+			target = "pw",
+			source = label,
+			node = %fallback_node.display(),
+			cli = %cli.display(),
+			"Using fallback node executable for Playwright CLI"
+		);
+		return Some((fallback_node, cli));
+	}
+
+	None
 }
 
 /// Try to find bundled driver from build.rs
@@ -371,7 +392,26 @@ fn find_node_executable() -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+	use std::fs;
+	#[cfg(unix)]
+	use std::os::unix::fs::PermissionsExt;
+	use std::path::Path;
+
+	use tempfile::TempDir;
+
 	use super::*;
+
+	#[cfg(unix)]
+	fn write_mock_node(path: &Path, exit_code: i32) {
+		let script = format!(
+			"#!/bin/sh\n[ \"$1\" = \"--version\" ]\nexit {}\n",
+			exit_code
+		);
+		fs::write(path, script).unwrap();
+		let mut perms = fs::metadata(path).unwrap().permissions();
+		perms.set_mode(0o755);
+		fs::set_permissions(path, perms).unwrap();
+	}
 
 	#[test]
 	fn test_find_node_executable() {
@@ -424,5 +464,60 @@ mod tests {
 			}
 			Err(e) => panic!("Unexpected error: {:?}", e),
 		}
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_resolve_candidate_falls_back_to_second_node() {
+		let temp = TempDir::new().unwrap();
+		let candidate_node = temp.path().join("candidate-node");
+		let fallback_node = temp.path().join("fallback-node");
+		let cli_js = temp.path().join("cli.js");
+
+		write_mock_node(&candidate_node, 1);
+		write_mock_node(&fallback_node, 0);
+		fs::write(&cli_js, "// test cli").unwrap();
+
+		let resolved =
+			resolve_candidate_with_fallback("test", candidate_node.clone(), cli_js.clone(), || {
+				Ok(fallback_node.clone())
+			});
+
+		assert_eq!(resolved, Some((fallback_node, cli_js)));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_resolve_candidate_keeps_first_node_when_usable() {
+		let temp = TempDir::new().unwrap();
+		let candidate_node = temp.path().join("candidate-node");
+		let cli_js = temp.path().join("cli.js");
+
+		write_mock_node(&candidate_node, 0);
+		fs::write(&cli_js, "// test cli").unwrap();
+
+		let resolved =
+			resolve_candidate_with_fallback("test", candidate_node.clone(), cli_js.clone(), || {
+				panic!("fallback should not be consulted when candidate node is usable");
+			});
+
+		assert_eq!(resolved, Some((candidate_node, cli_js)));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn test_resolve_candidate_returns_none_when_fallback_unavailable() {
+		let temp = TempDir::new().unwrap();
+		let candidate_node = temp.path().join("candidate-node");
+		let cli_js = temp.path().join("cli.js");
+
+		write_mock_node(&candidate_node, 1);
+		fs::write(&cli_js, "// test cli").unwrap();
+
+		let resolved = resolve_candidate_with_fallback("test", candidate_node, cli_js, || {
+			Err(Error::LaunchFailed("missing node".to_string()))
+		});
+
+		assert!(resolved.is_none());
 	}
 }

@@ -17,6 +17,8 @@ pub mod session_broker;
 pub mod session_helpers;
 pub mod styles;
 pub mod target;
+#[cfg(test)]
+pub mod test_sync;
 pub mod testing;
 pub mod types;
 pub mod workspace;
