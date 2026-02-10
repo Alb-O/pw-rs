@@ -48,20 +48,19 @@ pub async fn try_connect() -> Option<DaemonClient> {
 	}
 }
 
-/// Request a browser from the daemon, with optional reuse_key for session reuse.
+/// Request a browser from the daemon with a deterministic session key.
 ///
-/// If `reuse_key` is provided and a browser with that key exists, it will be reused.
-/// Otherwise a new browser is spawned and associated with the key.
+/// Browsers are reused only when session keys match exactly.
 pub async fn request_browser(
 	_client: &DaemonClient,
 	kind: BrowserKind,
 	headless: bool,
-	reuse_key: Option<&str>,
+	session_key: &str,
 ) -> Result<String> {
 	let response = send_request(DaemonRequest::AcquireBrowser {
 		browser: kind,
 		headless,
-		reuse_key: reuse_key.map(|s| s.to_string()),
+		session_key: session_key.to_string(),
 	})
 	.await?;
 

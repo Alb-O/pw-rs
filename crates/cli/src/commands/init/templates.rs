@@ -232,6 +232,7 @@ pub const PLAYWRIGHT_GITIGNORE: &str = r#"# Test outputs
 
 # CLI context cache
 /.pw-cli/
+/.pw-cli-v3/
 "#;
 
 /// Common shell utilities script

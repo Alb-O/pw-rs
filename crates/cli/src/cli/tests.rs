@@ -100,6 +100,29 @@ fn parse_cdp_endpoint_flag() {
 }
 
 #[test]
+fn parse_workspace_and_namespace_flags() {
+	let args = vec![
+		"pw",
+		"--workspace",
+		"/tmp/my-ws",
+		"--namespace",
+		"agent-a",
+		"navigate",
+		"https://example.com",
+	];
+	let cli = Cli::try_parse_from(args).unwrap();
+	assert_eq!(cli.workspace.as_deref(), Some("/tmp/my-ws"));
+	assert_eq!(cli.namespace, "agent-a");
+}
+
+#[test]
+fn namespace_defaults_to_default() {
+	let args = vec!["pw", "navigate", "https://example.com"];
+	let cli = Cli::try_parse_from(args).unwrap();
+	assert_eq!(cli.namespace, "default");
+}
+
+#[test]
 fn parse_relay_command() {
 	let args = vec!["pw", "relay", "--host", "0.0.0.0", "--port", "3000"];
 	let cli = Cli::try_parse_from(args).unwrap();

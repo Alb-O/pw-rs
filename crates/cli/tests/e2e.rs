@@ -16,23 +16,30 @@ fn pw_binary() -> PathBuf {
 	path
 }
 
+fn workspace_root() -> PathBuf {
+	std::env::temp_dir().join("pw-cli-e2e")
+}
+
 fn clear_context_store() {
-	let base = std::env::var_os("XDG_CONFIG_HOME")
-		.map(PathBuf::from)
-		.or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-		.unwrap_or_else(|| PathBuf::from("."));
-	let base_dir = base.join("pw").join("cli");
-	let path = base_dir.join("contexts.json");
-	let _ = std::fs::remove_file(&path);
-	let _ = std::fs::remove_dir_all(base_dir.join("sessions"));
+	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
 /// Helper to run pw command and capture output (JSON format by default)
 fn run_pw(args: &[&str]) -> (bool, String, String) {
 	clear_context_store();
+	let workspace = workspace_root();
+	let workspace_str = workspace.to_string_lossy().to_string();
 
 	// Use JSON format for tests since assertions expect JSON structure
-	let mut all_args = vec!["-f", "json"];
+	let mut all_args = vec![
+		"--no-project",
+		"--workspace",
+		&workspace_str,
+		"--namespace",
+		"default",
+		"-f",
+		"json",
+	];
 	all_args.extend_from_slice(args);
 
 	let output = Command::new(pw_binary())

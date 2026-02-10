@@ -31,8 +31,8 @@ struct DaemonState {
 	playwright: Playwright,
 	/// Browsers indexed by port.
 	browsers: HashMap<u16, BrowserInstance>,
-	/// Maps reuse_key -> port for browser reuse lookup.
-	reuse_index: HashMap<String, u16>,
+	/// Maps session_key -> port for browser reuse lookup.
+	session_index: HashMap<String, u16>,
 }
 
 pub struct Daemon {
@@ -53,7 +53,7 @@ impl Daemon {
 		let state = DaemonState {
 			playwright,
 			browsers: HashMap::new(),
-			reuse_index: HashMap::new(),
+			session_index: HashMap::new(),
 		};
 		let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
@@ -292,10 +292,10 @@ async fn handle_request(
 		DaemonRequest::AcquireBrowser {
 			browser,
 			headless,
-			reuse_key,
+			session_key,
 		} => {
 			let mut daemon = state.lock().await;
-			match daemon.acquire_browser(browser, headless, reuse_key).await {
+			match daemon.acquire_browser(browser, headless, session_key).await {
 				Ok((port, cdp_endpoint)) => DaemonResponse::Browser { cdp_endpoint, port },
 				Err(err) => daemon_error("acquire_failed", err),
 			}
@@ -306,7 +306,11 @@ async fn handle_request(
 			port,
 		} => {
 			let mut daemon = state.lock().await;
-			match daemon.spawn_browser(browser, headless, port, None).await {
+			let session_key = format!("spawn:{}:{}:{}", browser, headless, now_ts());
+			match daemon
+				.spawn_browser(browser, headless, port, session_key)
+				.await
+			{
 				Ok((port, cdp_endpoint)) => DaemonResponse::Browser { cdp_endpoint, port },
 				Err(err) => daemon_error("spawn_failed", err),
 			}
@@ -329,9 +333,9 @@ async fn handle_request(
 				Err(err) => daemon_error("kill_failed", err),
 			}
 		}
-		DaemonRequest::ReleaseBrowser { reuse_key } => {
+		DaemonRequest::ReleaseBrowser { session_key } => {
 			let mut daemon = state.lock().await;
-			daemon.release_browser(&reuse_key);
+			daemon.release_browser(&session_key);
 			DaemonResponse::Ok
 		}
 		DaemonRequest::ListBrowsers => {
@@ -355,45 +359,43 @@ async fn handle_request(
 }
 
 impl DaemonState {
-	/// Acquire a browser, reusing an existing one if reuse_key matches.
+	/// Acquire a browser, reusing an existing one if session_key matches.
 	async fn acquire_browser(
 		&mut self,
 		browser_kind: BrowserKind,
 		headless: bool,
-		reuse_key: Option<String>,
+		session_key: String,
 	) -> Result<(u16, String)> {
-		// Check for existing browser with matching reuse_key
-		if let Some(key) = &reuse_key {
-			if let Some(&port) = self.reuse_index.get(key) {
-				if let Some(instance) = self.browsers.get_mut(&port) {
-					// Verify browser is still connected
-					if instance.browser.is_connected() {
-						debug!(target = "pw.daemon", port, reuse_key = %key, "reusing existing browser");
-						instance.info.last_used_at = now_ts();
-						let cdp_endpoint = format!("http://127.0.0.1:{}", port);
-						return Ok((port, cdp_endpoint));
-					} else {
-						// Browser disconnected, clean up stale entry
-						debug!(target = "pw.daemon", port, reuse_key = %key, "browser disconnected, removing");
-						self.browsers.remove(&port);
-						self.reuse_index.remove(key);
-					}
+		// Check for existing browser with matching session_key.
+		if let Some(&port) = self.session_index.get(&session_key) {
+			if let Some(instance) = self.browsers.get_mut(&port) {
+				// Verify browser is still connected
+				if instance.browser.is_connected() {
+					debug!(target = "pw.daemon", port, session_key = %session_key, "reusing existing browser");
+					instance.info.last_used_at = now_ts();
+					let cdp_endpoint = format!("http://127.0.0.1:{}", port);
+					return Ok((port, cdp_endpoint));
+				} else {
+					// Browser disconnected, clean up stale entry
+					debug!(target = "pw.daemon", port, session_key = %session_key, "browser disconnected, removing");
+					self.browsers.remove(&port);
+					self.session_index.remove(&session_key);
 				}
 			}
 		}
 
 		// No existing browser found, spawn a new one
-		self.spawn_browser(browser_kind, headless, None, reuse_key)
+		self.spawn_browser(browser_kind, headless, None, session_key)
 			.await
 	}
 
-	/// Spawn a new browser with optional reuse_key.
+	/// Spawn a new browser bound to `session_key`.
 	async fn spawn_browser(
 		&mut self,
 		browser_kind: BrowserKind,
 		headless: bool,
 		requested_port: Option<u16>,
-		reuse_key: Option<String>,
+		session_key: String,
 	) -> Result<(u16, String)> {
 		if browser_kind != BrowserKind::Chromium {
 			return Err(anyhow!(
@@ -426,7 +428,7 @@ impl DaemonState {
 			..Default::default()
 		};
 
-		debug!(target = "pw.daemon", port, headless, reuse_key = ?reuse_key, "launching browser");
+		debug!(target = "pw.daemon", port, headless, session_key = %session_key, "launching browser");
 		let browser = self
 			.playwright
 			.chromium()
@@ -440,7 +442,7 @@ impl DaemonState {
 			browser: browser_kind,
 			headless,
 			created_at: now,
-			reuse_key: reuse_key.clone(),
+			session_key: session_key.clone(),
 			last_used_at: now,
 		};
 
@@ -452,20 +454,17 @@ impl DaemonState {
 			},
 		);
 
-		// Index by reuse_key if provided
-		if let Some(key) = reuse_key {
-			self.reuse_index.insert(key, port);
-		}
+		self.session_index.insert(session_key, port);
 
 		let cdp_endpoint = format!("http://127.0.0.1:{}", port);
 		Ok((port, cdp_endpoint))
 	}
 
-	/// Release a browser by reuse_key (removes from index but keeps browser running).
-	fn release_browser(&mut self, reuse_key: &str) {
-		if let Some(port) = self.reuse_index.remove(reuse_key) {
+	/// Release a browser by session key (removes from index but keeps browser running).
+	fn release_browser(&mut self, session_key: &str) {
+		if let Some(port) = self.session_index.remove(session_key) {
 			if let Some(instance) = self.browsers.get_mut(&port) {
-				instance.info.reuse_key = None;
+				instance.info.session_key.clear();
 			}
 		}
 	}
@@ -475,9 +474,9 @@ impl DaemonState {
 			return Err(anyhow!("No browser on port {port}"));
 		};
 
-		// Remove from reuse index if present
-		if let Some(key) = &instance.info.reuse_key {
-			self.reuse_index.remove(key);
+		// Remove from session index.
+		if !instance.info.session_key.is_empty() {
+			self.session_index.remove(&instance.info.session_key);
 		}
 
 		instance
@@ -494,7 +493,7 @@ impl DaemonState {
 		for port in ports {
 			let _ = self.kill_browser(port).await;
 		}
-		self.reuse_index.clear();
+		self.session_index.clear();
 		self.playwright
 			.shutdown()
 			.await

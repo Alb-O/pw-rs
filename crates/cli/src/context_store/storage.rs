@@ -1,130 +1,76 @@
-//! File storage for CLI state (Config/Cache/Secrets).
+//! File storage for namespace-scoped CLI state.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use pw_rs::dirs;
 
-use super::types::{CliCache, CliConfig, CliSecrets};
+use super::types::{CliCache, CliConfig};
 use crate::error::Result;
+use crate::workspace::STATE_VERSION_DIR;
 
-/// File paths for CLI state storage.
+/// File paths for namespace-scoped CLI state.
 ///
-/// Global paths use XDG directories (`~/.config/pw/cli/`, `~/.cache/pw/cli/`).
-/// Project paths use `playwright/.pw-cli/` when a project root is detected.
+/// Layout:
+/// `<workspace>/playwright/.pw-cli-v3/namespaces/<namespace>/...`
 #[derive(Debug, Clone)]
 pub struct StatePaths {
-	pub global_config: PathBuf,
-	pub global_cache: PathBuf,
-	pub global_secrets: PathBuf,
-	pub global_sessions: PathBuf,
-	pub project_config: Option<PathBuf>,
-	pub project_cache: Option<PathBuf>,
-	pub project_sessions: Option<PathBuf>,
+	pub workspace_root: PathBuf,
+	pub namespace: String,
+	pub state_root: PathBuf,
+	pub namespace_dir: PathBuf,
+	pub config: PathBuf,
+	pub cache: PathBuf,
+	pub sessions_dir: PathBuf,
+	pub session_descriptor: PathBuf,
+	pub auth_dir: PathBuf,
 }
 
 impl StatePaths {
-	pub fn new(project_root: Option<&Path>) -> Self {
-		let config_home = std::env::var_os("XDG_CONFIG_HOME")
-			.map(PathBuf::from)
-			.or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-			.unwrap_or_else(|| PathBuf::from("."));
-
-		let cache_home = std::env::var_os("XDG_CACHE_HOME")
-			.map(PathBuf::from)
-			.or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-			.unwrap_or_else(|| PathBuf::from("."));
-
-		let cli_config_dir = config_home.join("pw/cli");
-		let cli_cache_dir = cache_home.join("pw/cli");
-
-		let (project_config, project_cache, project_sessions) = if let Some(root) = project_root {
-			let pw_cli = root.join(dirs::PLAYWRIGHT).join(".pw-cli");
-			(
-				Some(pw_cli.join("config.json")),
-				Some(pw_cli.join("cache.json")),
-				Some(pw_cli.join("sessions")),
-			)
-		} else {
-			(None, None, None)
-		};
-
+	pub fn new(workspace_root: &Path, namespace: &str) -> Self {
+		let state_root = workspace_root
+			.join(dirs::PLAYWRIGHT)
+			.join(STATE_VERSION_DIR);
+		let namespace_dir = state_root.join("namespaces").join(namespace);
+		let sessions_dir = namespace_dir.join("sessions");
 		Self {
-			global_config: cli_config_dir.join("config.json"),
-			global_cache: cli_cache_dir.join("cache.json"),
-			global_secrets: cli_config_dir.join("secrets.json"),
-			global_sessions: cli_config_dir.join("sessions"),
-			project_config,
-			project_cache,
-			project_sessions,
-		}
-	}
-
-	pub fn sessions_dir(&self, is_project: bool) -> Option<&Path> {
-		if is_project {
-			self.project_sessions.as_deref()
-		} else {
-			Some(&self.global_sessions)
+			workspace_root: workspace_root.to_path_buf(),
+			namespace: namespace.to_string(),
+			state_root,
+			namespace_dir: namespace_dir.clone(),
+			config: namespace_dir.join("config.json"),
+			cache: namespace_dir.join("cache.json"),
+			sessions_dir: sessions_dir.clone(),
+			session_descriptor: sessions_dir.join("session.json"),
+			auth_dir: namespace_dir.join("auth"),
 		}
 	}
 }
 
-/// Loaded CLI state from disk.
-///
-/// Config is merged (global + project), cache prefers project scope,
-/// secrets are global-only.
+/// Loaded namespace state from disk.
 #[derive(Debug)]
 pub struct LoadedState {
 	pub config: CliConfig,
 	pub cache: CliCache,
-	pub secrets: CliSecrets,
-	pub is_project: bool,
 	pub paths: StatePaths,
 }
 
 impl LoadedState {
-	pub fn load(project_root: Option<&Path>) -> Result<Self> {
-		let paths = StatePaths::new(project_root);
-
-		let mut config = load_json::<CliConfig>(&paths.global_config).unwrap_or_default();
-		let is_project = paths.project_config.is_some();
-		if let Some(ref project_path) = paths.project_config {
-			if let Some(project_config) = load_json::<CliConfig>(project_path) {
-				config.merge(&project_config);
-			}
-		}
-
-		let cache = paths
-			.project_cache
-			.as_ref()
-			.and_then(|p| load_json::<CliCache>(p))
-			.or_else(|| load_json::<CliCache>(&paths.global_cache))
-			.unwrap_or_default();
-
-		let secrets = load_json::<CliSecrets>(&paths.global_secrets).unwrap_or_default();
+	pub fn load(workspace_root: &Path, namespace: &str) -> Result<Self> {
+		let paths = StatePaths::new(workspace_root, namespace);
+		let config = load_json::<CliConfig>(&paths.config).unwrap_or_default();
+		let cache = load_json::<CliCache>(&paths.cache).unwrap_or_default();
 
 		Ok(Self {
 			config,
 			cache,
-			secrets,
-			is_project,
 			paths,
 		})
 	}
 
 	pub fn save(&self) -> Result<()> {
-		if self.is_project {
-			if let Some(ref path) = self.paths.project_config {
-				save_json(path, &self.config)?;
-			}
-			if let Some(ref path) = self.paths.project_cache {
-				save_json(path, &self.cache)?;
-			}
-		} else {
-			save_json(&self.paths.global_config, &self.config)?;
-			save_json(&self.paths.global_cache, &self.cache)?;
-		}
-		save_secrets(&self.paths.global_secrets, &self.secrets)?;
+		save_json(&self.paths.config, &self.config)?;
+		save_json(&self.paths.cache, &self.cache)?;
 		Ok(())
 	}
 }
@@ -143,16 +89,6 @@ fn save_json<T: serde::Serialize>(path: &Path, data: &T) -> Result<()> {
 	Ok(())
 }
 
-fn save_secrets(path: &Path, secrets: &CliSecrets) -> Result<()> {
-	save_json(path, secrets)?;
-	#[cfg(unix)]
-	{
-		use std::os::unix::fs::PermissionsExt;
-		fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-	}
-	Ok(())
-}
-
 #[cfg(test)]
 mod tests {
 	use tempfile::TempDir;
@@ -160,23 +96,25 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_state_paths_global_only() {
-		let paths = StatePaths::new(None);
-		assert!(paths.global_config.ends_with("pw/cli/config.json"));
-		assert!(paths.global_cache.ends_with("pw/cli/cache.json"));
-		assert!(paths.global_secrets.ends_with("pw/cli/secrets.json"));
-		assert!(paths.project_config.is_none());
-		assert!(paths.project_cache.is_none());
-	}
-
-	#[test]
-	fn test_state_paths_with_project() {
+	fn test_state_paths_layout() {
 		let tmp = TempDir::new().unwrap();
-		let paths = StatePaths::new(Some(tmp.path()));
+		let paths = StatePaths::new(tmp.path(), "default");
 
-		assert!(paths.project_config.is_some());
-		assert!(paths.project_cache.is_some());
-		assert!(paths.project_sessions.is_some());
+		assert!(
+			paths
+				.config
+				.ends_with("playwright/.pw-cli-v3/namespaces/default/config.json")
+		);
+		assert!(
+			paths
+				.cache
+				.ends_with("playwright/.pw-cli-v3/namespaces/default/cache.json")
+		);
+		assert!(
+			paths
+				.session_descriptor
+				.ends_with("playwright/.pw-cli-v3/namespaces/default/sessions/session.json")
+		);
 	}
 
 	#[test]
@@ -193,7 +131,7 @@ mod tests {
 		let path = tmp.path().join("test.json");
 
 		let config = CliConfig {
-			schema: 2,
+			schema: 3,
 			defaults: super::super::types::Defaults {
 				browser: Some(crate::types::BrowserKind::Firefox),
 				..Default::default()

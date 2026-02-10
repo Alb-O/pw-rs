@@ -15,8 +15,8 @@ use crate::context::{
 use crate::context_store::ContextState;
 use crate::error::Result;
 use crate::output::CdpEndpointSource;
-use crate::project::Project;
 use crate::types::BrowserKind;
+use crate::workspace::WorkspaceScope;
 
 /// Bundled runtime context for executing CLI commands.
 ///
@@ -42,7 +42,8 @@ pub struct RuntimeConfig {
 	pub launch_server: bool,
 	pub no_daemon: bool,
 	pub no_project: bool,
-	pub context: Option<String>,
+	pub workspace: Option<String>,
+	pub namespace: String,
 	pub no_context: bool,
 	pub no_save_context: bool,
 	pub refresh_context: bool,
@@ -79,7 +80,8 @@ impl From<&Cli> for RuntimeConfig {
 			launch_server: cli.launch_server,
 			no_daemon: cli.no_daemon,
 			no_project: cli.no_project,
-			context: cli.context.clone(),
+			workspace: cli.workspace.clone(),
+			namespace: cli.namespace.clone(),
 			no_context: cli.no_context,
 			no_save_context: cli.no_save_context,
 			refresh_context: cli.refresh_context,
@@ -105,7 +107,7 @@ impl From<&Cli> for RuntimeConfig {
 ///
 /// # Steps
 ///
-/// 1. Detect project (unless `--no-project`)
+/// 1. Resolve workspace + namespace identity
 /// 2. Create [`ContextState`] for URL/selector caching
 /// 3. Resolve CDP endpoint (CLI flag or stored context)
 /// 4. Create [`CommandContext`] with browser configuration
@@ -122,21 +124,26 @@ impl From<&Cli> for RuntimeConfig {
 /// ```ignore
 /// let config = RuntimeConfig::from(&cli);
 /// let RuntimeContext { ctx, mut ctx_state } = build_runtime(&config)?;
-/// let mut broker = SessionBroker::new(&ctx, ctx_state.session_descriptor_path(), ctx_state.refresh_requested());
+/// let mut broker = SessionBroker::new(
+///     &ctx,
+///     ctx_state.session_descriptor_path(),
+///     Some(ctx_state.namespace_id()),
+///     ctx_state.refresh_requested(),
+/// );
 /// ```
 pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
-	// Step 1: Detect project
-	let project = if config.no_project {
-		None
-	} else {
-		Project::detect()
-	};
-	let project_root = project.as_ref().map(|p| p.paths.root.clone());
+	// Step 1: Resolve workspace + namespace identity
+	let scope = WorkspaceScope::resolve(
+		config.workspace.as_deref(),
+		Some(config.namespace.as_str()),
+		config.no_project,
+	)?;
 
 	// Step 2: Create context state
 	let ctx_state = ContextState::new(
-		project_root,
-		config.context.clone(),
+		scope.root().to_path_buf(),
+		scope.workspace_id().to_string(),
+		scope.namespace().to_string(),
 		config.base_url.clone(),
 		config.no_context,
 		config.no_save_context,
@@ -191,6 +198,9 @@ pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
 		block_config,
 		download_config,
 		timeout_ms: config.timeout_ms,
+		workspace_root: Some(scope.root().to_path_buf()),
+		workspace_id: Some(scope.workspace_id().to_string()),
+		namespace: Some(scope.namespace().to_string()),
 	});
 
 	Ok(RuntimeContext { ctx, ctx_state })
@@ -210,7 +220,8 @@ mod tests {
 			launch_server: false,
 			no_daemon: false,
 			no_project: true, // Skip project detection in tests
-			context: None,
+			workspace: None,
+			namespace: "default".to_string(),
 			no_context: false,
 			no_save_context: true, // Don't persist in tests
 			refresh_context: false,
@@ -241,7 +252,8 @@ mod tests {
 			launch_server: false,
 			no_daemon: false,
 			no_project: true,
-			context: None,
+			workspace: None,
+			namespace: "default".to_string(),
 			no_context: true,
 			no_save_context: true,
 			refresh_context: false,
@@ -273,7 +285,8 @@ mod tests {
 			launch_server: false,
 			no_daemon: false,
 			no_project: true,
-			context: None,
+			workspace: None,
+			namespace: "default".to_string(),
 			no_context: true,
 			no_save_context: true,
 			refresh_context: false,
@@ -294,5 +307,83 @@ mod tests {
 		assert!(result.is_ok());
 		let rt = result.unwrap();
 		assert_eq!(rt.ctx.cdp_endpoint_source(), CdpEndpointSource::CliFlag);
+	}
+
+	#[test]
+	fn build_runtime_uses_explicit_workspace_and_namespace() {
+		let tmp = tempfile::TempDir::new().unwrap();
+		let ws = tmp.path().to_string_lossy().to_string();
+		let config = RuntimeConfig {
+			auth: None,
+			browser: BrowserKind::Chromium,
+			cdp_endpoint: None,
+			launch_server: false,
+			no_daemon: false,
+			no_project: true,
+			workspace: Some(ws.clone()),
+			namespace: "agent-a".to_string(),
+			no_context: false,
+			no_save_context: true,
+			refresh_context: false,
+			base_url: None,
+			artifacts_dir: None,
+			har_path: None,
+			har_content_policy: None,
+			har_mode: None,
+			har_omit_content: false,
+			har_url_filter: None,
+			block_patterns: Vec::new(),
+			block_file: None,
+			downloads_dir: None,
+			timeout_ms: None,
+		};
+
+		let rt = build_runtime(&config).unwrap();
+		assert_eq!(rt.ctx.namespace(), "agent-a");
+		assert_eq!(rt.ctx.workspace_root(), std::path::Path::new(&ws));
+	}
+
+	#[test]
+	fn explicit_workspace_is_not_collapsed_to_project_root() {
+		let tmp = tempfile::TempDir::new().unwrap();
+		let project_root = tmp.path();
+		std::fs::write(
+			project_root.join(pw_rs::dirs::CONFIG_JS),
+			"export default {}",
+		)
+		.unwrap();
+
+		let workspace = project_root.join("agents").join("agent-a");
+		std::fs::create_dir_all(&workspace).unwrap();
+		let ws = workspace.to_string_lossy().to_string();
+
+		let config = RuntimeConfig {
+			auth: None,
+			browser: BrowserKind::Chromium,
+			cdp_endpoint: None,
+			launch_server: false,
+			no_daemon: false,
+			no_project: false,
+			workspace: Some(ws.clone()),
+			namespace: "default".to_string(),
+			no_context: false,
+			no_save_context: true,
+			refresh_context: false,
+			base_url: None,
+			artifacts_dir: None,
+			har_path: None,
+			har_content_policy: None,
+			har_mode: None,
+			har_omit_content: false,
+			har_url_filter: None,
+			block_patterns: Vec::new(),
+			block_file: None,
+			downloads_dir: None,
+			timeout_ms: None,
+		};
+
+		let rt = build_runtime(&config).unwrap();
+		assert_eq!(rt.ctx.workspace_root(), std::path::Path::new(&ws));
+		assert_eq!(rt.ctx_state.workspace_root(), std::path::Path::new(&ws));
 	}
 }

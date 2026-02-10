@@ -15,6 +15,25 @@ use pw.nu
 const BASE_URL = "https://chatgpt.com"
 const DEFAULT_MODEL = "thinking"  # Default to GPT-5.2 Thinking
 
+# Show active workspace/namespace isolation bindings.
+export def "pp isolate" []: nothing -> record {
+    let workspace = ($env.PW_WORKSPACE? | default ((pwd | path expand) | into string))
+    let namespace = ($env.PW_NAMESPACE? | default "default")
+
+    mut args = ["-f" "json" "--workspace" $workspace]
+    $args = ($args | append ["--namespace" $namespace "session" "status"])
+    let status = (^pw ...$args | complete)
+    let parsed = ($status.stdout | from json)
+
+    {
+        workspace: $workspace
+        namespace: $namespace
+        active: ($parsed.data.active? | default false)
+        session_key: ($parsed.data.session_key? | default null)
+        workspace_id: ($parsed.data.workspace_id? | default null)
+    }
+}
+
 # Ensure we're on THE Navigator tab (close extras, switch to remaining one)
 def ensure-tab []: nothing -> nothing {
     # List all tabs

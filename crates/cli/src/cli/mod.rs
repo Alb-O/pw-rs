@@ -91,9 +91,13 @@ pub struct Cli {
 	#[arg(long, global = true)]
 	pub no_project: bool,
 
-	/// Named context to load for this run
-	#[arg(long, global = true, value_name = "NAME")]
-	pub context: Option<String>,
+	/// Workspace root path for state/session isolation (or "auto")
+	#[arg(long, global = true, value_name = "PATH|auto")]
+	pub workspace: Option<String>,
+
+	/// Namespace inside the workspace for strict session isolation
+	#[arg(long, global = true, value_name = "NAME", default_value = "default")]
+	pub namespace: String,
 
 	/// Disable contextual inference/caching for this invocation
 	#[arg(long, global = true)]
@@ -430,9 +434,9 @@ pub enum DaemonAction {
 
 #[derive(Subcommand, Debug)]
 pub enum SessionAction {
-	/// Show session descriptor status for the active context
+	/// Show session descriptor status for the active namespace
 	Status,
-	/// Remove stored session descriptor for the active context
+	/// Remove stored session descriptor for the active namespace
 	Clear,
 	/// Start a reusable local browser session and persist its endpoint
 	Start {

@@ -739,6 +739,12 @@ pub struct SessionStartData {
 	pub cdp_endpoint: Option<String>,
 	pub browser: String,
 	pub headless: bool,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub workspace_id: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub namespace: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub session_key: Option<String>,
 }
 
 /// Result data for elements command

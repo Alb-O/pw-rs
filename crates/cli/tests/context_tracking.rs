@@ -4,8 +4,7 @@
 //! after command execution, not just the input URL. This is critical for
 //! proper context caching when clicks cause navigation or redirects occur.
 //!
-//! Note: Tests use --no-project to isolate from project context and use only
-//! the global context store.
+//! Note: Tests use --no-project with explicit --workspace to isolate state.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -23,21 +22,21 @@ fn pw_binary() -> PathBuf {
 	path
 }
 
+fn workspace_root() -> PathBuf {
+	std::env::temp_dir().join("pw-cli-context-tracking")
+}
+
 fn context_store_path() -> PathBuf {
-	let base = std::env::var_os("XDG_CONFIG_HOME")
-		.map(PathBuf::from)
-		.or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-		.unwrap_or_else(|| PathBuf::from("."));
-	base.join("pw").join("cli").join("contexts.json")
+	workspace_root()
+		.join("playwright")
+		.join(".pw-cli-v3")
+		.join("namespaces")
+		.join("default")
+		.join("cache.json")
 }
 
 fn clear_context_store() {
-	let path = context_store_path();
-	let _ = std::fs::remove_file(&path);
-	// Also clean sessions
-	if let Some(parent) = path.parent() {
-		let _ = std::fs::remove_dir_all(parent.join("sessions"));
-	}
+	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
 fn read_context_store() -> Option<serde_json::Value> {
@@ -49,18 +48,20 @@ fn read_context_store() -> Option<serde_json::Value> {
 
 fn get_last_url_from_context() -> Option<String> {
 	let store = read_context_store()?;
-	// Navigate through the JSON to find the last_url in the default context
-	store
-		.get("contexts")?
-		.get("default")?
-		.get("lastUrl")?
-		.as_str()
-		.map(String::from)
+	store.get("lastUrl")?.as_str().map(String::from)
 }
 
-/// Helper to run pw command with --no-project to use global context only
+/// Helper to run pw command with --no-project and explicit workspace isolation.
 fn run_pw(args: &[&str]) -> (bool, String, String) {
-	let mut full_args = vec!["--no-project"];
+	let workspace = workspace_root();
+	let workspace_str = workspace.to_string_lossy().to_string();
+	let mut full_args = vec![
+		"--no-project",
+		"--workspace",
+		&workspace_str,
+		"--namespace",
+		"default",
+	];
 	full_args.extend_from_slice(args);
 
 	let output = Command::new(pw_binary())

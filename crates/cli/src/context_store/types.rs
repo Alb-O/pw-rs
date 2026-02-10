@@ -1,15 +1,13 @@
-//! CLI state types: [`CliConfig`], [`CliCache`], [`CliSecrets`].
-
-use std::collections::HashMap;
+//! CLI state types: [`CliConfig`] and [`CliCache`].
 
 use serde::{Deserialize, Serialize};
 
 use crate::types::BrowserKind;
 
 /// Schema version for config/cache files.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
-/// Default settings applied when no profile override exists.
+/// Default settings applied for a namespace.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Defaults {
@@ -23,21 +21,7 @@ pub struct Defaults {
 	pub cdp_endpoint: Option<String>,
 }
 
-/// Profile-specific configuration overrides.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProfileConfig {
-	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub base_url: Option<String>,
-	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub browser: Option<BrowserKind>,
-	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub headless: Option<bool>,
-}
-
-/// Durable CLI configuration.
-///
-/// Global: `~/.config/pw/cli/config.json`, project: `playwright/.pw-cli/config.json`.
+/// Durable CLI configuration scoped to a namespace.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CliConfig {
@@ -45,8 +29,6 @@ pub struct CliConfig {
 	pub schema: u32,
 	#[serde(default)]
 	pub defaults: Defaults,
-	#[serde(default, skip_serializing_if = "HashMap::is_empty")]
-	pub profiles: HashMap<String, ProfileConfig>,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub protected_urls: Vec<String>,
 }
@@ -59,40 +41,14 @@ impl CliConfig {
 			..Default::default()
 		}
 	}
-
-	/// Merges `other` into self (other takes precedence for set fields).
-	pub fn merge(&mut self, other: &CliConfig) {
-		macro_rules! merge_opt {
-			($field:ident) => {
-				if other.defaults.$field.is_some() {
-					self.defaults.$field = other.defaults.$field.clone();
-				}
-			};
-		}
-		merge_opt!(browser);
-		merge_opt!(headless);
-		merge_opt!(base_url);
-		merge_opt!(cdp_endpoint);
-
-		self.profiles.extend(other.profiles.clone());
-		for url in &other.protected_urls {
-			if !self.protected_urls.contains(url) {
-				self.protected_urls.push(url.clone());
-			}
-		}
-	}
 }
 
-/// Ephemeral session cache.
-///
-/// Global: `~/.cache/pw/cli/cache.json`, project: `playwright/.pw-cli/cache.json`.
+/// Ephemeral namespace cache.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CliCache {
 	#[serde(default)]
 	pub schema: u32,
-	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub active_profile: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub last_url: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
@@ -131,88 +87,9 @@ impl CliCache {
 	}
 }
 
-/// Sensitive credentials (global only, 0600 permissions).
-///
-/// Stored in `~/.config/pw/cli/secrets.json`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CliSecrets {
-	#[serde(default)]
-	pub schema: u32,
-	/// Auth file path per profile name.
-	#[serde(default, skip_serializing_if = "HashMap::is_empty")]
-	pub auth_files: HashMap<String, String>,
-}
-
-impl CliSecrets {
-	/// Creates secrets with current [`SCHEMA_VERSION`].
-	pub fn new() -> Self {
-		Self {
-			schema: SCHEMA_VERSION,
-			..Default::default()
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn test_config_merge() {
-		let mut base = CliConfig {
-			defaults: Defaults {
-				browser: Some(BrowserKind::Chromium),
-				headless: Some(true),
-				base_url: Some("https://base.com".into()),
-				cdp_endpoint: None,
-			},
-			profiles: HashMap::from([("dev".into(), ProfileConfig::default())]),
-			protected_urls: vec!["admin".into()],
-			..Default::default()
-		};
-
-		let project = CliConfig {
-			defaults: Defaults {
-				browser: None,
-				headless: Some(false),
-				base_url: Some("https://project.com".into()),
-				cdp_endpoint: Some("ws://localhost:9222".into()),
-			},
-			profiles: HashMap::from([(
-				"staging".into(),
-				ProfileConfig {
-					base_url: Some("https://staging.com".into()),
-					..Default::default()
-				},
-			)]),
-			protected_urls: vec!["settings".into()],
-			..Default::default()
-		};
-
-		base.merge(&project);
-
-		// Browser unchanged (project didn't override)
-		assert_eq!(base.defaults.browser, Some(BrowserKind::Chromium));
-		// Headless overridden
-		assert_eq!(base.defaults.headless, Some(false));
-		// Base URL overridden
-		assert_eq!(
-			base.defaults.base_url,
-			Some("https://project.com".to_string())
-		);
-		// CDP endpoint added
-		assert_eq!(
-			base.defaults.cdp_endpoint,
-			Some("ws://localhost:9222".to_string())
-		);
-		// Profiles merged
-		assert!(base.profiles.contains_key("dev"));
-		assert!(base.profiles.contains_key("staging"));
-		// Protected URLs merged
-		assert!(base.protected_urls.contains(&"admin".to_string()));
-		assert!(base.protected_urls.contains(&"settings".to_string()));
-	}
 
 	#[test]
 	fn test_cache_staleness() {
@@ -240,7 +117,6 @@ mod tests {
 	#[test]
 	fn test_cache_clear_session() {
 		let mut cache = CliCache {
-			active_profile: Some("dev".into()),
 			last_url: Some("https://example.com".into()),
 			last_selector: Some("#button".into()),
 			last_output: Some("screenshot.png".into()),
@@ -250,7 +126,6 @@ mod tests {
 
 		cache.clear_session();
 
-		assert_eq!(cache.active_profile, Some("dev".into())); // Preserved
 		assert_eq!(cache.last_url, None);
 		assert_eq!(cache.last_selector, None);
 		assert_eq!(cache.last_output, None);

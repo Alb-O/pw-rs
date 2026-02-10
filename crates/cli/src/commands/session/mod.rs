@@ -12,11 +12,11 @@ use crate::output::{OutputFormat, ResultBuilder, SessionStartData, print_result}
 use crate::session_broker::{SessionBroker, SessionDescriptor, SessionRequest};
 use crate::types::BrowserKind;
 
-/// Compute a deterministic CDP port for a context name.
+/// Compute a deterministic CDP port for a namespace identity.
 /// Uses port range 9222-10221 (1000 ports).
-fn compute_cdp_port(context_name: &str) -> u16 {
+fn compute_cdp_port(namespace_id: &str) -> u16 {
 	let mut hasher = DefaultHasher::new();
-	context_name.hash(&mut hasher);
+	namespace_id.hash(&mut hasher);
 	let hash = hasher.finish();
 	9222 + (hash % 1000) as u16
 }
@@ -26,7 +26,7 @@ pub async fn status(ctx_state: &ContextState, format: OutputFormat) -> Result<()
 		let result = ResultBuilder::<serde_json::Value>::new("session status")
 			.data(json!({
 				"active": false,
-				"message": "No active context; session status unavailable"
+				"message": "No active namespace; session status unavailable"
 			}))
 			.build();
 		print_result(&result, format);
@@ -43,6 +43,9 @@ pub async fn status(ctx_state: &ContextState, format: OutputFormat) -> Result<()
 				"headless": desc.headless,
 				"cdp_endpoint": desc.cdp_endpoint,
 				"ws_endpoint": desc.ws_endpoint,
+				"workspace_id": desc.workspace_id,
+				"namespace": desc.namespace,
+				"session_key": desc.session_key,
 				"driver_hash": desc.driver_hash,
 				"pid": desc.pid,
 				"created_at": desc.created_at,
@@ -56,7 +59,7 @@ pub async fn status(ctx_state: &ContextState, format: OutputFormat) -> Result<()
 			let result = ResultBuilder::<serde_json::Value>::new("session status")
 				.data(json!({
 					"active": false,
-					"message": "No session descriptor for context; run a browser command to create one"
+					"message": "No session descriptor for namespace; run a browser command to create one"
 				}))
 				.build();
 			print_result(&result, format);
@@ -71,7 +74,7 @@ pub async fn clear(ctx_state: &ContextState, format: OutputFormat) -> Result<()>
 		let result = ResultBuilder::<serde_json::Value>::new("session clear")
 			.data(json!({
 				"cleared": false,
-				"message": "No active context; nothing to clear"
+				"message": "No active namespace; nothing to clear"
 			}))
 			.build();
 		print_result(&result, format);
@@ -122,9 +125,9 @@ pub async fn start(
 		)));
 	}
 
-	// Compute CDP port based on context name
-	let context_name = ctx_state.active_name().unwrap_or("default");
-	let port = compute_cdp_port(context_name);
+	// Compute CDP port based on namespace identity
+	let namespace_id = ctx_state.namespace_id();
+	let port = compute_cdp_port(&namespace_id);
 
 	let mut request = SessionRequest::from_context(WaitUntil::NetworkIdle, ctx);
 	request.headless = !headful;
@@ -144,6 +147,9 @@ pub async fn start(
 			cdp_endpoint,
 			browser,
 			headless: !headful,
+			workspace_id: Some(ctx.workspace_id().to_string()),
+			namespace: Some(ctx.namespace().to_string()),
+			session_key: Some(ctx.session_key(ctx.browser, !headful)),
 		})
 		.build();
 
@@ -160,7 +166,7 @@ pub async fn stop(
 		let result = ResultBuilder::<serde_json::Value>::new("session stop")
 			.data(json!({
 				"stopped": false,
-				"message": "No active context; nothing to stop"
+				"message": "No active namespace; nothing to stop"
 			}))
 			.build();
 		print_result(&result, format);
@@ -171,7 +177,7 @@ pub async fn stop(
 		let result = ResultBuilder::<serde_json::Value>::new("session stop")
 			.data(json!({
 				"stopped": false,
-				"message": "No session descriptor for context; nothing to stop"
+				"message": "No session descriptor for namespace; nothing to stop"
 			}))
 			.build();
 		print_result(&result, format);

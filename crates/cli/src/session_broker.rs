@@ -23,6 +23,9 @@ pub(crate) struct SessionDescriptor {
 	pub(crate) headless: bool,
 	pub(crate) cdp_endpoint: Option<String>,
 	pub(crate) ws_endpoint: Option<String>,
+	pub(crate) workspace_id: Option<String>,
+	pub(crate) namespace: Option<String>,
+	pub(crate) session_key: Option<String>,
 	pub(crate) driver_hash: Option<String>,
 	pub(crate) created_at: u64,
 }
@@ -74,6 +77,18 @@ impl SessionDescriptor {
 		// Best-effort: on Linux, check /proc; otherwise assume alive if pid matches current process
 		let proc_path = PathBuf::from("/proc").join(self.pid.to_string());
 		proc_path.exists()
+	}
+
+	pub(crate) fn belongs_to(&self, ctx: &CommandContext) -> bool {
+		let workspace_ok = match self.workspace_id.as_deref() {
+			Some(v) => v == ctx.workspace_id(),
+			None => false,
+		};
+		let namespace_ok = match self.namespace.as_deref() {
+			Some(v) => v == ctx.namespace(),
+			None => false,
+		};
+		workspace_ok && namespace_ok
 	}
 }
 
@@ -173,14 +188,21 @@ impl<'a> SessionRequest<'a> {
 pub struct SessionBroker<'a> {
 	ctx: &'a CommandContext,
 	descriptor_path: Option<PathBuf>,
+	namespace_id: Option<String>,
 	refresh: bool,
 }
 
 impl<'a> SessionBroker<'a> {
-	pub fn new(ctx: &'a CommandContext, descriptor_path: Option<PathBuf>, refresh: bool) -> Self {
+	pub fn new(
+		ctx: &'a CommandContext,
+		descriptor_path: Option<PathBuf>,
+		namespace_id: Option<String>,
+		refresh: bool,
+	) -> Self {
 		Self {
 			ctx,
 			descriptor_path,
+			namespace_id,
 			refresh,
 		}
 	}
@@ -195,7 +217,10 @@ impl<'a> SessionBroker<'a> {
 			if self.refresh {
 				let _ = fs::remove_file(path);
 			} else if let Some(descriptor) = SessionDescriptor::load(path)? {
-				if descriptor.matches(&request, Some(DRIVER_HASH)) && descriptor.is_alive() {
+				if descriptor.belongs_to(self.ctx)
+					&& descriptor.matches(&request, Some(DRIVER_HASH))
+					&& descriptor.is_alive()
+				{
 					// Prefer CDP endpoint (for persistent sessions) over ws_endpoint
 					if let Some(endpoint) = descriptor
 						.cdp_endpoint
@@ -235,6 +260,7 @@ impl<'a> SessionBroker<'a> {
 		}
 
 		let mut daemon_endpoint = None;
+		let mut daemon_session_key = None;
 		if !self.ctx.no_daemon()
 			&& request.cdp_endpoint.is_none()
 			&& request.remote_debugging_port.is_none()
@@ -242,29 +268,42 @@ impl<'a> SessionBroker<'a> {
 			&& request.browser == BrowserKind::Chromium
 		{
 			if let Some(client) = daemon::try_connect().await {
-				// Use descriptor path as reuse_key for consistent browser reuse per context
-				let reuse_key = self
-					.descriptor_path
-					.as_ref()
-					.map(|p| p.to_string_lossy().to_string());
-				match daemon::request_browser(
-					&client,
-					request.browser,
-					request.headless,
-					reuse_key.as_deref(),
-				)
-				.await
-				{
-					Ok(endpoint) => {
-						debug!(target = "pw.session", %endpoint, reuse_key = ?reuse_key, "using daemon browser");
-						daemon_endpoint = Some(endpoint);
-					}
-					Err(err) => {
-						debug!(
-							target = "pw.session",
-							error = %err,
-							"daemon request failed; falling back"
-						);
+				if let Some(namespace_id) = &self.namespace_id {
+					let session_key = format!(
+						"{}:{}:{}",
+						namespace_id,
+						request.browser,
+						if request.headless {
+							"headless"
+						} else {
+							"headful"
+						}
+					);
+					match daemon::request_browser(
+						&client,
+						request.browser,
+						request.headless,
+						&session_key,
+					)
+					.await
+					{
+						Ok(endpoint) => {
+							debug!(
+								target = "pw.session",
+								%endpoint,
+								session_key = %session_key,
+								"using daemon browser"
+							);
+							daemon_endpoint = Some(endpoint);
+							daemon_session_key = Some(session_key);
+						}
+						Err(err) => {
+							debug!(
+								target = "pw.session",
+								error = %err,
+								"daemon request failed; falling back"
+							);
+						}
 					}
 				}
 			}
@@ -363,6 +402,15 @@ impl<'a> SessionBroker<'a> {
 					headless: request.headless,
 					cdp_endpoint: cdp,
 					ws_endpoint: ws,
+					workspace_id: Some(self.ctx.workspace_id().to_string()),
+					namespace: Some(self.ctx.namespace().to_string()),
+					session_key: daemon_session_key.or_else(|| {
+						Some(
+							self.ctx
+								.session_key(request.browser, request.headless)
+								.to_string(),
+						)
+					}),
 					driver_hash: Some(DRIVER_HASH.to_string()),
 					created_at: now_ts(),
 				};
@@ -542,6 +590,9 @@ mod tests {
 			headless: true,
 			cdp_endpoint: Some("ws://localhost:1234".into()),
 			ws_endpoint: Some("ws://localhost:1234".into()),
+			workspace_id: Some("ws".into()),
+			namespace: Some("default".into()),
+			session_key: Some("ws:default:chromium:headless".into()),
 			driver_hash: Some(DRIVER_HASH.to_string()),
 			created_at: 123,
 		};
@@ -576,6 +627,9 @@ mod tests {
 			headless: true,
 			cdp_endpoint: Some("ws://localhost:9999".into()),
 			ws_endpoint: Some("ws://localhost:9999".into()),
+			workspace_id: Some("ws".into()),
+			namespace: Some("default".into()),
+			session_key: Some("ws:default:chromium:headless".into()),
 			driver_hash: Some(DRIVER_HASH.to_string()),
 			created_at: 0,
 		};
@@ -607,6 +661,9 @@ mod tests {
 			headless: true,
 			cdp_endpoint: Some("ws://localhost:1234".into()),
 			ws_endpoint: Some("ws://localhost:1234".into()),
+			workspace_id: Some("ws".into()),
+			namespace: Some("default".into()),
+			session_key: Some("ws:default:chromium:headless".into()),
 			driver_hash: Some("old-hash".into()),
 			created_at: 42,
 		};

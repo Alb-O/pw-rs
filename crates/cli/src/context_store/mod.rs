@@ -1,14 +1,14 @@
-//! Persistent context storage for CLI state across invocations.
+//! Persistent namespace-scoped context storage for CLI state across invocations.
 //!
-//! State is split into three categories:
-//! - [`CliConfig`]: Durable settings (browser, profiles, protected URLs)
-//! - [`CliCache`]: Ephemeral data (last URL, selector, output)
-//! - [`CliSecrets`]: Sensitive data (auth file paths)
+//! State categories:
+//! - [`CliConfig`]: durable settings (base URL, browser defaults, protected URLs)
+//! - [`CliCache`]: ephemeral command cache (last URL, selector, output)
 
 use std::path::{Path, PathBuf};
 
 use crate::context::CommandContext;
 use crate::error::{PwError, Result};
+use crate::types::BrowserKind;
 
 pub mod storage;
 pub mod types;
@@ -17,17 +17,19 @@ pub mod types;
 mod tests;
 
 pub use storage::LoadedState;
-pub use types::{CliCache, CliConfig, CliSecrets, Defaults, ProfileConfig};
+pub use types::{CliCache, CliConfig, Defaults};
 
 const SESSION_TIMEOUT_SECS: u64 = 3600;
 
 /// Runtime context state manager.
 ///
-/// Uses [`LoadedState`] for storage with config/cache/secrets separation.
+/// Uses [`LoadedState`] for namespace-scoped storage.
 /// Auto-refreshes stale sessions after [`SESSION_TIMEOUT_SECS`].
 #[derive(Debug)]
 pub struct ContextState {
 	state: LoadedState,
+	workspace_id: String,
+	namespace: String,
 	base_url_override: Option<String>,
 	no_context: bool,
 	no_save: bool,
@@ -35,20 +37,24 @@ pub struct ContextState {
 }
 
 impl ContextState {
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
-		project_root: Option<PathBuf>,
-		_requested_context: Option<String>,
+		workspace_root: PathBuf,
+		workspace_id: String,
+		namespace: String,
 		base_url_override: Option<String>,
 		no_context: bool,
 		no_save: bool,
 		refresh: bool,
 	) -> Result<Self> {
-		let state = LoadedState::load(project_root.as_deref())?;
+		let state = LoadedState::load(&workspace_root, &namespace)?;
 		let is_stale = state.cache.is_stale(SESSION_TIMEOUT_SECS);
 
 		Ok(Self {
 			refresh: refresh || is_stale,
 			state,
+			workspace_id,
+			namespace,
 			base_url_override,
 			no_context,
 			no_save,
@@ -56,9 +62,11 @@ impl ContextState {
 	}
 
 	#[cfg(test)]
-	pub(crate) fn test_new(state: LoadedState) -> Self {
+	pub(crate) fn test_new(state: LoadedState, workspace_id: String, namespace: String) -> Self {
 		Self {
 			state,
+			workspace_id,
+			namespace,
 			base_url_override: None,
 			no_context: false,
 			no_save: false,
@@ -66,22 +74,36 @@ impl ContextState {
 		}
 	}
 
-	pub fn active_name(&self) -> Option<&str> {
-		self.state.cache.active_profile.as_deref()
+	pub fn workspace_id(&self) -> &str {
+		&self.workspace_id
+	}
+
+	pub fn namespace(&self) -> &str {
+		&self.namespace
+	}
+
+	pub fn namespace_id(&self) -> String {
+		format!("{}:{}", self.workspace_id, self.namespace)
+	}
+
+	pub fn workspace_root(&self) -> &Path {
+		&self.state.paths.workspace_root
+	}
+
+	pub fn session_key(&self, browser: BrowserKind, headless: bool) -> String {
+		format!(
+			"{}:{}:{}",
+			self.namespace_id(),
+			browser,
+			if headless { "headless" } else { "headful" }
+		)
 	}
 
 	pub fn session_descriptor_path(&self) -> Option<PathBuf> {
 		if self.no_context {
 			return None;
 		}
-		let profile = self
-			.state
-			.cache
-			.active_profile
-			.as_deref()
-			.unwrap_or("default");
-		let dir = self.state.paths.sessions_dir(self.state.is_project)?;
-		Some(dir.join(format!("{profile}.json")))
+		Some(self.state.paths.session_descriptor.clone())
 	}
 
 	pub fn refresh_requested(&self) -> bool {
@@ -258,7 +280,7 @@ impl ContextState {
 			.or(self.state.config.defaults.base_url.as_deref())
 	}
 
-	/// Returns the loaded state (for accessing config/cache/secrets).
+	/// Returns the loaded state.
 	pub fn state(&self) -> &LoadedState {
 		&self.state
 	}

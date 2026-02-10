@@ -48,6 +48,7 @@ pub async fn dispatch(cli: Cli, format: OutputFormat) -> Result<()> {
 	let mut broker = SessionBroker::new(
 		&ctx,
 		ctx_state.session_descriptor_path(),
+		Some(ctx_state.namespace_id()),
 		ctx_state.refresh_requested(),
 	);
 
@@ -247,9 +248,5 @@ fn resolve_auth_output(ctx: &CommandContext, output: &Path) -> std::path::PathBu
 		return output.to_path_buf();
 	}
 
-	if let Some(ref proj) = ctx.project {
-		proj.paths.auth_file(output.to_string_lossy().as_ref())
-	} else {
-		output.to_path_buf()
-	}
+	ctx.namespace_auth_dir().join(output)
 }

@@ -64,7 +64,7 @@ ok: true
 
 3. **Automatic Detection**: Commands automatically use the daemon if it's running. Use `--no-daemon` to force spawning a fresh browser.
 
-4. **Session Reuse**: Browsers are reused based on a session key derived from the working directory and context, so related commands share state.
+4. **Session Reuse**: Browsers are reused only when `workspace + namespace + browser + headless` match, so unrelated sessions stay isolated.
 
 ## Platform Notes
 

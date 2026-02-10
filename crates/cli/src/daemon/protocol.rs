@@ -6,14 +6,12 @@ use crate::types::BrowserKind;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DaemonRequest {
 	Ping,
-	/// Acquire a browser, reusing an existing one if reuse_key matches.
+	/// Acquire a browser, reusing an existing one if session_key matches.
 	AcquireBrowser {
 		browser: BrowserKind,
 		headless: bool,
-		/// Optional key for browser reuse (e.g., context name or session path).
-		/// If provided and a browser with this key exists, it will be reused.
-		/// If None, a new browser is always spawned.
-		reuse_key: Option<String>,
+		/// Deterministic key for browser reuse and isolation.
+		session_key: String,
 	},
 	/// Legacy: spawn a new browser without reuse (kept for compatibility).
 	SpawnBrowser {
@@ -27,9 +25,9 @@ pub enum DaemonRequest {
 	KillBrowser {
 		port: u16,
 	},
-	/// Release a browser by reuse_key (marks it available but doesn't close it).
+	/// Release a browser by session_key (marks it available but doesn't close it).
 	ReleaseBrowser {
-		reuse_key: String,
+		session_key: String,
 	},
 	ListBrowsers,
 	Shutdown,
@@ -51,9 +49,8 @@ pub struct BrowserInfo {
 	pub browser: BrowserKind,
 	pub headless: bool,
 	pub created_at: u64,
-	/// Optional reuse key if this browser was acquired with one.
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub reuse_key: Option<String>,
+	/// Session key this browser is bound to.
+	pub session_key: String,
 	/// Last time this browser was used (unix timestamp).
 	#[serde(default)]
 	pub last_used_at: u64,

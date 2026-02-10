@@ -9,7 +9,21 @@
 
 # Run pw command with JSON output, parse result
 def --wrapped pw-run [...args: string]: nothing -> record {
-    let result = (^pw -f json ...$args | complete)
+    mut base_args = ["-f" "json"]
+
+    # Default workspace to current directory for strict per-directory isolation.
+    # Set PW_WORKSPACE=auto to opt into playwright-project auto-detection.
+    let workspace = ($env.PW_WORKSPACE? | default ((pwd | path expand) | into string))
+    if ($workspace | is-not-empty) {
+        $base_args = ($base_args | append ["--workspace" $workspace])
+    }
+
+    let namespace = ($env.PW_NAMESPACE? | default "default")
+    if ($namespace | is-not-empty) {
+        $base_args = ($base_args | append ["--namespace" $namespace])
+    }
+
+    let result = (^pw ...$base_args ...$args | complete)
     let parsed = ($result.stdout | from json)
     if $result.exit_code != 0 {
         error make { msg: ($parsed.error?.message? | default $result.stderr | str trim) }

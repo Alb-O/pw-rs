@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Mutex to serialize tests that use the global context store.
+/// Mutex to serialize tests that share a test workspace.
 static CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock_context() -> std::sync::MutexGuard<'static, ()> {
@@ -23,25 +23,25 @@ fn pw_binary() -> PathBuf {
 	path
 }
 
-fn context_store_path() -> PathBuf {
-	let base = std::env::var_os("XDG_CONFIG_HOME")
-		.map(PathBuf::from)
-		.or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-		.unwrap_or_else(|| PathBuf::from("."));
-	base.join("pw").join("cli").join("contexts.json")
+fn workspace_root() -> PathBuf {
+	std::env::temp_dir().join("pw-cli-error-messages")
 }
 
 fn clear_context_store() {
-	let path = context_store_path();
-	let _ = std::fs::remove_file(&path);
-	if let Some(parent) = path.parent() {
-		let _ = std::fs::remove_dir_all(parent.join("sessions"));
-	}
+	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
-/// Helper to run pw command with --no-project
+/// Helper to run pw command with --no-project and explicit workspace.
 fn run_pw(args: &[&str]) -> (bool, String, String) {
-	let mut full_args = vec!["--no-project"];
+	let workspace = workspace_root();
+	let workspace_str = workspace.to_string_lossy().to_string();
+	let mut full_args = vec![
+		"--no-project",
+		"--workspace",
+		&workspace_str,
+		"--namespace",
+		"default",
+	];
 	full_args.extend_from_slice(args);
 
 	let output = Command::new(pw_binary())

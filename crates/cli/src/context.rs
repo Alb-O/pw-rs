@@ -9,6 +9,7 @@ use pw_rs::{HarContentPolicy, HarMode};
 use crate::output::CdpEndpointSource;
 use crate::project::Project;
 use crate::types::BrowserKind;
+use crate::workspace::STATE_VERSION_DIR;
 
 /// HAR recording configuration
 #[derive(Debug, Clone, Default)]
@@ -96,6 +97,9 @@ pub struct CommandContextConfig {
 	pub block_config: BlockConfig,
 	pub download_config: DownloadConfig,
 	pub timeout_ms: Option<u64>,
+	pub workspace_root: Option<PathBuf>,
+	pub workspace_id: Option<String>,
+	pub namespace: Option<String>,
 }
 
 /// Context passed to all pw-cli commands
@@ -125,6 +129,12 @@ pub struct CommandContext {
 	download_config: DownloadConfig,
 	/// Timeout for navigation and wait operations (milliseconds)
 	timeout_ms: Option<u64>,
+	/// Workspace root used for strict state/session isolation.
+	workspace_root: PathBuf,
+	/// Deterministic workspace identifier.
+	workspace_id: String,
+	/// Namespace within the workspace.
+	namespace: String,
 }
 
 impl CommandContext {
@@ -184,9 +194,21 @@ impl CommandContext {
 			block_config,
 			download_config,
 			timeout_ms,
+			workspace_root,
+			workspace_id,
+			namespace,
 		} = cfg;
 
-		let project = if no_project { None } else { Project::detect() };
+		let resolved_workspace_root = workspace_root
+			.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+		let resolved_workspace_id = workspace_id.unwrap_or_else(|| "unknown".to_string());
+		let resolved_namespace = namespace.unwrap_or_else(|| "default".to_string());
+
+		let project = if no_project {
+			None
+		} else {
+			Project::detect_from(&resolved_workspace_root)
+		};
 
 		// Resolve auth file path based on project
 		let resolved_auth = auth_file.map(|auth| {
@@ -195,7 +217,7 @@ impl CommandContext {
 			} else if let Some(ref proj) = project {
 				proj.paths.root.join(&auth)
 			} else {
-				auth
+				resolved_workspace_root.join(auth)
 			}
 		});
 
@@ -207,7 +229,7 @@ impl CommandContext {
 				} else if let Some(ref proj) = project {
 					proj.paths.root.join(&path)
 				} else {
-					path
+					resolved_workspace_root.join(path)
 				}
 			}),
 			..har_config
@@ -221,7 +243,7 @@ impl CommandContext {
 				} else if let Some(ref proj) = project {
 					proj.paths.root.join(&dir)
 				} else {
-					dir
+					resolved_workspace_root.join(dir)
 				}
 			}),
 		};
@@ -239,6 +261,9 @@ impl CommandContext {
 			block_config,
 			download_config: resolved_download_config,
 			timeout_ms,
+			workspace_root: resolved_workspace_root,
+			workspace_id: resolved_workspace_id,
+			namespace: resolved_namespace,
 		}
 	}
 
@@ -285,6 +310,31 @@ impl CommandContext {
 		self.timeout_ms
 	}
 
+	pub fn workspace_root(&self) -> &Path {
+		&self.workspace_root
+	}
+
+	pub fn workspace_id(&self) -> &str {
+		&self.workspace_id
+	}
+
+	pub fn namespace(&self) -> &str {
+		&self.namespace
+	}
+
+	pub fn namespace_id(&self) -> String {
+		format!("{}:{}", self.workspace_id, self.namespace)
+	}
+
+	pub fn session_key(&self, browser: BrowserKind, headless: bool) -> String {
+		format!(
+			"{}:{}:{}",
+			self.namespace_id(),
+			browser,
+			if headless { "headless" } else { "headful" }
+		)
+	}
+
 	/// Get the screenshot output path, using project paths if available
 	pub fn screenshot_path(&self, output: &Path) -> PathBuf {
 		// If output is absolute or has directory components, use as-is
@@ -297,7 +347,7 @@ impl CommandContext {
 			proj.paths
 				.screenshot_path(output.to_string_lossy().as_ref())
 		} else {
-			output.to_path_buf()
+			self.workspace_root.join(output)
 		}
 	}
 
@@ -310,25 +360,18 @@ impl CommandContext {
 		if let Some(ref proj) = self.project {
 			proj.paths.root.join(path)
 		} else {
-			path.to_path_buf()
+			self.workspace_root.join(path)
 		}
 	}
 
 	/// Get the project root directory, or current directory if no project
 	pub fn root(&self) -> PathBuf {
-		self.project
-			.as_ref()
-			.map(|p| p.paths.root.clone())
-			.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+		self.workspace_root.clone()
 	}
 
-	/// Get all auth files in the project auth directory (*.json)
+	/// Get all auth files in the namespace auth directory (*.json)
 	pub fn auth_files(&self) -> Vec<PathBuf> {
-		let auth_dir = if let Some(ref proj) = self.project {
-			proj.paths.auth_dir()
-		} else {
-			PathBuf::from("playwright/auth")
-		};
+		let auth_dir = self.namespace_auth_dir();
 
 		if !auth_dir.exists() {
 			return Vec::new();
@@ -344,6 +387,15 @@ impl CommandContext {
 					.collect()
 			})
 			.unwrap_or_default()
+	}
+
+	pub fn namespace_auth_dir(&self) -> PathBuf {
+		self.workspace_root
+			.join(pw_rs::dirs::PLAYWRIGHT)
+			.join(STATE_VERSION_DIR)
+			.join("namespaces")
+			.join(&self.namespace)
+			.join("auth")
 	}
 }
 
@@ -361,6 +413,7 @@ mod tests {
 		let ctx = CommandContext::new(BrowserKind::Chromium, true, None, None, false, false);
 		assert!(ctx.project.is_none());
 		assert!(ctx.no_project);
+		assert_eq!(ctx.namespace(), "default");
 	}
 
 	#[test]
