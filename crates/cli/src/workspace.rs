@@ -152,7 +152,11 @@ fn resolve_workspace_root(workspace: Option<&str>, no_project: bool) -> Result<P
 		return Ok(canonicalize_or_self(root));
 	}
 
-	auto_workspace_root(no_project)
+	// Default to current directory for strict per-folder session isolation.
+	// Use `--workspace auto` to opt into project-root detection.
+	std::env::current_dir()
+		.map(canonicalize_or_self)
+		.map_err(PwError::Io)
 }
 
 fn auto_workspace_root(no_project: bool) -> Result<PathBuf> {
@@ -201,6 +205,58 @@ mod tests {
 		let key1 = scope.session_key(BrowserKind::Chromium, true);
 		let key2 = scope.session_key(BrowserKind::Chromium, true);
 		assert_eq!(key1, key2);
+	}
+
+	#[test]
+	fn default_workspace_uses_current_directory_not_project_root() {
+		let temp = TempDir::new().unwrap();
+		let project_root = temp.path().join("project");
+		let nested = project_root.join("agents").join("agent-a");
+		std::fs::create_dir_all(&nested).unwrap();
+		std::fs::write(
+			project_root.join(pw_rs::dirs::CONFIG_JS),
+			"export default {}",
+		)
+		.unwrap();
+
+		let original_dir = std::env::current_dir().unwrap();
+		struct CwdGuard(PathBuf);
+		impl Drop for CwdGuard {
+			fn drop(&mut self) {
+				let _ = std::env::set_current_dir(&self.0);
+			}
+		}
+		let _guard = CwdGuard(original_dir);
+		std::env::set_current_dir(&nested).unwrap();
+
+		let scope = WorkspaceScope::resolve(None, Some("default"), false).unwrap();
+		assert_eq!(scope.root(), nested.as_path());
+	}
+
+	#[test]
+	fn auto_workspace_still_detects_project_root() {
+		let temp = TempDir::new().unwrap();
+		let project_root = temp.path().join("project");
+		let nested = project_root.join("agents").join("agent-a");
+		std::fs::create_dir_all(&nested).unwrap();
+		std::fs::write(
+			project_root.join(pw_rs::dirs::CONFIG_JS),
+			"export default {}",
+		)
+		.unwrap();
+
+		let original_dir = std::env::current_dir().unwrap();
+		struct CwdGuard(PathBuf);
+		impl Drop for CwdGuard {
+			fn drop(&mut self) {
+				let _ = std::env::set_current_dir(&self.0);
+			}
+		}
+		let _guard = CwdGuard(original_dir);
+		std::env::set_current_dir(&nested).unwrap();
+
+		let scope = WorkspaceScope::resolve(Some("auto"), Some("default"), false).unwrap();
+		assert_eq!(scope.root(), project_root.as_path());
 	}
 
 	#[test]
