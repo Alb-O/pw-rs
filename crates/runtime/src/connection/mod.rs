@@ -307,13 +307,11 @@ impl Connection {
 
 	/// Sets the object factory for creating protocol objects.
 	///
-	/// # Panics
-	///
-	/// Panics if called more than once.
-	pub fn set_factory(&self, factory: Arc<dyn ObjectFactory>) {
-		if self.factory.set(factory).is_err() {
-			panic!("set_factory can only be called once");
-		}
+	/// Returns an error if called more than once.
+	pub fn set_factory(&self, factory: Arc<dyn ObjectFactory>) -> Result<()> {
+		self.factory
+			.set(factory)
+			.map_err(|_| Error::ProtocolError("set_factory can only be called once".into()))
 	}
 
 	/// Sends a message to the Playwright server and awaits the response.

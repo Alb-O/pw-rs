@@ -211,7 +211,7 @@ impl Page {
 	///
 	/// See <https://playwright.dev/docs/api/class-page#page-url>
 	pub fn url(&self) -> String {
-		self.url.read().unwrap().clone()
+		self.url.read().unwrap_or_else(|e| e.into_inner()).clone()
 	}
 
 	/// Closes the page.

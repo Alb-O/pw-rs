@@ -59,7 +59,8 @@ impl Route {
 
 		let request_guid = request_data.get("guid").and_then(|v| v.as_str()).unwrap_or("request-stub");
 
-		Request::new(parent, "Request".to_string(), Arc::from(request_guid), request_data).unwrap()
+		Request::new(parent, "Request".to_string(), Arc::from(request_guid), request_data)
+			.expect("Route fallback: Request::new should not fail for stub construction")
 	}
 
 	/// Aborts the route's request.
