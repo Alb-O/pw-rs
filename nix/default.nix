@@ -1,33 +1,43 @@
-/**
-  pw bundle: Playwright CLI packages and devShell.
+inputs@{
+  self,
+  nixpkgs,
+  flake-parts,
+  systems,
+  rust-overlay,
+  treefmt-nix,
+  ...
+}:
+flake-parts.lib.mkFlake { inherit inputs; } {
+  systems = import systems;
 
-  Uses buildDeps.rust for rustPlatform. Provides wrapped pw-cli with Playwright runtime.
-*/
-{
-  __functor =
-    _:
+  imports = [
+    treefmt-nix.flakeModule
+  ];
+
+  perSystem =
     {
+      config,
       pkgs,
       self',
-      rootSrc,
-      buildDeps,
-      config,
       ...
     }:
     let
-      inherit (buildDeps.rust) rustPlatform;
+      rootSrc = ./..;
+      cargoToml = builtins.fromTOML (builtins.readFile (rootSrc + "/Cargo.toml"));
+      workspaceVersion = cargoToml.workspace.package.version;
+
+      rustPkgs = pkgs.extend rust-overlay.overlays.default;
+      rustToolchain = rustPkgs.rust-bin.fromRustupToolchainFile (rootSrc + "/rust-toolchain.toml");
+      rustPlatform = pkgs.makeRustPlatform {
+        cargo = rustToolchain;
+        rustc = rustToolchain;
+      };
 
       buildInputs = [
         pkgs.openssl
-        pkgs.pkg-config
       ];
 
-      nativeBuildInputs = [
-        pkgs.pkg-config
-      ];
-
-      cargoToml = fromTOML (builtins.readFile (rootSrc + "/Cargo.toml"));
-      workspaceVersion = cargoToml.workspace.package.version;
+      nativeBuildInputs = [ pkgs.pkg-config ];
 
       commonEnv = {
         OPENSSL_DIR = "${pkgs.openssl.dev}";
@@ -35,8 +45,7 @@
         OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
       };
 
-      # Unwrapped pw-cli binary (no Playwright runtime)
-      pw-cli-unwrapped = rustPlatform.buildRustPackage {
+      pwCliUnwrapped = rustPlatform.buildRustPackage {
         pname = "pw-cli";
         version = workspaceVersion;
         src = rootSrc;
@@ -46,27 +55,23 @@
         inherit buildInputs nativeBuildInputs;
         inherit (commonEnv) OPENSSL_DIR OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR;
 
-        # e2e tests require browsers which aren't available in the sandbox
         doCheck = false;
       };
 
-      # Full playwright package (test runner) with matching playwright-core
-      # Both must be from npm to ensure compatibility
-      playwrightVersion = config.playwrightVersion;
+      playwrightVersion = "1.57.0";
+
       playwrightTestRunnerUnpatched = pkgs.fetchzip {
         url = "https://registry.npmjs.org/playwright/-/playwright-${playwrightVersion}.tgz";
         hash = "sha256-ViiO10O8Oc+kFcmHv1apxcGIiZ0Uz3V9wk9gNGxxLck=";
         stripRoot = true;
       };
 
-      # Patched playwright test runner with timeout fix for webServer port check
       playwrightTestRunner = pkgs.runCommand "playwright-patched" {
         nativeBuildInputs = [ pkgs.perl ];
       } ''
         cp -r ${playwrightTestRunnerUnpatched} $out
         chmod -R u+w $out
 
-        # Patch webServerPlugin.js to add timeout to isPortUsed()
         plugin="$out/lib/plugins/webServerPlugin.js"
         if [ -f "$plugin" ]; then
           perl -i -0777 -pe '
@@ -92,21 +97,18 @@ conn.on("error", () => {
         stripRoot = true;
       };
 
-      # Patched playwright-core with timeout fixes for webServer URL checks
       playwrightCore = pkgs.runCommand "playwright-core-patched" {
         nativeBuildInputs = [ pkgs.perl ];
       } ''
         cp -r ${playwrightCoreUnpatched} $out
         chmod -R u+w $out
 
-        # Patch 1: Add socketTimeout to httpRequest call in httpStatusCode()
         network="$out/lib/server/utils/network.js"
         if [ -f "$network" ]; then
           sed -i 's/httpRequest({/httpRequest({ socketTimeout: 5000,/g' "$network"
           echo "Patched network.js"
         fi
 
-        # Patch 2: Add socket.setTimeout in happyEyeballs.js
         happy="$out/lib/server/utils/happyEyeballs.js"
         if [ -f "$happy" ]; then
           perl -i -0777 -pe 's{(socket\.on\("timeout", \(\) => \{)}{socket.setTimeout(5000);\n      $1}gs' "$happy"
@@ -132,7 +134,6 @@ conn.on("error", () => {
         fi
       '';
 
-      # Browser compatibility symlinks for Playwright
       browserCompat = pkgs.runCommand "playwright-browser-compat" { } ''
         mkdir -p $out
         base="${pkgs.playwright-driver.browsers}"
@@ -161,13 +162,6 @@ conn.on("error", () => {
       '';
 
       playwrightCompat = ''
-        export OPENSSL_DIR="${pkgs.openssl.dev}"
-        export OPENSSL_LIB_DIR="${pkgs.openssl.out}/lib"
-        export OPENSSL_INCLUDE_DIR="${pkgs.openssl.dev}/include"
-        export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig"
-
-        export PLAYWRIGHT_NODE_EXE="${pkgs.nodejs_22}/bin/node"
-
         BROWSERS_BASE="${pkgs.playwright-driver.browsers}"
         BROWSERS_COMPAT="$PWD/.playwright-browsers"
 
@@ -187,28 +181,58 @@ conn.on("error", () => {
           ln -sf "$BROWSERS_BASE/chromium_headless_shell-1181/chrome-linux/headless_shell" \
             "$BROWSERS_COMPAT/chromium_headless_shell-1200/chrome-headless-shell-linux64/chrome-headless-shell"
         fi
+      '';
 
-        export PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_COMPAT"
-        export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      sharedDevPackages = [
+        rustToolchain
+        pkgs.rust-analyzer
+        pkgs.cargo-watch
+        pkgs.cargo-edit
+        pkgs.wasm-pack
+        pkgs.pkg-config
+        pkgs.openssl
+        pkgs.nodejs_22
+        pkgs.playwright-driver
+        pkgs.python3
+        config.treefmt.build.wrapper
+      ];
+
+      sharedDevEnv = {
+        OPENSSL_DIR = "${pkgs.openssl.dev}";
+        OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+        OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+        PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+        PLAYWRIGHT_NODE_EXE = "${pkgs.nodejs_22}/bin/node";
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+      };
+
+      sharedShellHook = ''
+        ${playwrightCompat}
+        export PLAYWRIGHT_BROWSERS_PATH="$PWD/.playwright-browsers"
+
+        if [[ -t 1 && -z "''${BASH_EXECUTION_STRING:-}" ]]; then
+          echo "pw dev shell"
+          echo "  Rust: $(rustc --version)"
+          echo "  Cargo: $(cargo --version)"
+        fi
       '';
     in
     {
-      __outputs.perSystem.packages = {
-        default = pkgs.symlinkJoin {
-          name = "pw-cli-${workspaceVersion}";
-          paths = [ pw-cli-unwrapped ];
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          postBuild = ''
-            wrapProgram $out/bin/pw \
-              --set PLAYWRIGHT_NODE_EXE "${pkgs.nodejs_22}/bin/node" \
-              --set PLAYWRIGHT_CLI_JS "${playwrightCore}/cli.js" \
-              --set PLAYWRIGHT_TEST_CLI_JS "${playwrightTestRunner}/cli.js" \
-              --set PLAYWRIGHT_BROWSERS_PATH "${browserCompat}" \
-              --set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD "1"
-          '';
+      treefmt = import ./treefmt.nix { inherit pkgs; };
+
+      packages = {
+        rust = rustPlatform.buildRustPackage {
+          pname = "rust-package";
+          version = workspaceVersion;
+          src = rootSrc;
+          cargoLock.lockFile = rootSrc + "/Cargo.lock";
+
+          inherit (commonEnv) OPENSSL_DIR OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR;
+          inherit buildInputs nativeBuildInputs;
+          doCheck = false;
         };
 
-        inherit pw-cli-unwrapped;
+        pw-cli-unwrapped = pwCliUnwrapped;
 
         pw-rs = rustPlatform.buildRustPackage {
           pname = "pw-rs";
@@ -222,29 +246,53 @@ conn.on("error", () => {
 
           doCheck = false;
         };
+
+        default = pkgs.symlinkJoin {
+          name = "pw-cli-${workspaceVersion}";
+          paths = [ pwCliUnwrapped ];
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          postBuild = ''
+            wrapProgram $out/bin/pw \
+              --set PLAYWRIGHT_NODE_EXE "${pkgs.nodejs_22}/bin/node" \
+              --set PLAYWRIGHT_CLI_JS "${playwrightCore}/cli.js" \
+              --set PLAYWRIGHT_TEST_CLI_JS "${playwrightTestRunner}/cli.js" \
+              --set PLAYWRIGHT_BROWSERS_PATH "${browserCompat}" \
+              --set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD "1"
+          '';
+        };
       };
 
-      __outputs.perSystem.checks.build = self'.packages.default;
+      checks = {
+        build = self'.packages.default;
+      };
 
-      __outputs.perSystem.devShells.pw = pkgs.mkShell {
-        packages = [
-          pkgs.wasm-pack
-          pkgs.pkg-config
-          pkgs.openssl
-          pkgs.nodejs_22
-          pkgs.playwright-driver
-          pkgs.python3
-          self'.formatter
-        ];
+      devShells = {
+        rust = pkgs.mkShell ({
+          packages = [
+            rustToolchain
+            pkgs.rust-analyzer
+            pkgs.cargo-watch
+            pkgs.cargo-edit
+          ];
+        } // sharedDevEnv);
 
-        shellHook = ''
-          ${playwrightCompat}
-          if [[ -t 1 && -z "''${BASH_EXECUTION_STRING:-}" ]]; then
-            echo "pw dev shell"
-            echo "  Rust: $(rustc --version)"
-            echo "  Cargo: $(cargo --version)"
-          fi
-        '';
+        pw = pkgs.mkShell ({
+          packages = [
+            pkgs.wasm-pack
+            pkgs.pkg-config
+            pkgs.openssl
+            pkgs.nodejs_22
+            pkgs.playwright-driver
+            pkgs.python3
+            config.treefmt.build.wrapper
+          ];
+          shellHook = sharedShellHook;
+        } // sharedDevEnv);
+
+        default = pkgs.mkShell ({
+          packages = sharedDevPackages;
+          shellHook = sharedShellHook;
+        } // sharedDevEnv);
       };
     };
 }
