@@ -559,7 +559,7 @@ mod tests {
 		if wsl::is_wsl() {
 			assert_eq!(
 				dir,
-				std::path::PathBuf::from(wsl::WSL_MANAGED_USER_DATA_ROOT).join("agent-a"),
+				std::path::PathBuf::from(wsl::WSL_MANAGED_USER_DATA_ROOT).join("workspace-id").join("agent-a"),
 				"resolved path was {}",
 				dir.display()
 			);

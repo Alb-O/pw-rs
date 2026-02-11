@@ -40,7 +40,9 @@ pub(super) fn resolve_wsl_user_data_dir(ctx_state: &ContextState, user_data_dir:
 		return ctx_state.workspace_root().join(dir);
 	}
 
-	PathBuf::from(WSL_MANAGED_USER_DATA_ROOT).join(ctx_state.namespace())
+	PathBuf::from(WSL_MANAGED_USER_DATA_ROOT)
+		.join(ctx_state.workspace_id())
+		.join(ctx_state.namespace())
 }
 
 fn windows_path_to_wsl_mount(path: &str) -> Option<PathBuf> {
@@ -269,5 +271,23 @@ mod tests {
 
 		let resolved = resolve_wsl_user_data_dir(&ctx_state, Some(Path::new(r"C:\temp\pw-profile")));
 		assert_eq!(resolved, PathBuf::from("/mnt/c/temp/pw-profile"));
+	}
+
+	#[test]
+	fn resolve_wsl_user_data_dir_defaults_to_workspace_and_namespace() {
+		let temp = TempDir::new().unwrap();
+		let ctx_state = ContextState::new(
+			temp.path().to_path_buf(),
+			"workspace-abc".to_string(),
+			"default".to_string(),
+			None,
+			false,
+			true,
+			false,
+		)
+		.unwrap();
+
+		let resolved = resolve_wsl_user_data_dir(&ctx_state, None);
+		assert_eq!(resolved, PathBuf::from(WSL_MANAGED_USER_DATA_ROOT).join("workspace-abc").join("default"));
 	}
 }
