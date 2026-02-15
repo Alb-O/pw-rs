@@ -305,18 +305,29 @@ export def "pp compose" [
         error make { msg: "pp compose requires --preamble-file" }
     }
     if not (($preamble_file | path exists)) {
-        error make { msg: $"Preamble file not found: ($preamble_file)" }
+        error make { msg: $"Preamble file not found: ($preamble_file) cwd=($env.PWD)" }
     }
 
     mut parts = [(open --raw $preamble_file | into string)]
 
-    for entry in $entries {
+    for raw_entry in $entries {
+        let entry = ($raw_entry | str trim)
+
+        if ($entry | is-empty) {
+            continue
+        }
+
+        if $entry == "\\" {
+            print "[pp compose] Warning: ignoring standalone '\\' entry. Bash-style line continuation is not valid inside nu -c strings. Use newline-separated args or a list + splat (...$entries)."
+            continue
+        }
+
         if ($entry | str starts-with "slice:") {
             let spec = ($entry | str substring ("slice:" | str length)..)
             let parsed = (parse-slice-entry $spec)
             let file_path = $parsed.path
             if not ($file_path | path exists) {
-                error make { msg: $"Slice file not found: ($parsed.path_text)" }
+                error make { msg: $"Slice file not found: ($parsed.path_text) cwd=($env.PWD)" }
             }
 
             let snippet = (read-slice $file_path $parsed.start $parsed.end)
@@ -335,7 +346,9 @@ export def "pp compose" [
 
             let file_path = $file_text
             if not ($file_path | path exists) {
-                error make { msg: $"File not found: ($file_text)" }
+                error make {
+                    msg: $"File not found: ($file_text) cwd=($env.PWD). If you used bash-style \\ continuation in nu -c, remove it or pass entries via a Nu list and splat ...$entries."
+                }
             }
             let content = (open --raw $file_path | into string)
             $parts = ($parts | append $"\n\n[FILE: ($file_text)]\n($content)")

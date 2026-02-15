@@ -29,10 +29,11 @@ EOF
 
 nu -I ~/.claude/skills/pw-pair-programming/scripts -c '
 use pp.nu *;
-pp brief --preamble-file /tmp/navigator_prompt.txt \
-  src/main.rs \
-  "slice:src/parser.rs:45:67:parse_expr logic" \
-  --wait
+let entries = [
+  src/main.rs
+  "slice:src/parser.rs:45:67:parse_expr logic"
+]
+pp brief --preamble-file /tmp/navigator_prompt.txt ...$entries --wait
 '
 ```
 
@@ -117,11 +118,12 @@ pp brief --preamble-file /tmp/navigator_prompt.txt src/main.rs src/lib.rs --wait
 ```bash
 nu -I ~/.claude/skills/pw-pair-programming/scripts -c '
 use pp.nu *;
-pp brief --preamble-file /tmp/navigator_prompt.txt \
-  src/config.rs \
-  "slice:src/parser.rs:45:67:parse_expr fn" \
-  "slice:src/handler.rs:120:135:error handling" \
-  --wait
+let entries = [
+  src/config.rs
+  "slice:src/parser.rs:45:67:parse_expr fn"
+  "slice:src/handler.rs:120:135:error handling"
+]
+pp brief --preamble-file /tmp/navigator_prompt.txt ...$entries --wait
 '
 ```
 
@@ -134,8 +136,8 @@ optional dry-run when you want to inspect payload before sending:
 ```bash
 nu -I ~/.claude/skills/pw-pair-programming/scripts -c '
 use pp.nu *;
-pp compose --preamble-file /tmp/navigator_prompt.txt src/main.rs "slice:src/parser.rs:45:67" \
-  | save -f /tmp/navigator_payload.txt
+let entries = [src/main.rs "slice:src/parser.rs:45:67"]
+pp compose --preamble-file /tmp/navigator_prompt.txt ...$entries | save -f /tmp/navigator_payload.txt
 '
 ```
 
@@ -159,15 +161,15 @@ printf '%s\n' \
   > /tmp/navigator_prompt.txt && \
 nu -I ~/.claude/skills/pw-pair-programming/scripts -c '
 use pp.nu *;
-pp brief --preamble-file /tmp/navigator_prompt.txt \
-  <path/to/review_file1> \
-  <path/to/review_file2> \
-  --wait
+let review_files = ["<path/to/review_file1>" "<path/to/review_file2>"]
+pp brief --preamble-file /tmp/navigator_prompt.txt ...$review_files --wait
 '
 ```
 
 ## gotchas
 
 - always write preamble messages to files instead of inline shell
+- inside `nu -c`, do not use bash-style `\` line continuation; use a nu list + splat: `...$entries`
+- when paths fail, print `pwd` and use absolute paths if needed
 - always timeout 10min+ for navigator responses; thinking model takes time
 - attachment filenames show as uuids in ui but content works

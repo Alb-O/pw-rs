@@ -1,4 +1,4 @@
-# common
+## common
 
 ```bash
 nix develop -c cargo build
@@ -6,11 +6,11 @@ nix develop -c cargo test
 nix develop -c cargo clippy
 ```
 
-# format
+## format
 
 `nix fmt` (uses treefmt)
 
-# structure
+## structure
 
 ```
 crates/
@@ -21,14 +21,23 @@ crates/
 extension/     # Browser extension (wasm)
 ```
 
-# commit
+## rustdoc (& documentation)
 
-Use conventional commit style with bullet point descriptive messages.
+* prefer comprehensive techspec docstrings over inline comments
+* if inline comment is spotted, consider merging it into docstring or removing if it's trivial
+* tests are more relaxed, but no need to state obvious flow
+* no bold decorations in list items, e.g `**Prefix:** Actual description` <- don't do this shit, be more concise with less formatting/decoration
+* use `*` instead of `-` for bullet points
 
-# testing
+## git commit style
 
-- integration tests go in `crates/cli/tests/`
-- prefer `data:` URLs to avoid network dependencies
-- clear context store between tests for isolation
-- use JSON format in tests for assertions: `run_pw(&["-f", "json", ...])`
-- always run `cargo test ...` on relevant packages/specific tests after making changes
+* conventional, two `-m`s; header and detailed bulleted body.
+* escape backticks (use single quotes in bash)
+
+## testing
+
+* integration tests go in `crates/cli/tests/`
+* prefer `data:` URLs to avoid network dependencies
+* clear context store between tests for isolation
+* use JSON format in tests for assertions: `run_pw(&["-f", "json", ...])`
+* always run `cargo test ...` on relevant packages/specific tests after making changes
