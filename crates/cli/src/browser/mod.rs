@@ -1,4 +1,4 @@
 pub mod js;
 pub mod session;
 
-pub use session::{BrowserSession, DownloadInfo, SessionOptions};
+pub use session::{AuthInjectionReport, BrowserSession, DownloadInfo, SessionConfig, SessionEndpoints, ShutdownMode};

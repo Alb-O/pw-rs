@@ -145,10 +145,11 @@ impl CommandDef for SessionStartCommand {
 			request.keep_browser_running = true;
 
 			let session = exec.session.session(request).await?;
+			let endpoints = session.endpoints();
 
 			let data = SessionStartData {
-				ws_endpoint: session.ws_endpoint().map(|s| s.to_string()),
-				cdp_endpoint: session.cdp_endpoint().map(|s| s.to_string()),
+				ws_endpoint: endpoints.ws,
+				cdp_endpoint: endpoints.cdp,
 				browser: ctx.browser.to_string(),
 				headless: !args.headful,
 				workspace_id: Some(ctx.workspace_id().to_string()),

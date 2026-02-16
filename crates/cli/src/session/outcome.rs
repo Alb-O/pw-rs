@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
-use crate::browser::{BrowserSession, DownloadInfo};
+use crate::browser::{BrowserSession, DownloadInfo, SessionEndpoints, ShutdownMode};
 use crate::error::Result;
 use crate::output::SessionSource;
 use crate::target::Target;
@@ -56,14 +56,9 @@ impl SessionHandle {
 		self.session.context()
 	}
 
-	/// Returns WebSocket endpoint when available.
-	pub fn ws_endpoint(&self) -> Option<&str> {
-		self.session.ws_endpoint()
-	}
-
-	/// Returns CDP endpoint when available.
-	pub fn cdp_endpoint(&self) -> Option<&str> {
-		self.session.cdp_endpoint()
+	/// Returns discovered session endpoints.
+	pub fn endpoints(&self) -> SessionEndpoints {
+		self.session.endpoints().clone()
 	}
 
 	/// Returns browser handle.
@@ -76,14 +71,20 @@ impl SessionHandle {
 		self.session.downloads()
 	}
 
+	/// Shuts down session resources with an explicit mode.
+	pub async fn shutdown(self, mode: ShutdownMode) -> Result<()> {
+		self.session.shutdown(mode).await
+	}
+
 	/// Closes session resources.
 	pub async fn close(self) -> Result<()> {
-		self.session.close().await
+		let mode = self.session.shutdown_mode();
+		self.session.shutdown(mode).await
 	}
 
 	/// Shuts down launched browser server (when applicable).
 	pub async fn shutdown_server(self) -> Result<()> {
-		self.session.shutdown_server().await
+		self.session.shutdown(ShutdownMode::ShutdownServer).await
 	}
 
 	/// Collects failure artifacts from current page state.

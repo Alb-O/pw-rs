@@ -107,8 +107,9 @@ impl<'a> DescriptorLifecycle<'a> {
 			return;
 		}
 
-		let cdp = session.cdp_endpoint().map(|e| e.to_string());
-		let ws = session.ws_endpoint().map(|e| e.to_string());
+		let endpoints = session.endpoints();
+		let cdp = endpoints.cdp.clone();
+		let ws = endpoints.ws.clone();
 		if cdp.is_none() && ws.is_none() {
 			debug!(target = "pw.session", "no endpoint available; skipping descriptor save");
 			return;
