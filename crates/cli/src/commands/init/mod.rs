@@ -20,6 +20,7 @@ mod templates;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use clap::Args;
 use pw_rs::dirs;
 use serde::{Deserialize, Serialize};
 
@@ -33,21 +34,28 @@ fn default_init_path() -> PathBuf {
 	PathBuf::from(".")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitRaw {
+	#[arg(default_value = ".")]
 	#[serde(default = "default_init_path")]
 	pub path: PathBuf,
+	#[arg(long, short, default_value = "standard", value_enum)]
 	#[serde(default)]
 	pub template: InitTemplate,
+	#[arg(long)]
 	#[serde(default)]
 	pub no_config: bool,
+	#[arg(long)]
 	#[serde(default)]
 	pub no_example: bool,
+	#[arg(long)]
 	#[serde(default)]
 	pub typescript: bool,
+	#[arg(long, short)]
 	#[serde(default)]
 	pub force: bool,
+	#[arg(long)]
 	#[serde(default)]
 	pub nix: bool,
 }

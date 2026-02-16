@@ -117,9 +117,9 @@ fn parse_connect_port_is_optional() {
 	let args = vec!["pw", "connect", "--launch"];
 	let cli = Cli::try_parse_from(args).unwrap();
 	match cli.command {
-		Commands::Connect { launch, port, .. } => {
-			assert!(launch);
-			assert_eq!(port, None);
+		Commands::Connect(args) => {
+			assert!(args.launch);
+			assert_eq!(args.port, None);
 		}
 		_ => panic!("Expected Connect command"),
 	}
@@ -130,9 +130,9 @@ fn parse_connect_with_explicit_port() {
 	let args = vec!["pw", "connect", "--launch", "--port", "9444"];
 	let cli = Cli::try_parse_from(args).unwrap();
 	match cli.command {
-		Commands::Connect { launch, port, .. } => {
-			assert!(launch);
-			assert_eq!(port, Some(9444));
+		Commands::Connect(args) => {
+			assert!(args.launch);
+			assert_eq!(args.port, Some(9444));
 		}
 		_ => panic!("Expected Connect command"),
 	}
@@ -198,20 +198,12 @@ fn parse_har_set_command_full_options() {
 	let cli = Cli::try_parse_from(args).unwrap();
 
 	match cli.command {
-		Commands::Har {
-			action: HarAction::Set {
-				file,
-				content,
-				mode,
-				omit_content,
-				url_filter,
-			},
-		} => {
-			assert_eq!(file, PathBuf::from("network.har"));
-			assert_eq!(content, CliHarContentPolicy::Embed);
-			assert_eq!(mode, CliHarMode::Minimal);
-			assert!(omit_content);
-			assert_eq!(url_filter.as_deref(), Some("*.api.example.com"));
+		Commands::Har(HarAction::Set(args)) => {
+			assert_eq!(args.file, PathBuf::from("network.har"));
+			assert_eq!(args.content, CliHarContentPolicy::Embed);
+			assert_eq!(args.mode, CliHarMode::Minimal);
+			assert!(args.omit_content);
+			assert_eq!(args.url_filter.as_deref(), Some("*.api.example.com"));
 		}
 		_ => panic!("Expected Har Set command"),
 	}
@@ -222,7 +214,7 @@ fn parse_har_show_command() {
 	let args = vec!["pw", "har", "show"];
 	let cli = Cli::try_parse_from(args).unwrap();
 	match cli.command {
-		Commands::Har { action: HarAction::Show } => {}
+		Commands::Har(HarAction::Show(_)) => {}
 		_ => panic!("Expected Har Show command"),
 	}
 }
@@ -232,7 +224,7 @@ fn parse_har_clear_command() {
 	let args = vec!["pw", "har", "clear"];
 	let cli = Cli::try_parse_from(args).unwrap();
 	match cli.command {
-		Commands::Har { action: HarAction::Clear } => {}
+		Commands::Har(HarAction::Clear(_)) => {}
 		_ => panic!("Expected Har Clear command"),
 	}
 }

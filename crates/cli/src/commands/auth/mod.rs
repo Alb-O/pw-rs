@@ -11,6 +11,7 @@ mod listen;
 
 use std::path::{Path, PathBuf};
 
+use clap::Args;
 pub use listen::listen;
 use pw_rs::{StorageState, WaitUntil};
 use serde::{Deserialize, Serialize};
@@ -23,13 +24,16 @@ use crate::output::CommandInputs;
 use crate::session_broker::{SessionBroker, SessionRequest};
 use crate::target::{Resolve, ResolveEnv, ResolvedTarget, Target, TargetPolicy};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginRaw {
+	#[arg(value_name = "URL")]
 	#[serde(default)]
 	pub url: Option<String>,
+	#[arg(short, long, default_value = "auth.json", value_name = "FILE")]
 	#[serde(default)]
 	pub output: Option<PathBuf>,
+	#[arg(id = "timeout", short = 't', long = "timeout", default_value = "60", value_name = "SECONDS")]
 	#[serde(default, alias = "timeout_secs")]
 	pub timeout_secs: Option<u64>,
 }
@@ -101,11 +105,13 @@ impl CommandDef for LoginCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CookiesRaw {
+	#[arg(value_name = "URL")]
 	#[serde(default)]
 	pub url: Option<String>,
+	#[arg(short, long, default_value = "table")]
 	#[serde(default)]
 	pub format: Option<String>,
 }
@@ -171,9 +177,10 @@ impl CommandDef for CookiesCommand {
 	}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShowRaw {
+	#[arg(value_name = "FILE")]
 	pub file: PathBuf,
 }
 
@@ -214,11 +221,13 @@ impl CommandDef for ShowCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListenRaw {
+	#[arg(long, default_value = "127.0.0.1")]
 	#[serde(default = "default_host")]
 	pub host: String,
+	#[arg(long, default_value_t = 9271)]
 	#[serde(default = "default_port")]
 	pub port: u16,
 }

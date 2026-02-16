@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::anyhow;
+use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -23,9 +24,10 @@ fn read_pid_file(path: &std::path::Path) -> Option<u32> {
 	std::fs::read_to_string(path).ok()?.trim().parse::<u32>().ok()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonStartRaw {
+	#[arg(long)]
 	#[serde(default)]
 	pub foreground: bool,
 }
@@ -177,7 +179,7 @@ impl CommandDef for DaemonStartCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonStopRaw {}
 
@@ -225,7 +227,7 @@ impl CommandDef for DaemonStopCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonStatusRaw {}
 

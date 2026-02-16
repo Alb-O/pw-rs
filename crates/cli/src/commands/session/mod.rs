@@ -1,5 +1,6 @@
 use std::fs;
 
+use clap::Args;
 use pw_rs::WaitUntil;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -13,7 +14,7 @@ use crate::target::ResolveEnv;
 use crate::types::BrowserKind;
 use crate::workspace::compute_cdp_port;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStatusRaw {}
 
@@ -79,7 +80,7 @@ impl CommandDef for SessionStatusCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionClearRaw {}
 
@@ -137,9 +138,10 @@ impl CommandDef for SessionClearCommand {
 	}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStartRaw {
+	#[arg(long)]
 	pub headful: bool,
 }
 
@@ -211,7 +213,7 @@ impl CommandDef for SessionStartCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStopRaw {}
 

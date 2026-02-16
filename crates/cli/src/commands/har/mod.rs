@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -10,13 +11,18 @@ use crate::error::Result;
 use crate::output::CommandInputs;
 use crate::target::ResolveEnv;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarSetRaw {
+	#[arg(value_name = "FILE")]
 	pub file: PathBuf,
+	#[arg(long, value_enum, default_value = "attach")]
 	pub content: CliHarContentPolicy,
+	#[arg(long, value_enum, default_value = "full")]
 	pub mode: CliHarMode,
+	#[arg(long)]
 	pub omit_content: bool,
+	#[arg(long, value_name = "PATTERN")]
 	pub url_filter: Option<String>,
 }
 
@@ -75,7 +81,7 @@ impl CommandDef for HarSetCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarShowRaw {}
 
@@ -115,7 +121,7 @@ impl CommandDef for HarShowCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarClearRaw {}
 

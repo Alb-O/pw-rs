@@ -1,3 +1,4 @@
+use clap::Args;
 use pw_rs::WaitUntil;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -18,7 +19,7 @@ struct TabInfo {
 	protected: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabsListRaw {}
 
@@ -75,9 +76,10 @@ impl CommandDef for TabsListCommand {
 	}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabsSwitchRaw {
+	#[arg(value_name = "TARGET")]
 	pub target: String,
 }
 
@@ -131,9 +133,10 @@ impl CommandDef for TabsSwitchCommand {
 	}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabsCloseRaw {
+	#[arg(value_name = "TARGET")]
 	pub target: String,
 }
 
@@ -187,9 +190,10 @@ impl CommandDef for TabsCloseCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabsNewRaw {
+	#[arg(value_name = "URL")]
 	pub url: Option<String>,
 }
 

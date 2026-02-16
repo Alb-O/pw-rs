@@ -1,3 +1,4 @@
+use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -6,9 +7,10 @@ use crate::error::Result;
 use crate::output::CommandInputs;
 use crate::target::ResolveEnv;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectAddRaw {
+	#[arg(value_name = "PATTERN")]
 	pub pattern: String,
 }
 
@@ -55,9 +57,10 @@ impl CommandDef for ProtectAddCommand {
 	}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectRemoveRaw {
+	#[arg(value_name = "PATTERN")]
 	pub pattern: String,
 }
 
@@ -104,7 +107,7 @@ impl CommandDef for ProtectRemoveCommand {
 	}
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtectListRaw {}
 

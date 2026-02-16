@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use clap::Args;
 use pw_rs::{Playwright, StorageState, dirs};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,21 +22,28 @@ use crate::workspace::{STATE_VERSION_DIR, compute_cdp_port, ensure_state_root_gi
 
 mod wsl;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectRaw {
+	#[arg(value_name = "URL")]
 	#[serde(default)]
 	pub endpoint: Option<String>,
+	#[arg(long)]
 	#[serde(default)]
 	pub clear: bool,
+	#[arg(long)]
 	#[serde(default)]
 	pub launch: bool,
+	#[arg(long)]
 	#[serde(default)]
 	pub discover: bool,
+	#[arg(long)]
 	#[serde(default)]
 	pub kill: bool,
+	#[arg(long, short)]
 	#[serde(default)]
 	pub port: Option<u16>,
+	#[arg(long)]
 	#[serde(default)]
 	pub user_data_dir: Option<PathBuf>,
 }
