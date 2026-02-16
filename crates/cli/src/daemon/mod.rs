@@ -1,45 +1,46 @@
-mod protocol;
+mod client;
+mod rpc;
 mod server;
 
-use anyhow::{Context, Result, anyhow};
-pub use protocol::{BrowserInfo, DaemonRequest, DaemonResponse};
-pub use server::Daemon;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-#[cfg(windows)]
-use tokio::net::TcpStream;
-#[cfg(unix)]
-use tokio::net::UnixStream;
+use anyhow::{Result, anyhow};
+use jsonrpsee::core::ClientError;
+use jsonrpsee::http_client::HttpClient;
 use tracing::debug;
+
+use rpc::DaemonRpcClient as _;
+pub use rpc::{BrowserInfo, BrowserLease};
+pub use server::Daemon;
 
 use crate::types::BrowserKind;
 
 pub const DAEMON_TCP_PORT: u16 = 19222;
 
-/// Returns the daemon socket path for the current user.
-///
-/// Uses `$XDG_RUNTIME_DIR/pw-daemon.sock` if available (already user-permissioned),
-/// otherwise falls back to `/tmp/pw-daemon-{uid}.sock`.
-#[cfg(unix)]
-pub fn daemon_socket_path() -> std::path::PathBuf {
-	use std::path::PathBuf;
-
-	if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR") {
-		return PathBuf::from(xdg_runtime).join("pw-daemon.sock");
-	}
-
-	let uid = unsafe { libc::getuid() };
-	PathBuf::from(format!("/tmp/pw-daemon-{uid}.sock"))
+#[derive(Debug, Clone)]
+pub struct DaemonClient {
+	client: HttpClient,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct DaemonClient;
-
 pub async fn try_connect() -> Option<DaemonClient> {
-	match connect_daemon().await {
-		Ok(stream) => {
-			drop(stream);
-			Some(DaemonClient)
+	let probe = match client::connect_probe_client() {
+		Ok(client) => client,
+		Err(err) => {
+			debug!(target = "pw.daemon", error = %err, "failed to build daemon RPC client");
+			return None;
 		}
+	};
+
+	match probe.ping().await {
+		Ok(true) => {
+			let client = match client::connect_client() {
+				Ok(client) => client,
+				Err(err) => {
+					debug!(target = "pw.daemon", error = %err, "failed to build daemon RPC client");
+					return None;
+				}
+			};
+			Some(DaemonClient { client })
+		}
+		Ok(false) => None,
 		Err(err) if is_not_running(&err) => None,
 		Err(err) => {
 			debug!(target = "pw.daemon", error = %err, "daemon connection failed");
@@ -51,54 +52,50 @@ pub async fn try_connect() -> Option<DaemonClient> {
 /// Request a browser from the daemon with a deterministic session key.
 ///
 /// Browsers are reused only when session keys match exactly.
-pub async fn request_browser(_client: &DaemonClient, kind: BrowserKind, headless: bool, session_key: &str) -> Result<String> {
-	let response = send_request(DaemonRequest::AcquireBrowser {
-		browser: kind,
-		headless,
-		session_key: session_key.to_string(),
-	})
-	.await?;
+pub async fn request_browser(client: &DaemonClient, kind: BrowserKind, headless: bool, session_key: &str) -> Result<String> {
+	let lease = client
+		.client
+		.acquire_browser(kind, headless, session_key.to_string())
+		.await
+		.map_err(|err| anyhow!("daemon RPC acquire_browser failed: {err}"))?;
+	Ok(lease.cdp_endpoint)
+}
 
-	match response {
-		DaemonResponse::Browser { cdp_endpoint, .. } => Ok(cdp_endpoint),
-		DaemonResponse::Error { code, message } => Err(anyhow!("daemon error {code}: {message}")),
-		other => Err(anyhow!("unexpected daemon response: {other:?}")),
+pub async fn ping() -> Result<Option<bool>> {
+	let client = client::connect_probe_client()?;
+	match client.ping().await {
+		Ok(value) => Ok(Some(value)),
+		Err(err) if is_not_running(&err) => Ok(None),
+		Err(err) => Err(anyhow!("daemon RPC ping failed: {err}")),
 	}
 }
 
-async fn send_request(request: DaemonRequest) -> Result<DaemonResponse> {
-	let stream = connect_daemon().await.context("Failed to connect to daemon")?;
-	send_request_stream(stream, request).await
+pub async fn shutdown() -> Result<Option<()>> {
+	let probe = client::connect_probe_client()?;
+	match probe.ping().await {
+		Ok(true) => {}
+		Ok(false) => return Ok(None),
+		Err(err) if is_not_running(&err) => return Ok(None),
+		Err(err) => return Err(anyhow!("daemon RPC ping failed before shutdown: {err}")),
+	}
+
+	let client = client::connect_client()?;
+	match client.shutdown().await {
+		Ok(()) => Ok(Some(())),
+		Err(err) if is_not_running(&err) => Ok(None),
+		Err(err) => Err(anyhow!("daemon RPC shutdown failed: {err}")),
+	}
 }
 
-#[cfg(unix)]
-async fn connect_daemon() -> std::io::Result<UnixStream> {
-	UnixStream::connect(daemon_socket_path()).await
+pub async fn list_browsers() -> Result<Option<Vec<BrowserInfo>>> {
+	let client = client::connect_probe_client()?;
+	match client.list_browsers().await {
+		Ok(list) => Ok(Some(list)),
+		Err(err) if is_not_running(&err) => Ok(None),
+		Err(err) => Err(anyhow!("daemon RPC list_browsers failed: {err}")),
+	}
 }
 
-#[cfg(windows)]
-async fn connect_daemon() -> std::io::Result<TcpStream> {
-	TcpStream::connect(("127.0.0.1", DAEMON_TCP_PORT)).await
-}
-
-fn is_not_running(err: &std::io::Error) -> bool {
-	matches!(err.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused)
-}
-
-async fn send_request_stream<S>(mut stream: S, request: DaemonRequest) -> Result<DaemonResponse>
-where
-	S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-	let payload = serde_json::to_string(&request).context("Failed to serialize daemon request")?;
-	stream
-		.write_all(format!("{}\n", payload).as_bytes())
-		.await
-		.context("Failed writing daemon request")?;
-	stream.flush().await.context("Failed flushing daemon request")?;
-
-	let mut reader = BufReader::new(stream);
-	let mut line = String::new();
-	reader.read_line(&mut line).await.context("Failed reading daemon response")?;
-	let response = serde_json::from_str(&line).context("Failed parsing daemon response")?;
-	Ok(response)
+fn is_not_running(err: &ClientError) -> bool {
+	client::is_not_running_error(err)
 }

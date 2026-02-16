@@ -21,7 +21,7 @@ clap = { version = "4", features = ["derive"] }
 colored = "3"
 dirs = "6.0"
 futures = "0.3"
-libc = "0.2"
+jsonrpsee = { version = "0.24", features = ["server", "http-client", "macros"] }
 pw-protocol.workspace = true
 pw-rs.workspace = true
 regex-lite = "0.1"
@@ -39,4 +39,3 @@ which = "7"
 
 [dev-dependencies]
 tempfile = "3"
-

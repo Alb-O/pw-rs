@@ -230,7 +230,7 @@ The daemon provides true session persistence by keeping the Playwright driver ru
 
 #### Implementation
 
-- **`pw daemon start`**: Spawns background daemon, listens on Unix socket (`/tmp/pw-daemon.sock`)
+- **`pw daemon start`**: Spawns background daemon, listens on localhost TCP (`127.0.0.1:19222`) via JSON-RPC
 - **`pw daemon stop`**: Gracefully shuts down daemon and all managed browsers
 - **`pw daemon status`**: Shows running status and list of managed browsers
 - **Automatic integration**: Commands automatically use daemon if running (disable with `--no-daemon`)
@@ -239,39 +239,39 @@ The daemon provides true session persistence by keeping the Playwright driver ru
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        pw daemon                                  │
+│                        pw daemon                                 │
 │  ┌────────────────┐    ┌─────────────────────────────────────┐   │
-│  │ Unix Socket    │    │ Playwright Driver (persistent)      │   │
-│  │ /tmp/pw-daemon │◄──►│                                     │   │
-│  │    .sock       │    │  ┌─────────┐ ┌─────────┐            │   │
+│  │ JSON-RPC HTTP  │    │ Playwright Driver (persistent)      │   │
+│  │ 127.0.0.1:19222│◄──►│                                     │   │
+│  │ localhost only │    │  ┌─────────┐ ┌─────────┐            │   │
 │  └────────────────┘    │  │Browser 1│ │Browser 2│ ...        │   │
 │         ▲              │  │:9222    │ │:9223    │            │   │
 │         │              │  └─────────┘ └─────────┘            │   │
 └─────────│──────────────┴─────────────────────────────────────────┘
           │
     ┌─────┴─────┐
-    │ pw text   │  CLI commands connect via socket,
+    │ pw text   │  CLI commands call JSON-RPC methods,
     │ pw nav    │  daemon spawns/reuses browsers
     │ pw click  │
     └───────────┘
 ```
 
-#### Protocol (JSON over newline-delimited socket)
+#### Protocol (JSON-RPC 2.0 over HTTP)
 
 ```json
 // Request browser
-{"type": "spawn_browser", "browser": "chromium", "headless": true}
+{"jsonrpc":"2.0","id":1,"method":"daemon_spawn_browser","params":["chromium",true,null]}
 // Response
-{"type": "browser", "cdp_endpoint": "http://127.0.0.1:9222", "port": 9222}
+{"jsonrpc":"2.0","id":1,"result":{"cdp_endpoint":"http://127.0.0.1:9222","port":9222}}
 
 // List browsers
-{"type": "list_browsers"}
+{"jsonrpc":"2.0","id":2,"method":"daemon_list_browsers","params":[]}
 // Response  
-{"type": "browsers", "list": [{"port": 9222, "browser": "chromium", ...}]}
+{"jsonrpc":"2.0","id":2,"result":[{"port":9222,"browser":"chromium",...}]}
 
 // Shutdown
-{"type": "shutdown"}
-{"type": "ok"}
+{"jsonrpc":"2.0","id":3,"method":"daemon_shutdown","params":[]}
+{"jsonrpc":"2.0","id":3,"result":null}
 ```
 
 #### Port Allocation

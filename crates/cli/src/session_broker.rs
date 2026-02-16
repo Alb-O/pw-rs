@@ -95,7 +95,7 @@ fn now_ts() -> u64 {
 fn pid_is_alive(pid: u32) -> bool {
 	#[cfg(unix)]
 	{
-		return PathBuf::from("/proc").join(pid.to_string()).exists();
+		PathBuf::from("/proc").join(pid.to_string()).exists()
 	}
 
 	#[cfg(windows)]

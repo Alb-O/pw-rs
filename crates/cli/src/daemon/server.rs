@@ -3,24 +3,25 @@ use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
+use jsonrpsee::core::{RpcResult, async_trait};
+use jsonrpsee::server::ServerBuilder;
+use jsonrpsee::types::error::ErrorObjectOwned;
 use pw_rs::{LaunchOptions, Playwright};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-#[cfg(windows)]
-use tokio::net::TcpListener;
-#[cfg(unix)]
-use tokio::net::UnixListener;
+use serde_json::json;
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, info, warn};
 
-#[cfg(windows)]
 use super::DAEMON_TCP_PORT;
-#[cfg(unix)]
-use super::daemon_socket_path;
-use super::protocol::{BrowserInfo, DaemonRequest, DaemonResponse};
+use super::rpc::{BrowserInfo, BrowserLease, DaemonRpcServer};
 use crate::types::BrowserKind;
 
 const PORT_RANGE_START: u16 = 9222;
 const PORT_RANGE_END: u16 = 10221;
+
+const RPC_ACQUIRE_FAILED: i32 = -32050;
+const RPC_SPAWN_FAILED: i32 = -32051;
+const RPC_KILL_FAILED: i32 = -32052;
+const RPC_SHUTDOWN_FAILED: i32 = -32053;
 
 struct BrowserInstance {
 	info: BrowserInfo,
@@ -35,14 +36,76 @@ struct DaemonState {
 	session_index: HashMap<String, u16>,
 }
 
+struct DaemonRpcHandler {
+	state: Arc<Mutex<DaemonState>>,
+	shutdown_tx: watch::Sender<bool>,
+}
+
+#[async_trait]
+impl DaemonRpcServer for DaemonRpcHandler {
+	async fn ping(&self) -> RpcResult<bool> {
+		Ok(true)
+	}
+
+	async fn acquire_browser(&self, browser: BrowserKind, headless: bool, session_key: String) -> RpcResult<BrowserLease> {
+		let mut daemon = self.state.lock().await;
+		daemon
+			.acquire_browser(browser, headless, session_key)
+			.await
+			.map(|(port, cdp_endpoint)| BrowserLease { cdp_endpoint, port })
+			.map_err(|err| rpc_error("acquire_failed", RPC_ACQUIRE_FAILED, err))
+	}
+
+	async fn spawn_browser(&self, browser: BrowserKind, headless: bool, port: Option<u16>) -> RpcResult<BrowserLease> {
+		let mut daemon = self.state.lock().await;
+		let session_key = format!("spawn:{}:{}:{}", browser, headless, now_ts());
+		daemon
+			.spawn_browser(browser, headless, port, session_key)
+			.await
+			.map(|(port, cdp_endpoint)| BrowserLease { cdp_endpoint, port })
+			.map_err(|err| rpc_error("spawn_failed", RPC_SPAWN_FAILED, err))
+	}
+
+	async fn get_browser(&self, port: u16) -> RpcResult<Option<BrowserLease>> {
+		let daemon = self.state.lock().await;
+		if daemon.browsers.contains_key(&port) {
+			Ok(Some(BrowserLease {
+				cdp_endpoint: format!("http://127.0.0.1:{}", port),
+				port,
+			}))
+		} else {
+			Ok(None)
+		}
+	}
+
+	async fn kill_browser(&self, port: u16) -> RpcResult<()> {
+		let mut daemon = self.state.lock().await;
+		daemon.kill_browser(port).await.map_err(|err| rpc_error("kill_failed", RPC_KILL_FAILED, err))
+	}
+
+	async fn release_browser(&self, session_key: String) -> RpcResult<()> {
+		let mut daemon = self.state.lock().await;
+		daemon.release_browser(&session_key);
+		Ok(())
+	}
+
+	async fn list_browsers(&self) -> RpcResult<Vec<BrowserInfo>> {
+		let daemon = self.state.lock().await;
+		Ok(daemon.browsers.values().map(|instance| instance.info.clone()).collect())
+	}
+
+	async fn shutdown(&self) -> RpcResult<()> {
+		let mut daemon = self.state.lock().await;
+		daemon.shutdown().await.map_err(|err| rpc_error("shutdown_failed", RPC_SHUTDOWN_FAILED, err))?;
+		let _ = self.shutdown_tx.send(true);
+		Ok(())
+	}
+}
+
 pub struct Daemon {
 	state: Arc<Mutex<DaemonState>>,
 	shutdown_tx: watch::Sender<bool>,
 	shutdown_rx: watch::Receiver<bool>,
-	#[cfg(unix)]
-	listener: UnixListener,
-	#[cfg(windows)]
-	listener: TcpListener,
 }
 
 impl Daemon {
@@ -54,258 +117,81 @@ impl Daemon {
 			session_index: HashMap::new(),
 		};
 		let (shutdown_tx, shutdown_rx) = watch::channel(false);
-
-		#[cfg(unix)]
-		{
-			let socket_path = daemon_socket_path();
-			if socket_path.exists() {
-				std::fs::remove_file(&socket_path).with_context(|| format!("Failed to remove existing socket: {}", socket_path.display()))?;
-			}
-			// Ensure parent directory exists (for XDG_RUNTIME_DIR fallback)
-			if let Some(parent) = socket_path.parent() {
-				if !parent.exists() {
-					std::fs::create_dir_all(parent).with_context(|| format!("Failed to create socket directory: {}", parent.display()))?;
-				}
-			}
-			let listener = UnixListener::bind(&socket_path).with_context(|| format!("Failed to bind daemon socket: {}", socket_path.display()))?;
-			info!(
-				target = "pw.daemon",
-				socket = %socket_path.display(),
-				"daemon listening"
-			);
-			Ok(Self {
-				state: Arc::new(Mutex::new(state)),
-				shutdown_tx,
-				shutdown_rx,
-				listener,
-			})
-		}
-
-		#[cfg(windows)]
-		{
-			let addr = format!("127.0.0.1:{}", DAEMON_TCP_PORT);
-			let listener = TcpListener::bind(&addr)
-				.await
-				.with_context(|| format!("Failed to bind daemon TCP socket: {addr}"))?;
-			info!(target = "pw.daemon", addr, "daemon listening");
-			Ok(Self {
-				state: Arc::new(Mutex::new(state)),
-				shutdown_tx,
-				shutdown_rx,
-				listener,
-			})
-		}
+		Ok(Self {
+			state: Arc::new(Mutex::new(state)),
+			shutdown_tx,
+			shutdown_rx,
+		})
 	}
 
 	pub async fn run(mut self) -> Result<()> {
+		let addr = format!("127.0.0.1:{}", DAEMON_TCP_PORT);
+		let server = ServerBuilder::default()
+			.build(&addr)
+			.await
+			.with_context(|| format!("Failed to bind daemon RPC server: {addr}"))?;
+
+		let rpc = DaemonRpcHandler {
+			state: Arc::clone(&self.state),
+			shutdown_tx: self.shutdown_tx.clone(),
+		};
+		let handle = server.start(rpc.into_rpc());
+		info!(target = "pw.daemon", addr, "daemon listening");
+
 		#[cfg(unix)]
 		{
-			run_unix(self.listener, self.state, self.shutdown_tx, &mut self.shutdown_rx).await
+			use tokio::signal::unix::{SignalKind, signal};
+
+			let mut sigterm = signal(SignalKind::terminate()).context("Failed to install SIGTERM handler")?;
+			let mut sigint = signal(SignalKind::interrupt()).context("Failed to install SIGINT handler")?;
+
+			loop {
+				tokio::select! {
+					_ = self.shutdown_rx.changed() => {
+						if *self.shutdown_rx.borrow() {
+							info!(target = "pw.daemon", "shutdown requested via RPC");
+							break;
+						}
+					}
+					_ = sigterm.recv() => {
+						info!(target = "pw.daemon", "received SIGTERM, shutting down");
+						shutdown_daemon_state(&self.state).await;
+						let _ = self.shutdown_tx.send(true);
+						break;
+					}
+					_ = sigint.recv() => {
+						info!(target = "pw.daemon", "received SIGINT, shutting down");
+						shutdown_daemon_state(&self.state).await;
+						let _ = self.shutdown_tx.send(true);
+						break;
+					}
+				}
+			}
 		}
 
 		#[cfg(windows)]
 		{
-			run_tcp(self.listener, self.state, self.shutdown_tx, &mut self.shutdown_rx).await
-		}
-	}
-}
-
-#[cfg(unix)]
-async fn run_unix(
-	listener: UnixListener,
-	state: Arc<Mutex<DaemonState>>,
-	shutdown_tx: watch::Sender<bool>,
-	shutdown_rx: &mut watch::Receiver<bool>,
-) -> Result<()> {
-	use tokio::signal::unix::{SignalKind, signal};
-
-	let mut sigterm = signal(SignalKind::terminate()).context("Failed to install SIGTERM handler")?;
-	let mut sigint = signal(SignalKind::interrupt()).context("Failed to install SIGINT handler")?;
-
-	loop {
-		tokio::select! {
-			_ = shutdown_rx.changed() => {
-				if *shutdown_rx.borrow() {
-					info!(target = "pw.daemon", "shutdown requested via message");
-					break;
-				}
-			}
-			_ = sigterm.recv() => {
-				info!(target = "pw.daemon", "received SIGTERM, shutting down");
-				let mut daemon = state.lock().await;
-				if let Err(e) = daemon.shutdown().await {
-					warn!(target = "pw.daemon", error = %e, "error during shutdown");
-				}
-				break;
-			}
-			_ = sigint.recv() => {
-				info!(target = "pw.daemon", "received SIGINT, shutting down");
-				let mut daemon = state.lock().await;
-				if let Err(e) = daemon.shutdown().await {
-					warn!(target = "pw.daemon", error = %e, "error during shutdown");
-				}
-				break;
-			}
-			accept = listener.accept() => {
-				let (stream, _) = accept.context("Daemon accept failed")?;
-				let state = Arc::clone(&state);
-				let shutdown_tx = shutdown_tx.clone();
-				tokio::spawn(async move {
-					if let Err(err) = handle_client(stream, state, shutdown_tx).await {
-						warn!(target = "pw.daemon", error = %err, "daemon connection error");
+			loop {
+				tokio::select! {
+					_ = self.shutdown_rx.changed() => {
+						if *self.shutdown_rx.borrow() {
+							info!(target = "pw.daemon", "shutdown requested via RPC");
+							break;
+						}
 					}
-				});
-			}
-		}
-	}
-
-	Ok(())
-}
-
-#[cfg(windows)]
-async fn run_tcp(
-	listener: TcpListener,
-	state: Arc<Mutex<DaemonState>>,
-	shutdown_tx: watch::Sender<bool>,
-	shutdown_rx: &mut watch::Receiver<bool>,
-) -> Result<()> {
-	loop {
-		tokio::select! {
-			_ = shutdown_rx.changed() => {
-				if *shutdown_rx.borrow() {
-					info!(target = "pw.daemon", "shutdown requested via message");
-					break;
-				}
-			}
-			_ = tokio::signal::ctrl_c() => {
-				info!(target = "pw.daemon", "received Ctrl+C, shutting down");
-				let mut daemon = state.lock().await;
-				if let Err(e) = daemon.shutdown().await {
-					warn!(target = "pw.daemon", error = %e, "error during shutdown");
-				}
-				break;
-			}
-			accept = listener.accept() => {
-				let (stream, _) = accept.context("Daemon accept failed")?;
-				let state = Arc::clone(&state);
-				let shutdown_tx = shutdown_tx.clone();
-				tokio::spawn(async move {
-					if let Err(err) = handle_client(stream, state, shutdown_tx).await {
-						warn!(target = "pw.daemon", error = %err, "daemon connection error");
+					_ = tokio::signal::ctrl_c() => {
+						info!(target = "pw.daemon", "received Ctrl+C, shutting down");
+						shutdown_daemon_state(&self.state).await;
+						let _ = self.shutdown_tx.send(true);
+						break;
 					}
-				});
-			}
-		}
-	}
-
-	Ok(())
-}
-
-async fn handle_client<S>(stream: S, state: Arc<Mutex<DaemonState>>, shutdown_tx: watch::Sender<bool>) -> Result<()>
-where
-	S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-	let (read_half, mut write_half) = tokio::io::split(stream);
-	let mut reader = BufReader::new(read_half);
-	let mut line = String::new();
-
-	loop {
-		line.clear();
-		let bytes = reader.read_line(&mut line).await.context("Failed reading daemon request")?;
-		if bytes == 0 {
-			break;
-		}
-
-		let request = match serde_json::from_str::<DaemonRequest>(line.trim_end()) {
-			Ok(req) => req,
-			Err(err) => {
-				let response = DaemonResponse::Error {
-					code: "invalid_request".to_string(),
-					message: err.to_string(),
-				};
-				write_response(&mut write_half, &response).await?;
-				continue;
-			}
-		};
-
-		let response = handle_request(&state, shutdown_tx.clone(), request).await;
-		write_response(&mut write_half, &response).await?;
-	}
-
-	Ok(())
-}
-
-async fn write_response<W>(writer: &mut W, response: &DaemonResponse) -> Result<()>
-where
-	W: tokio::io::AsyncWrite + Unpin,
-{
-	let payload = serde_json::to_string(response).context("Failed to serialize response")?;
-	writer
-		.write_all(format!("{}\n", payload).as_bytes())
-		.await
-		.context("Failed writing daemon response")?;
-	writer.flush().await.context("Failed flushing daemon response")?;
-	Ok(())
-}
-
-async fn handle_request(state: &Arc<Mutex<DaemonState>>, shutdown_tx: watch::Sender<bool>, request: DaemonRequest) -> DaemonResponse {
-	match request {
-		DaemonRequest::Ping => DaemonResponse::Pong,
-		DaemonRequest::AcquireBrowser {
-			browser,
-			headless,
-			session_key,
-		} => {
-			let mut daemon = state.lock().await;
-			match daemon.acquire_browser(browser, headless, session_key).await {
-				Ok((port, cdp_endpoint)) => DaemonResponse::Browser { cdp_endpoint, port },
-				Err(err) => daemon_error("acquire_failed", err),
-			}
-		}
-		DaemonRequest::SpawnBrowser { browser, headless, port } => {
-			let mut daemon = state.lock().await;
-			let session_key = format!("spawn:{}:{}:{}", browser, headless, now_ts());
-			match daemon.spawn_browser(browser, headless, port, session_key).await {
-				Ok((port, cdp_endpoint)) => DaemonResponse::Browser { cdp_endpoint, port },
-				Err(err) => daemon_error("spawn_failed", err),
-			}
-		}
-		DaemonRequest::GetBrowser { port } => {
-			let daemon = state.lock().await;
-			if daemon.browsers.contains_key(&port) {
-				DaemonResponse::Browser {
-					cdp_endpoint: format!("http://127.0.0.1:{}", port),
-					port,
 				}
-			} else {
-				daemon_error("not_found", anyhow!("No browser on port {port}"))
 			}
 		}
-		DaemonRequest::KillBrowser { port } => {
-			let mut daemon = state.lock().await;
-			match daemon.kill_browser(port).await {
-				Ok(()) => DaemonResponse::Ok,
-				Err(err) => daemon_error("kill_failed", err),
-			}
-		}
-		DaemonRequest::ReleaseBrowser { session_key } => {
-			let mut daemon = state.lock().await;
-			daemon.release_browser(&session_key);
-			DaemonResponse::Ok
-		}
-		DaemonRequest::ListBrowsers => {
-			let daemon = state.lock().await;
-			let list = daemon.browsers.values().map(|instance| instance.info.clone()).collect();
-			DaemonResponse::Browsers { list }
-		}
-		DaemonRequest::Shutdown => {
-			let mut daemon = state.lock().await;
-			if let Err(err) = daemon.shutdown().await {
-				return daemon_error("shutdown_failed", err);
-			}
-			let _ = shutdown_tx.send(true);
-			DaemonResponse::Ok
-		}
+
+		let _ = handle.stop();
+		handle.stopped().await;
+		Ok(())
 	}
 }
 
@@ -315,22 +201,22 @@ impl DaemonState {
 		// Check for existing browser with matching session_key.
 		if let Some(&port) = self.session_index.get(&session_key) {
 			if let Some(instance) = self.browsers.get_mut(&port) {
-				// Verify browser is still connected
+				// Verify browser is still connected.
 				if instance.browser.is_connected() {
 					debug!(target = "pw.daemon", port, session_key = %session_key, "reusing existing browser");
 					instance.info.last_used_at = now_ts();
 					let cdp_endpoint = format!("http://127.0.0.1:{}", port);
 					return Ok((port, cdp_endpoint));
-				} else {
-					// Browser disconnected, clean up stale entry
-					debug!(target = "pw.daemon", port, session_key = %session_key, "browser disconnected, removing");
-					self.browsers.remove(&port);
-					self.session_index.remove(&session_key);
 				}
+
+				// Browser disconnected, clean up stale entry.
+				debug!(target = "pw.daemon", port, session_key = %session_key, "browser disconnected, removing");
+				self.browsers.remove(&port);
+				self.session_index.remove(&session_key);
 			}
 		}
 
-		// No existing browser found, spawn a new one
+		// No existing browser found, spawn a new one.
 		self.spawn_browser(browser_kind, headless, None, session_key).await
 	}
 
@@ -383,7 +269,6 @@ impl DaemonState {
 		};
 
 		self.browsers.insert(port, BrowserInstance { info: info.clone(), browser });
-
 		self.session_index.insert(session_key, port);
 
 		let cdp_endpoint = format!("http://127.0.0.1:{}", port);
@@ -429,11 +314,15 @@ impl DaemonState {
 	}
 }
 
-fn daemon_error(code: &str, err: anyhow::Error) -> DaemonResponse {
-	DaemonResponse::Error {
-		code: code.to_string(),
-		message: err.to_string(),
+async fn shutdown_daemon_state(state: &Arc<Mutex<DaemonState>>) {
+	let mut daemon = state.lock().await;
+	if let Err(err) = daemon.shutdown().await {
+		warn!(target = "pw.daemon", error = %err, "error during shutdown");
 	}
+}
+
+fn rpc_error(code: &str, rpc_code: i32, err: anyhow::Error) -> ErrorObjectOwned {
+	ErrorObjectOwned::owned(rpc_code, err.to_string(), Some(json!({ "code": code })))
 }
 
 fn port_available(port: u16) -> bool {
