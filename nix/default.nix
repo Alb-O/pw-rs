@@ -221,6 +221,7 @@ conn.on("error", () => {
       treefmt = {
         projectRootFile = "flake.nix";
         programs.rustfmt.enable = true;
+        programs.rustfmt.package = rustToolchain;
       };
 
       packages = {

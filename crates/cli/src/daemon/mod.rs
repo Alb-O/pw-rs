@@ -5,11 +5,10 @@ mod server;
 use anyhow::{Result, anyhow};
 use jsonrpsee::core::ClientError;
 use jsonrpsee::http_client::HttpClient;
-use tracing::debug;
-
 use rpc::DaemonRpcClient as _;
 pub use rpc::{BrowserInfo, BrowserLease};
 pub use server::Daemon;
+use tracing::debug;
 
 use crate::types::BrowserKind;
 
