@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "pw-cli"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "pw-protocol"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "base64",
  "serde",
@@ -1625,7 +1625,7 @@ dependencies = [
 
 [[package]]
 name = "pw-rs"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "base64",
  "downcast-rs",
@@ -1645,7 +1645,7 @@ dependencies = [
 
 [[package]]
 name = "pw-runtime"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dashmap",
  "dirs",
