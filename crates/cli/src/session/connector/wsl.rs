@@ -11,7 +11,6 @@ use crate::error::{PwError, Result};
 const WSL_POWERSHELL_PATH: &str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
 pub(super) const WSL_MANAGED_USER_DATA_ROOT: &str = "/mnt/c/temp/pw-cli/connect-user-data";
 
-/// Detect whether the current process runs inside WSL.
 pub(super) fn is_wsl() -> bool {
 	let osrelease = std::fs::read_to_string("/proc/sys/kernel/osrelease").ok();
 	let wsl_distro = std::env::var("WSL_DISTRO_NAME").ok();
@@ -89,9 +88,6 @@ fn wsl_unc_path(path: &Path, distro_name: Option<&str>) -> Option<String> {
 	Some(format!(r"\\wsl.localhost\{distro}\{trimmed}"))
 }
 
-/// Convert a WSL path to a Windows path:
-/// 1) Prefer direct mount conversion (`/mnt/c/...` => `C:\...`)
-/// 2) Fall back to UNC (`\\wsl.localhost\...`) when needed.
 fn wsl_path_to_windows(path: &Path) -> Option<String> {
 	wsl_mount_path_to_windows(path).or_else(|| wsl_unc_path(path, std::env::var("WSL_DISTRO_NAME").ok().as_deref()))
 }
@@ -268,26 +264,24 @@ mod tests {
 			false,
 		)
 		.unwrap();
-
-		let resolved = resolve_wsl_user_data_dir(&ctx_state, Some(Path::new(r"C:\temp\pw-profile")));
-		assert_eq!(resolved, PathBuf::from("/mnt/c/temp/pw-profile"));
+		let resolved = resolve_wsl_user_data_dir(&ctx_state, Some(Path::new(r"C:\temp\profile")));
+		assert_eq!(resolved, PathBuf::from("/mnt/c/temp/profile"));
 	}
 
 	#[test]
-	fn resolve_wsl_user_data_dir_defaults_to_workspace_and_namespace() {
+	fn resolve_wsl_user_data_dir_defaults_to_managed_path() {
 		let temp = TempDir::new().unwrap();
 		let ctx_state = ContextState::new(
 			temp.path().to_path_buf(),
-			"workspace-abc".to_string(),
-			"default".to_string(),
+			"workspace-id".to_string(),
+			"agent-a".to_string(),
 			None,
 			false,
 			true,
 			false,
 		)
 		.unwrap();
-
 		let resolved = resolve_wsl_user_data_dir(&ctx_state, None);
-		assert_eq!(resolved, PathBuf::from(WSL_MANAGED_USER_DATA_ROOT).join("workspace-abc").join("default"));
+		assert_eq!(resolved, PathBuf::from(WSL_MANAGED_USER_DATA_ROOT).join("workspace-id").join("agent-a"));
 	}
 }
