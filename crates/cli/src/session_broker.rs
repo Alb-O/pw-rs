@@ -591,7 +591,7 @@ mod tests {
 			.path()
 			.join("playwright")
 			.join(crate::workspace::STATE_VERSION_DIR)
-			.join("namespaces")
+			.join("profiles")
 			.join("default")
 			.join("sessions")
 			.join("session.json");

@@ -10,6 +10,7 @@ pub mod error;
 pub mod logging;
 pub mod output;
 pub mod project;
+pub mod protocol;
 pub mod readable;
 pub mod relay;
 pub mod runtime;

@@ -1,16 +1,14 @@
-//! Integration tests for click command navigation detection.
-//!
-//! These tests verify that the click command accurately reports whether
-//! navigation occurred after a click action.
+//! Integration tests for click navigation detection in protocol v2.
 
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Helper to get the pw binary path
+use serde_json::json;
+
 fn pw_binary() -> PathBuf {
 	let mut path = std::env::current_exe().unwrap();
-	path.pop(); // Remove test binary name
-	path.pop(); // Remove deps
+	path.pop();
+	path.pop();
 	path.push("pw");
 	path
 }
@@ -23,104 +21,67 @@ fn clear_context_store() {
 	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
-/// Helper to run pw command and capture output
-fn run_pw(args: &[&str]) -> (bool, String, String) {
-	clear_context_store();
+fn run_exec(op: &str, input: serde_json::Value) -> (bool, serde_json::Value, String) {
 	let workspace = workspace_root();
-	let workspace_str = workspace.to_string_lossy().to_string();
-	let mut full_args = vec!["--no-project", "--workspace", &workspace_str, "--namespace", "default"];
-	full_args.extend_from_slice(args);
-
-	let output = Command::new(pw_binary()).args(&full_args).output().expect("Failed to execute pw");
+	let _ = std::fs::create_dir_all(&workspace);
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", op, "--input"])
+		.arg(input.to_string())
+		.output()
+		.expect("failed to execute pw");
 
 	let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 	let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-	(output.status.success(), stdout, stderr)
+	let parsed = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| json!({ "raw": stdout }));
+	(output.status.success(), parsed, stderr)
 }
 
-/// Test: Click an element that triggers pushState URL change, verify `navigated: true`
-///
-/// This tests that clicking an element which modifies the URL via history.pushState
-/// properly detects that the URL changed. We use pushState because full navigation
-/// between data: URLs is blocked by browser security policies, and hash changes in
-/// data: URLs can interfere with the data: URL parsing.
 #[test]
 fn click_element_changes_url_reports_navigated() {
-	// Page with a button that changes the URL via history.pushState
-	// pushState allows URL modification without actual navigation
+	clear_context_store();
 	let html = "data:text/html,<html><body><button id='change-btn' onclick=\"history.pushState({}, '', location.href + '?changed=1')\">Change URL</button></body></html>";
 
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "click", html, "#change-btn", "--wait-ms", "100"]);
-
-	assert!(success, "Click command failed: {}", stderr);
-	assert!(stdout.contains("\"ok\": true"), "Expected success in JSON: {}", stdout);
-	// The key assertion: navigated should be true when URL changes via pushState
-	assert!(
-		stdout.contains("\"navigated\": true"),
-		"Expected navigated: true when URL changes via pushState. Output: {}",
-		stdout
-	);
-	// Verify that afterUrl contains the query parameter
-	assert!(stdout.contains("changed=1"), "Expected changed=1 in afterUrl: {}", stdout);
+	let (success, json, stderr) = run_exec("click", json!({ "url": html, "selector": "#change-btn", "waitMs": 100 }));
+	assert!(success, "click failed: {stderr}");
+	assert_eq!(json["ok"], true);
+	assert_eq!(json["data"]["navigated"], true);
+	let after = json["data"]["afterUrl"].as_str().unwrap_or_default();
+	assert!(after.contains("changed=1"), "expected changed=1 in afterUrl: {after}");
 }
 
-/// Test: Click a button that doesn't navigate, verify `navigated: false`
-///
-/// This tests that clicking an element that only modifies the page content
-/// (via JavaScript) without changing the URL properly reports no navigation.
 #[test]
 fn click_button_no_navigate_reports_false() {
-	// Page with a button that modifies content but doesn't navigate
+	clear_context_store();
 	let html = r#"data:text/html,<html><body><button id="action-btn" onclick="document.body.innerHTML += '<p>Clicked</p>'">Action</button></body></html>"#;
 
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "click", html, "#action-btn", "--wait-ms", "100"]);
-
-	assert!(success, "Click command failed: {}", stderr);
-	assert!(stdout.contains("\"ok\": true"), "Expected success in JSON: {}", stdout);
-	// The key assertion: navigated should be false for non-navigation clicks
-	assert!(
-		stdout.contains("\"navigated\": false"),
-		"Expected navigated: false when clicking a non-navigation button. Output: {}",
-		stdout
-	);
+	let (success, json, stderr) = run_exec("click", json!({ "url": html, "selector": "#action-btn", "waitMs": 100 }));
+	assert!(success, "click failed: {stderr}");
+	assert_eq!(json["ok"], true);
+	assert_eq!(json["data"]["navigated"], false);
 }
 
-/// Test: Verify that click command returns beforeUrl and afterUrl for comparison
-///
-/// This ensures the click command includes URL tracking data regardless of
-/// whether navigation occurred.
 #[test]
 fn click_includes_before_and_after_urls() {
+	clear_context_store();
 	let html = r#"data:text/html,<html><body><span id="target">Text</span></body></html>"#;
 
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "click", html, "#target"]);
+	let (success, json, stderr) = run_exec("click", json!({ "url": html, "selector": "#target" }));
+	assert!(success, "click failed: {stderr}");
 
-	assert!(success, "Click command failed: {}", stderr);
-
-	// Verify both URL fields are present
-	assert!(stdout.contains("\"beforeUrl\""), "Expected beforeUrl in output: {}", stdout);
-	assert!(stdout.contains("\"afterUrl\""), "Expected afterUrl in output: {}", stdout);
-	assert!(stdout.contains("\"navigated\""), "Expected navigated field in output: {}", stdout);
+	assert!(json["data"]["beforeUrl"].is_string());
+	assert!(json["data"]["afterUrl"].is_string());
+	assert!(json["data"]["navigated"].is_boolean());
 }
 
-/// Test: Click command uses JavaScript-based URL detection (not page.url())
-///
-/// This tests that the click command uses window.location.href for accurate
-/// URL detection. The URL should contain the data: scheme.
 #[test]
 fn click_uses_accurate_url_detection() {
+	clear_context_store();
 	let html = r#"data:text/html,<html><body><div id="el">Element</div></body></html>"#;
 
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "click", html, "#el"]);
+	let (success, json, stderr) = run_exec("click", json!({ "url": html, "selector": "#el" }));
+	assert!(success, "click failed: {stderr}");
 
-	assert!(success, "Click command failed: {}", stderr);
-
-	// The URLs should accurately reflect the data: URL
-	// This confirms JavaScript evaluation is used (page.url() might not return this)
-	assert!(
-		stdout.contains("data:text/html"),
-		"Expected data: URL in output, confirming accurate URL detection: {}",
-		stdout
-	);
+	let before = json["data"]["beforeUrl"].as_str().unwrap_or_default();
+	assert!(before.contains("data:text/html"), "expected data URL in beforeUrl: {before}");
 }

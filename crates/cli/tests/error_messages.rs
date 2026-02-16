@@ -1,24 +1,21 @@
-//! Integration tests for helpful error messages.
-//!
-//! These tests verify that error messages provide helpful hints when
-//! common mistakes are made, such as using a selector where a URL is expected.
+//! Integration tests for helpful error messages in protocol v2.
 
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Mutex to serialize tests that share a test workspace.
+use serde_json::json;
+
 static CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock_context() -> std::sync::MutexGuard<'static, ()> {
 	CONTEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Helper to get the pw binary path
 fn pw_binary() -> PathBuf {
 	let mut path = std::env::current_exe().unwrap();
-	path.pop(); // Remove test binary name
-	path.pop(); // Remove deps
+	path.pop();
+	path.pop();
 	path.push("pw");
 	path
 }
@@ -31,97 +28,66 @@ fn clear_context_store() {
 	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
-/// Helper to run pw command with --no-project and explicit workspace.
-fn run_pw(args: &[&str]) -> (bool, String, String) {
+fn run_exec(op: &str, input: serde_json::Value) -> (serde_json::Value, String) {
 	let workspace = workspace_root();
-	let workspace_str = workspace.to_string_lossy().to_string();
-	let mut full_args = vec!["--no-project", "--workspace", &workspace_str, "--namespace", "default"];
-	full_args.extend_from_slice(args);
-
-	let output = Command::new(pw_binary()).args(&full_args).output().expect("Failed to execute pw");
+	let _ = std::fs::create_dir_all(&workspace);
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", op, "--input"])
+		.arg(input.to_string())
+		.output()
+		.expect("failed to execute pw");
 
 	let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 	let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-	(output.status.success(), stdout, stderr)
+	let parsed = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| json!({ "raw": stdout }));
+	(parsed, stderr)
 }
 
-/// Test: Error message suggests `-s` when selector-like URL is used
-///
-/// When a user provides a selector-like string as a URL (e.g., via --url flag),
-/// the error should hint about using `-s` for CSS selectors.
 #[test]
-fn error_suggests_selector_flag_for_selector_like_url() {
+fn error_for_selector_like_url_mentions_url_problem() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// Using --url with a selector-like value should fail and suggest -s
-	// Note: The smart detection in args.rs catches positional selector args,
-	// but explicit --url bypasses that
-	let (success, stdout, _stderr) = run_pw(&["-f", "json", "page", "text", "--url", ".class-name"]);
-
-	// Command should fail because ".class-name" is not a valid URL
-	assert!(!success, "Expected failure with selector-like URL");
-
-	// Check that the error output contains a helpful error
-	// The error should indicate the issue with the URL
-	let output = stdout.to_lowercase();
+	let (json, _stderr) = run_exec("page.text", json!({ "urlFlag": ".class-name" }));
+	assert_eq!(json["ok"], false, "expected command-level failure with selector-like URL");
+	let msg = json["error"]["message"].as_str().unwrap_or_default().to_lowercase();
 	assert!(
-		output.contains("url") || output.contains("base") || output.contains("invalid"),
-		"Expected error to mention URL issue, got: {}",
-		stdout
+		msg.contains("url") || msg.contains("base") || msg.contains("invalid"),
+		"expected URL-related error message, got: {msg}"
 	);
 }
 
-/// Test: Error message mentions context when no URL provided
-///
-/// When running a command without a URL and without prior context setup,
-/// the error should explain how to set up context.
 #[test]
-fn error_mentions_context_when_no_url() {
+fn error_mentions_context_when_no_url_available() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// Run text command without any URL or prior context
-	let (success, stdout, _stderr) = run_pw(&["-f", "json", "page", "text", "-s", "body"]);
-
-	// Should fail because no URL available
-	assert!(!success, "Expected failure without URL");
-
-	// Check that the error mentions context
-	let output = stdout.to_lowercase();
+	let (json, _stderr) = run_exec("page.text", json!({ "selector": "body" }));
+	assert_eq!(json["ok"], false, "expected command-level failure without URL/context");
+	let msg = json["error"]["message"].as_str().unwrap_or_default().to_lowercase();
 	assert!(
-		output.contains("navigate") || output.contains("context") || output.contains("url"),
-		"Expected error to mention navigate/context/URL, got: {}",
-		stdout
+		msg.contains("navigate") || msg.contains("context") || msg.contains("url"),
+		"expected context-related message, got: {msg}"
 	);
 }
 
-/// Test: Error message is helpful when --no-context requires URL
-///
-/// When using --no-context without providing a URL, the error should
-/// explain what's needed.
 #[test]
-fn error_helpful_for_no_context_without_url() {
+fn error_for_unknown_operation_is_clear() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// First set up context
-	let url = "data:text/html,<h1>Test</h1>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let workspace = workspace_root();
+	let _ = std::fs::create_dir_all(&workspace);
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", "nav", "--input", "{}"])
+		.output()
+		.expect("failed to execute pw");
 
-	// Now try --no-context without URL
-	let (success, stdout, _stderr) = run_pw(&["-f", "json", "--no-context", "page", "text", "-s", "body"]);
-
-	// Should fail
-	assert!(!success, "Expected failure with --no-context and no URL");
-
-	// Check that the error is helpful
-	let output = stdout.to_lowercase();
-	assert!(
-		output.contains("url") || output.contains("context") || output.contains("navigate"),
-		"Expected error about URL/context, got: {}",
-		stdout
-	);
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	let json: serde_json::Value = serde_json::from_str(&stdout).expect("expected JSON output");
+	assert_eq!(json["ok"], false, "expected command-level failure for alias operation");
+	let msg = json["error"]["message"].as_str().unwrap_or_default().to_lowercase();
+	assert!(msg.contains("unknown operation"), "expected unknown operation message, got: {msg}");
 }

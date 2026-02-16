@@ -234,15 +234,15 @@ pub const PLAYWRIGHT_GITIGNORE: &str = r#"# Test outputs
 /.pw-cli/
 
 # CLI runtime state (namespace/session/cache/profile)
-/.pw-cli-v3/namespaces/*/cache.json
-/.pw-cli-v3/namespaces/*/config.json
-/.pw-cli-v3/namespaces/*/sessions/
-/.pw-cli-v3/namespaces/*/auth/
-/.pw-cli-v3/namespaces/*/connect-user-data/
-/.pw-cli-v3/namespaces/*/connect-user-data-*/
+/.pw-cli-v4/profiles/*/cache.json
+/.pw-cli-v4/profiles/*/config.json
+/.pw-cli-v4/profiles/*/sessions/
+/.pw-cli-v4/profiles/*/auth/
+/.pw-cli-v4/profiles/*/connect-user-data/
+/.pw-cli-v4/profiles/*/connect-user-data-*/
 
 # Future v3 runtime internals (daemon metadata, lockfiles, logs, etc.)
-/.pw-cli-v3/
+/.pw-cli-v4/
 "#;
 
 /// Common shell utilities script

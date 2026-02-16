@@ -1,34 +1,28 @@
-# pw connect
+# connect
 
-## Connect to Your Real Browser
+Browser connection is handled by canonical op `connect`.
 
-Use `pw connect --launch` to launch your real browser with remote debugging. This bypasses bot detection and uses real fingerprint, cookies, and extensions:
-
-```bash
-# Launch your browser with debugging enabled (auto-discovers Chrome/Brave/Helium)
-pw connect --launch
-
-# All commands now use your real browser
-pw navigate https://chatgpt.com
-pw page text -s "h1"
-pw screenshot -o page.png
-```
-
-If you already have a browser running with debugging enabled:
+## launch managed browser
 
 ```bash
-# Auto-discover and connect to existing browser
-pw connect --discover
-
-# Or manually specify an endpoint
-pw connect "ws://127.0.0.1:9222/devtools/browser/..."
+pw exec connect --input '{"launch":true}'
 ```
 
-## Options
+## discover existing debug browser
 
-- `--launch` - Launch Chrome/Brave/Helium with remote debugging
-- `--discover` - Find and connect to existing browser with debugging
-- `--kill` - Kill Chrome process on the debugging port
-- `--port <PORT>` - Use specific debugging port (default: 9222)
-- `--profile <NAME>` - Use specific Chrome profile directory
-- `--clear` - Disconnect from browser
+```bash
+pw exec connect --input '{"discover":true}'
+```
+
+## set explicit endpoint
+
+```bash
+pw exec connect --input '{"endpoint":"ws://127.0.0.1:9222/devtools/browser/..."}'
+```
+
+## clear/kill
+
+```bash
+pw exec connect --input '{"clear":true}'
+pw exec connect --input '{"kill":true}'
+```

@@ -1,4 +1,4 @@
-//! Workspace and namespace identity utilities.
+//! Workspace and profile identity utilities.
 //!
 //! Defines deterministic identifiers used for strict session isolation.
 
@@ -12,39 +12,39 @@ use crate::error::{PwError, Result};
 use crate::project::Project;
 use crate::types::BrowserKind;
 
-pub const DEFAULT_NAMESPACE: &str = "default";
-pub const STATE_VERSION_DIR: &str = ".pw-cli-v3";
+pub const DEFAULT_PROFILE: &str = "default";
+pub const STATE_VERSION_DIR: &str = ".pw-cli-v4";
 pub const STATE_GITIGNORE_CONTENT: &str = "*\n";
 pub const CDP_PORT_RANGE_START: u16 = 9222;
 pub const CDP_PORT_RANGE_SIZE: u16 = 1000;
 
-/// Canonical identity for a workspace namespace.
+/// Canonical identity for a workspace profile.
 #[derive(Debug, Clone)]
 pub struct WorkspaceScope {
 	root: PathBuf,
 	workspace_id: String,
-	namespace: String,
+	profile: String,
 }
 
 impl WorkspaceScope {
-	/// Resolve workspace root + namespace from CLI values.
+	/// Resolve workspace root + profile from CLI values.
 	///
 	/// * `workspace`: explicit workspace path, or `"auto"` for detection.
-	/// * `namespace`: optional namespace; defaults to [`DEFAULT_NAMESPACE`].
+	/// * `profile`: optional profile; defaults to [`DEFAULT_PROFILE`].
 	/// * `no_project`: when true, skip playwright project-root detection.
-	pub fn resolve(workspace: Option<&str>, namespace: Option<&str>, no_project: bool) -> Result<Self> {
-		let namespace = normalize_namespace(namespace.unwrap_or(DEFAULT_NAMESPACE));
+	pub fn resolve(workspace: Option<&str>, profile: Option<&str>, no_project: bool) -> Result<Self> {
+		let profile = normalize_profile(profile.unwrap_or(DEFAULT_PROFILE));
 		let root = resolve_workspace_root(workspace, no_project)?;
-		Ok(Self::from_parts(root, namespace))
+		Ok(Self::from_parts(root, profile))
 	}
 
-	pub fn from_parts(root: PathBuf, namespace: String) -> Self {
+	pub fn from_parts(root: PathBuf, profile: String) -> Self {
 		let canonical_root = canonicalize_or_self(root);
 		let workspace_id = hash_hex(canonical_root.to_string_lossy().as_ref());
 		Self {
 			root: canonical_root,
 			workspace_id,
-			namespace,
+			profile,
 		}
 	}
 
@@ -56,33 +56,48 @@ impl WorkspaceScope {
 		&self.workspace_id
 	}
 
-	pub fn namespace(&self) -> &str {
-		&self.namespace
+	pub fn profile(&self) -> &str {
+		&self.profile
 	}
 
+	pub fn profile_id(&self) -> String {
+		format!("{}:{}", self.workspace_id, self.profile)
+	}
+
+	/// Backward compatibility alias.
+	pub fn namespace(&self) -> &str {
+		self.profile()
+	}
+
+	/// Backward compatibility alias.
 	pub fn namespace_id(&self) -> String {
-		format!("{}:{}", self.workspace_id, self.namespace)
+		self.profile_id()
 	}
 
 	/// Deterministic browser-session key for daemon/browser reuse.
 	pub fn session_key(&self, browser: BrowserKind, headless: bool) -> String {
-		format!("{}:{}:{}", self.namespace_id(), browser, if headless { "headless" } else { "headful" })
+		format!("{}:{}:{}", self.profile_id(), browser, if headless { "headless" } else { "headful" })
 	}
 
-	/// Root directory for all v3 state.
+	/// Root directory for all v4 state.
 	pub fn state_root(&self) -> PathBuf {
 		self.root.join(dirs::PLAYWRIGHT).join(STATE_VERSION_DIR)
 	}
 
-	/// Namespace-specific state directory.
+	/// Profile-specific state directory.
+	pub fn profile_dir(&self) -> PathBuf {
+		self.state_root().join("profiles").join(&self.profile)
+	}
+
+	/// Backward compatibility alias.
 	pub fn namespace_dir(&self) -> PathBuf {
-		self.state_root().join("namespaces").join(&self.namespace)
+		self.profile_dir()
 	}
 }
 
-pub fn normalize_namespace(namespace: &str) -> String {
-	let mut out = String::with_capacity(namespace.len());
-	for c in namespace.chars() {
+pub fn normalize_profile(profile: &str) -> String {
+	let mut out = String::with_capacity(profile.len());
+	for c in profile.chars() {
 		if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
 			out.push(c);
 		} else {
@@ -91,15 +106,20 @@ pub fn normalize_namespace(namespace: &str) -> String {
 	}
 	let trimmed = out.trim_matches('-');
 	if trimmed.is_empty() {
-		DEFAULT_NAMESPACE.to_string()
+		DEFAULT_PROFILE.to_string()
 	} else {
 		trimmed.to_string()
 	}
 }
 
+/// Backward compatibility alias.
+pub fn normalize_namespace(namespace: &str) -> String {
+	normalize_profile(namespace)
+}
+
 /// Ensures the runtime state root has a local .gitignore that hides generated files.
 ///
-/// The file uses a single `*` pattern so all transient files under `.pw-cli-v3/`
+/// The file uses a single `*` pattern so all transient files under `.pw-cli-v4/`
 /// stay out of git status, even when `pw init` was never run.
 pub fn ensure_state_root_gitignore(state_root: &Path) -> Result<()> {
 	std::fs::create_dir_all(state_root)?;
@@ -110,9 +130,9 @@ pub fn ensure_state_root_gitignore(state_root: &Path) -> Result<()> {
 	Ok(())
 }
 
-/// Best-effort helper: find `.pw-cli-v3` in the path ancestry and ensure its `.gitignore`.
+/// Best-effort helper: find `.pw-cli-v4` in the path ancestry and ensure its `.gitignore`.
 ///
-/// Returns `Ok(())` even when the path is not under `.pw-cli-v3`.
+/// Returns `Ok(())` even when the path is not under `.pw-cli-v4`.
 pub fn ensure_state_gitignore_for(path: &Path) -> Result<()> {
 	if let Some(state_root) = find_state_root(path) {
 		ensure_state_root_gitignore(&state_root)?;
@@ -145,8 +165,6 @@ fn resolve_workspace_root(workspace: Option<&str>, no_project: bool) -> Result<P
 		return Ok(canonicalize_or_self(root));
 	}
 
-	// Default to current directory for strict per-folder session isolation.
-	// Use `--workspace auto` to opt into project-root detection.
 	std::env::current_dir().map(canonicalize_or_self).map_err(PwError::Io)
 }
 
@@ -170,13 +188,13 @@ fn hash_hex(input: &str) -> String {
 	format!("{:016x}", hasher.finish())
 }
 
-/// Compute a deterministic CDP port for a namespace identity.
+/// Compute a deterministic CDP port for a profile identity.
 ///
 /// Uses a bounded range starting at [`CDP_PORT_RANGE_START`], sized by
 /// [`CDP_PORT_RANGE_SIZE`].
-pub fn compute_cdp_port(namespace_id: &str) -> u16 {
+pub fn compute_cdp_port(profile_id: &str) -> u16 {
 	let mut hasher = DefaultHasher::new();
-	namespace_id.hash(&mut hasher);
+	profile_id.hash(&mut hasher);
 	let hash = hasher.finish();
 	CDP_PORT_RANGE_START + (hash % u64::from(CDP_PORT_RANGE_SIZE)) as u16
 }
@@ -188,15 +206,15 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn normalize_namespace_sanitizes_invalid_chars() {
-		let ns = normalize_namespace("prod/team A");
-		assert_eq!(ns, "prod-team-A");
+	fn normalize_profile_sanitizes_invalid_chars() {
+		let profile = normalize_profile("prod/team A");
+		assert_eq!(profile, "prod-team-A");
 	}
 
 	#[test]
-	fn normalize_namespace_defaults_when_empty() {
-		let ns = normalize_namespace("////");
-		assert_eq!(ns, DEFAULT_NAMESPACE);
+	fn normalize_profile_defaults_when_empty() {
+		let profile = normalize_profile("////");
+		assert_eq!(profile, DEFAULT_PROFILE);
 	}
 
 	#[test]
@@ -270,7 +288,7 @@ mod tests {
 			.path()
 			.join("playwright")
 			.join(STATE_VERSION_DIR)
-			.join("namespaces")
+			.join("profiles")
 			.join("default")
 			.join("cache.json");
 		ensure_state_gitignore_for(&target).unwrap();
@@ -280,9 +298,9 @@ mod tests {
 
 	#[test]
 	fn compute_cdp_port_is_stable_and_bounded() {
-		let namespace_id = "workspace:agent-a";
-		let port = compute_cdp_port(namespace_id);
-		assert_eq!(port, compute_cdp_port(namespace_id));
+		let profile_id = "workspace:agent-a";
+		let port = compute_cdp_port(profile_id);
+		assert_eq!(port, compute_cdp_port(profile_id));
 		assert!((CDP_PORT_RANGE_START..CDP_PORT_RANGE_START + CDP_PORT_RANGE_SIZE).contains(&port));
 	}
 }

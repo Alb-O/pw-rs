@@ -1,37 +1,48 @@
 ---
 name: pw
-description: core usage of pw (playwright cli). use when user requests browser tasks.
+description: core usage of pw (playwright cli) on protocol-first surface. use when user requests browser tasks.
 ---
 
 ## commands
 
-`pw navigate` go to url.
-`pw page text` extract text. `-s` selector.
-`pw page html` extract html. `-s` selector.
-`pw click` click element. `-s` selector.
-`pw fill` fill input. `-s` selector, `<val>`.
-`pw screenshot` capture. `-o` path.
-`pw page eval` run js. `<js>`.
-`pw page read` extract readable content.
+Use canonical ops via `pw exec`.
+
+* `pw exec navigate --input '{"url":"..."}'`
+* `pw exec page.text --input '{"selector":"..."}'`
+* `pw exec page.html --input '{"selector":"..."}'`
+* `pw exec click --input '{"selector":"..."}'`
+* `pw exec fill --input '{"selector":"...","text":"..."}'`
+* `pw exec screenshot --input '{"output":"page.png"}'`
+* `pw exec page.eval --input '{"expression":"..."}'`
+* `pw exec page.read --input '{}'`
+
+For NDJSON loops, use `pw batch`.
 
 ## setup
 
-start daemon for ~5ms execution (vs ~500ms):
+start daemon for fast warm execution:
 ```bash
 scripts/start-daemon.sh
 ```
 
-`pw connect` browser management.
-- `--launch`: start headful.
-- `--kill`: terminate session.
+browser session management is via canonical `connect` op:
 
-auth in `./playwright/auth/*.json` is auto-injected.
+* launch: `pw exec connect --input '{"launch":true}'`
+* discover: `pw exec connect --input '{"discover":true}'`
+* clear: `pw exec connect --input '{"clear":true}'`
+
+auth in `./playwright/auth/*.json` is auto-injected when configured.
 
 ## context
 
-last url/selector are cached between commands. disable with `--no-context`.
+runtime/profile state is profile-scoped under `.pw-cli-v4`.
+use `--profile <name>` for isolation.
+
+## wrappers
+
+`scripts/pw.nu` exposes stable helpers (`pw nav`, `pw click`, `pw eval`, etc.) but internally calls only `pw exec`.
 
 ## references
 
-- [cli](references/cli.md) | [auth](references/auth.md) | [connect](references/connect.md) | [daemon](references/daemon.md)
-- [page](references/page.md) | [protect](references/protect.md) | [run](references/run.md) | [test](references/test.md)
+* [cli](references/cli.md) | [auth](references/auth.md) | [connect](references/connect.md) | [daemon](references/daemon.md)
+* [page](references/page.md) | [protect](references/protect.md) | [run](references/run.md) | [test](references/test.md)

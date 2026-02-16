@@ -1,4 +1,4 @@
-//! File storage for namespace-scoped CLI state.
+//! File storage for profile-scoped CLI state.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,16 +9,16 @@ use super::types::{CliCache, CliConfig};
 use crate::error::Result;
 use crate::workspace::{STATE_VERSION_DIR, ensure_state_gitignore_for};
 
-/// File paths for namespace-scoped CLI state.
+/// File paths for profile-scoped CLI state.
 ///
 /// Layout:
-/// `<workspace>/playwright/.pw-cli-v3/namespaces/<namespace>/...`
+/// `<workspace>/playwright/.pw-cli-v4/profiles/<profile>/...`
 #[derive(Debug, Clone)]
 pub struct StatePaths {
 	pub workspace_root: PathBuf,
-	pub namespace: String,
+	pub profile: String,
 	pub state_root: PathBuf,
-	pub namespace_dir: PathBuf,
+	pub profile_dir: PathBuf,
 	pub config: PathBuf,
 	pub cache: PathBuf,
 	pub sessions_dir: PathBuf,
@@ -27,20 +27,20 @@ pub struct StatePaths {
 }
 
 impl StatePaths {
-	pub fn new(workspace_root: &Path, namespace: &str) -> Self {
+	pub fn new(workspace_root: &Path, profile: &str) -> Self {
 		let state_root = workspace_root.join(dirs::PLAYWRIGHT).join(STATE_VERSION_DIR);
-		let namespace_dir = state_root.join("namespaces").join(namespace);
-		let sessions_dir = namespace_dir.join("sessions");
+		let profile_dir = state_root.join("profiles").join(profile);
+		let sessions_dir = profile_dir.join("sessions");
 		Self {
 			workspace_root: workspace_root.to_path_buf(),
-			namespace: namespace.to_string(),
+			profile: profile.to_string(),
 			state_root,
-			namespace_dir: namespace_dir.clone(),
-			config: namespace_dir.join("config.json"),
-			cache: namespace_dir.join("cache.json"),
+			profile_dir: profile_dir.clone(),
+			config: profile_dir.join("config.json"),
+			cache: profile_dir.join("cache.json"),
 			sessions_dir: sessions_dir.clone(),
 			session_descriptor: sessions_dir.join("session.json"),
-			auth_dir: namespace_dir.join("auth"),
+			auth_dir: profile_dir.join("auth"),
 		}
 	}
 }
@@ -54,8 +54,8 @@ pub struct LoadedState {
 }
 
 impl LoadedState {
-	pub fn load(workspace_root: &Path, namespace: &str) -> Result<Self> {
-		let paths = StatePaths::new(workspace_root, namespace);
+	pub fn load(workspace_root: &Path, profile: &str) -> Result<Self> {
+		let paths = StatePaths::new(workspace_root, profile);
 		let config = load_json::<CliConfig>(&paths.config).unwrap_or_default();
 		let cache = load_json::<CliCache>(&paths.cache).unwrap_or_default();
 
@@ -93,12 +93,12 @@ mod tests {
 		let tmp = TempDir::new().unwrap();
 		let paths = StatePaths::new(tmp.path(), "default");
 
-		assert!(paths.config.ends_with("playwright/.pw-cli-v3/namespaces/default/config.json"));
-		assert!(paths.cache.ends_with("playwright/.pw-cli-v3/namespaces/default/cache.json"));
+		assert!(paths.config.ends_with("playwright/.pw-cli-v4/profiles/default/config.json"));
+		assert!(paths.cache.ends_with("playwright/.pw-cli-v4/profiles/default/cache.json"));
 		assert!(
 			paths
 				.session_descriptor
-				.ends_with("playwright/.pw-cli-v3/namespaces/default/sessions/session.json")
+				.ends_with("playwright/.pw-cli-v4/profiles/default/sessions/session.json")
 		);
 	}
 
@@ -136,7 +136,7 @@ mod tests {
 			.path()
 			.join("playwright")
 			.join(STATE_VERSION_DIR)
-			.join("namespaces")
+			.join("profiles")
 			.join("default")
 			.join("cache.json");
 

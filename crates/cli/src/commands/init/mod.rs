@@ -435,11 +435,11 @@ mod tests {
 		let result = scaffold_project(options).unwrap();
 		let gitignore = fs::read_to_string(result.project_root.join(dirs::PLAYWRIGHT).join(".gitignore")).unwrap();
 
-		assert!(gitignore.contains("/.pw-cli-v3/namespaces/*/cache.json"));
-		assert!(gitignore.contains("/.pw-cli-v3/namespaces/*/config.json"));
-		assert!(gitignore.contains("/.pw-cli-v3/namespaces/*/sessions/"));
-		assert!(gitignore.contains("/.pw-cli-v3/namespaces/*/auth/"));
-		assert!(gitignore.contains("/.pw-cli-v3/namespaces/*/connect-user-data/"));
+		assert!(gitignore.contains("/.pw-cli-v4/profiles/*/cache.json"));
+		assert!(gitignore.contains("/.pw-cli-v4/profiles/*/config.json"));
+		assert!(gitignore.contains("/.pw-cli-v4/profiles/*/sessions/"));
+		assert!(gitignore.contains("/.pw-cli-v4/profiles/*/auth/"));
+		assert!(gitignore.contains("/.pw-cli-v4/profiles/*/connect-user-data/"));
 	}
 
 	#[test]

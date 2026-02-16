@@ -1,378 +1,124 @@
-//! Consolidated runtime setup for CLI commands.
-//!
-//! This module provides the [`RuntimeContext`] struct which bundles the context
-//! needed to execute commands, eliminating duplicate setup code between batch mode
-//! and single-command dispatch.
+//! Runtime setup for protocol-first CLI execution.
 
 use std::path::PathBuf;
 
-use crate::cli::Cli;
-use crate::context::{BlockConfig, CommandContext, CommandContextConfig, DownloadConfig, HarConfig};
+use serde::{Deserialize, Serialize};
+
+use crate::context::{BlockConfig, CommandContext, CommandContextConfig, DownloadConfig};
 use crate::context_store::ContextState;
 use crate::error::Result;
 use crate::output::CdpEndpointSource;
 use crate::types::BrowserKind;
 use crate::workspace::WorkspaceScope;
 
-/// Bundled runtime context for executing CLI commands.
-///
-/// Contains the state needed to execute any command:
-/// * [`CommandContext`]: Browser configuration and CDP settings
-/// * [`ContextState`]: URL/selector caching and persistence
-///
-/// The [`SessionBroker`](crate::session_broker::SessionBroker) is created separately
-/// since it borrows from `CommandContext`.
-pub struct RuntimeContext {
-	/// Command execution context (browser config, CDP endpoint, etc.)
-	pub ctx: CommandContext,
-	/// Mutable context state (URL caching, persistence)
-	pub ctx_state: ContextState,
+/// Request-scoped runtime overrides.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeOverrides {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub browser: Option<BrowserKind>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub base_url: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub cdp_endpoint: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub auth_file: Option<PathBuf>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub timeout_ms: Option<u64>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub use_daemon: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub launch_server: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub block_patterns: Option<Vec<String>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub downloads_dir: Option<PathBuf>,
 }
 
-/// Configuration extracted from CLI args for building a runtime.
+/// Configuration for building a runtime.
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
-	pub auth: Option<PathBuf>,
+	pub profile: String,
+	pub overrides: RuntimeOverrides,
+}
+
+/// Effective runtime details used for response metadata.
+#[derive(Debug, Clone)]
+pub struct RuntimeInfo {
+	pub profile: String,
 	pub browser: BrowserKind,
 	pub cdp_endpoint: Option<String>,
-	pub launch_server: bool,
-	pub no_daemon: bool,
-	pub no_project: bool,
-	pub workspace: Option<String>,
-	pub namespace: String,
-	pub no_context: bool,
-	pub no_save_context: bool,
-	pub refresh_context: bool,
-	pub base_url: Option<String>,
-	pub artifacts_dir: Option<PathBuf>,
-	// Request blocking configuration
-	pub block_patterns: Vec<String>,
-	pub block_file: Option<PathBuf>,
-	// Download management configuration
-	pub downloads_dir: Option<PathBuf>,
-	// Timeout configuration
 	pub timeout_ms: Option<u64>,
 }
 
-impl From<&Cli> for RuntimeConfig {
-	fn from(cli: &Cli) -> Self {
-		Self {
-			auth: cli.auth.clone(),
-			browser: cli.browser,
-			cdp_endpoint: cli.cdp_endpoint.clone(),
-			launch_server: cli.launch_server,
-			no_daemon: cli.no_daemon,
-			no_project: cli.no_project,
-			workspace: cli.workspace.clone(),
-			namespace: cli.namespace.clone(),
-			no_context: cli.no_context,
-			no_save_context: cli.no_save_context,
-			refresh_context: cli.refresh_context,
-			base_url: cli.base_url.clone(),
-			artifacts_dir: cli.artifacts_dir.clone(),
-			block_patterns: cli.block.clone(),
-			block_file: cli.block_file.clone(),
-			downloads_dir: cli.downloads_dir.clone(),
-			timeout_ms: cli.timeout,
-		}
-	}
+/// Runtime context bundle used for request execution.
+pub struct RuntimeContext {
+	pub ctx: CommandContext,
+	pub ctx_state: ContextState,
+	pub info: RuntimeInfo,
 }
 
-/// Builds the runtime context from CLI configuration.
-///
-/// This is the single source of truth for runtime setup, used by both
-/// batch mode (`pw run`) and single-command dispatch.
-///
-/// # Steps
-///
-/// 1. Resolve workspace + namespace identity
-/// 2. Create [`ContextState`] for URL/selector caching
-/// 3. Resolve CDP endpoint (CLI flag or stored context)
-/// 4. Create [`CommandContext`] with browser configuration
-///
-/// The caller should then create a [`SessionBroker`](crate::session_broker::SessionBroker)
-/// using the returned context.
-///
-/// # Errors
-///
-/// Returns an error if context state initialization fails.
-///
-/// # Example
-///
-/// ```ignore
-/// let config = RuntimeConfig::from(&cli);
-/// let RuntimeContext { ctx, mut ctx_state } = build_runtime(&config)?;
-/// let mut broker = SessionBroker::new(
-///     &ctx,
-///     ctx_state.session_descriptor_path(),
-///     Some(ctx_state.namespace_id()),
-///     ctx_state.refresh_requested(),
-/// );
-/// ```
+/// Builds a runtime context from profile state and request overrides.
 pub fn build_runtime(config: &RuntimeConfig) -> Result<RuntimeContext> {
-	// Step 1: Resolve workspace + namespace identity
-	let scope = WorkspaceScope::resolve(config.workspace.as_deref(), Some(config.namespace.as_str()), config.no_project)?;
-
-	// Step 2: Create context state
-	let ctx_state = ContextState::new(
+	let scope = WorkspaceScope::resolve(None, Some(config.profile.as_str()), false)?;
+	let mut ctx_state = ContextState::new(
 		scope.root().to_path_buf(),
 		scope.workspace_id().to_string(),
-		scope.namespace().to_string(),
-		config.base_url.clone(),
-		config.no_context,
-		config.no_save_context,
-		config.refresh_context,
+		scope.profile().to_string(),
+		config.overrides.base_url.clone(),
+		false,
+		false,
+		false,
 	)?;
 
-	// Step 3: Resolve CDP endpoint (CLI flag takes precedence over stored context)
-	let (resolved_cdp, cdp_endpoint_source) = if let Some(ref endpoint) = config.cdp_endpoint {
-		(Some(endpoint.clone()), CdpEndpointSource::CliFlag)
-	} else if let Some(endpoint) = ctx_state.cdp_endpoint() {
-		(Some(endpoint.to_string()), CdpEndpointSource::Context)
+	let defaults = &ctx_state.state().config.defaults;
+	let network = &ctx_state.state().config.network;
+	let downloads = &ctx_state.state().config.downloads;
+
+	let browser = config.overrides.browser.or(defaults.browser).unwrap_or(BrowserKind::Chromium);
+	let timeout_ms = config.overrides.timeout_ms.or(defaults.timeout_ms);
+	let resolved_cdp = config.overrides.cdp_endpoint.clone().or_else(|| ctx_state.cdp_endpoint().map(str::to_string));
+	let cdp_endpoint_source = if config.overrides.cdp_endpoint.is_some() {
+		CdpEndpointSource::CliFlag
+	} else if resolved_cdp.is_some() {
+		CdpEndpointSource::Context
 	} else {
-		(None, CdpEndpointSource::None)
+		CdpEndpointSource::None
 	};
 
-	// Step 4: Build HAR configuration from persisted context
-	let har_config: HarConfig = ctx_state.effective_har_config();
+	let use_daemon = config.overrides.use_daemon.or(defaults.use_daemon).unwrap_or(true);
+	let launch_server = config.overrides.launch_server.or(defaults.launch_server).unwrap_or(false);
+	let auth_file = config.overrides.auth_file.clone().or_else(|| defaults.auth_file.clone());
+	let block_patterns = config.overrides.block_patterns.clone().unwrap_or_else(|| network.block_patterns.clone());
+	let downloads_dir = config.overrides.downloads_dir.clone().or_else(|| downloads.dir.clone());
 
-	// Step 5: Build block configuration (CLI patterns + optional file)
-	let mut block_patterns = config.block_patterns.clone();
-	if let Some(ref path) = config.block_file {
-		match BlockConfig::load_from_file(path) {
-			Ok(patterns) => block_patterns.extend(patterns),
-			Err(e) => tracing::warn!(target = "pw", %e, "failed to load block file"),
-		}
-	}
-	let block_config = BlockConfig { patterns: block_patterns };
-
-	// Step 6: Build download configuration
-	let download_config = DownloadConfig {
-		dir: config.downloads_dir.clone(),
-	};
-
-	// Step 7: Create command context
 	let ctx = CommandContext::with_config(CommandContextConfig {
-		browser: config.browser,
-		no_project: config.no_project,
-		auth_file: config.auth.clone(),
-		cdp_endpoint: resolved_cdp,
+		browser,
+		no_project: false,
+		auth_file,
+		cdp_endpoint: resolved_cdp.clone(),
 		cdp_endpoint_source,
-		launch_server: config.launch_server,
-		no_daemon: config.no_daemon,
-		har_config,
-		block_config,
-		download_config,
-		timeout_ms: config.timeout_ms,
+		launch_server,
+		no_daemon: !use_daemon,
+		har_config: ctx_state.effective_har_config(),
+		block_config: BlockConfig { patterns: block_patterns },
+		download_config: DownloadConfig { dir: downloads_dir },
+		timeout_ms,
 		workspace_root: Some(scope.root().to_path_buf()),
 		workspace_id: Some(scope.workspace_id().to_string()),
-		namespace: Some(scope.namespace().to_string()),
+		namespace: Some(scope.profile().to_string()),
 	});
 
-	Ok(RuntimeContext { ctx, ctx_state })
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn runtime_config_from_cli_defaults() {
-		// Test that RuntimeConfig captures CLI defaults correctly
-		let config = RuntimeConfig {
-			auth: None,
-			browser: BrowserKind::Chromium,
-			cdp_endpoint: None,
-			launch_server: false,
-			no_daemon: false,
-			no_project: true, // Skip project detection in tests
-			workspace: None,
-			namespace: "default".to_string(),
-			no_context: false,
-			no_save_context: true, // Don't persist in tests
-			refresh_context: false,
-			base_url: None,
-			artifacts_dir: None,
-			block_patterns: Vec::new(),
-			block_file: None,
-			downloads_dir: None,
-			timeout_ms: None,
-		};
-
-		assert!(config.no_project);
-		assert!(config.no_save_context);
-		assert!(!config.no_daemon);
+	if let Some(ref endpoint) = resolved_cdp {
+		ctx_state.set_cdp_endpoint(Some(endpoint.clone()));
 	}
 
-	#[test]
-	fn build_runtime_no_project() {
-		let config = RuntimeConfig {
-			auth: None,
-			browser: BrowserKind::Chromium,
-			cdp_endpoint: None,
-			launch_server: false,
-			no_daemon: false,
-			no_project: true,
-			workspace: None,
-			namespace: "default".to_string(),
-			no_context: true,
-			no_save_context: true,
-			refresh_context: false,
-			base_url: None,
-			artifacts_dir: None,
-			block_patterns: Vec::new(),
-			block_file: None,
-			downloads_dir: None,
-			timeout_ms: None,
-		};
+	let info = RuntimeInfo {
+		profile: scope.profile().to_string(),
+		browser,
+		cdp_endpoint: resolved_cdp,
+		timeout_ms,
+	};
 
-		let result = build_runtime(&config);
-		assert!(result.is_ok());
-		let rt = result.unwrap();
-		assert_eq!(rt.ctx.cdp_endpoint_source(), CdpEndpointSource::None);
-	}
-
-	#[test]
-	fn build_runtime_cdp_from_cli_flag() {
-		let config = RuntimeConfig {
-			auth: None,
-			browser: BrowserKind::Chromium,
-			cdp_endpoint: Some("ws://localhost:9222".into()),
-			launch_server: false,
-			no_daemon: false,
-			no_project: true,
-			workspace: None,
-			namespace: "default".to_string(),
-			no_context: true,
-			no_save_context: true,
-			refresh_context: false,
-			base_url: None,
-			artifacts_dir: None,
-			block_patterns: Vec::new(),
-			block_file: None,
-			downloads_dir: None,
-			timeout_ms: None,
-		};
-
-		let result = build_runtime(&config);
-		assert!(result.is_ok());
-		let rt = result.unwrap();
-		assert_eq!(rt.ctx.cdp_endpoint_source(), CdpEndpointSource::CliFlag);
-	}
-
-	#[test]
-	fn build_runtime_uses_explicit_workspace_and_namespace() {
-		let tmp = tempfile::TempDir::new().unwrap();
-		let ws = tmp.path().to_string_lossy().to_string();
-		let config = RuntimeConfig {
-			auth: None,
-			browser: BrowserKind::Chromium,
-			cdp_endpoint: None,
-			launch_server: false,
-			no_daemon: false,
-			no_project: true,
-			workspace: Some(ws.clone()),
-			namespace: "agent-a".to_string(),
-			no_context: false,
-			no_save_context: true,
-			refresh_context: false,
-			base_url: None,
-			artifacts_dir: None,
-			block_patterns: Vec::new(),
-			block_file: None,
-			downloads_dir: None,
-			timeout_ms: None,
-		};
-
-		let rt = build_runtime(&config).unwrap();
-		assert_eq!(rt.ctx.namespace(), "agent-a");
-		assert_eq!(rt.ctx.workspace_root(), std::path::Path::new(&ws));
-	}
-
-	#[test]
-	fn explicit_workspace_is_not_collapsed_to_project_root() {
-		let tmp = tempfile::TempDir::new().unwrap();
-		let project_root = tmp.path();
-		std::fs::write(project_root.join(pw_rs::dirs::CONFIG_JS), "export default {}").unwrap();
-
-		let workspace = project_root.join("agents").join("agent-a");
-		std::fs::create_dir_all(&workspace).unwrap();
-		let ws = workspace.to_string_lossy().to_string();
-
-		let config = RuntimeConfig {
-			auth: None,
-			browser: BrowserKind::Chromium,
-			cdp_endpoint: None,
-			launch_server: false,
-			no_daemon: false,
-			no_project: false,
-			workspace: Some(ws.clone()),
-			namespace: "default".to_string(),
-			no_context: false,
-			no_save_context: true,
-			refresh_context: false,
-			base_url: None,
-			artifacts_dir: None,
-			block_patterns: Vec::new(),
-			block_file: None,
-			downloads_dir: None,
-			timeout_ms: None,
-		};
-
-		let rt = build_runtime(&config).unwrap();
-		assert_eq!(rt.ctx.workspace_root(), std::path::Path::new(&ws));
-		assert_eq!(rt.ctx_state.workspace_root(), std::path::Path::new(&ws));
-	}
-
-	#[test]
-	fn build_runtime_uses_persisted_har_config() {
-		let tmp = tempfile::TempDir::new().unwrap();
-		let ws = tmp.path();
-		let config_path = ws
-			.join(pw_rs::dirs::PLAYWRIGHT)
-			.join(crate::workspace::STATE_VERSION_DIR)
-			.join("namespaces")
-			.join("default")
-			.join("config.json");
-		std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-		let persisted = serde_json::json!({
-			"schema": crate::context_store::types::SCHEMA_VERSION,
-			"har": {
-				"path": "network.har",
-				"contentPolicy": "embed",
-				"mode": "minimal",
-				"omitContent": true,
-				"urlFilter": "*.api.example.com",
-			}
-		});
-		std::fs::write(&config_path, serde_json::to_string_pretty(&persisted).unwrap()).unwrap();
-
-		let config = RuntimeConfig {
-			auth: None,
-			browser: BrowserKind::Chromium,
-			cdp_endpoint: None,
-			launch_server: false,
-			no_daemon: false,
-			no_project: true,
-			workspace: Some(ws.to_string_lossy().to_string()),
-			namespace: "default".to_string(),
-			no_context: false,
-			no_save_context: true,
-			refresh_context: false,
-			base_url: None,
-			artifacts_dir: None,
-			block_patterns: Vec::new(),
-			block_file: None,
-			downloads_dir: None,
-			timeout_ms: None,
-		};
-
-		let rt = build_runtime(&config).unwrap();
-		let har = rt.ctx.har_config();
-		assert_eq!(har.path, Some(ws.join("network.har")));
-		assert_eq!(har.content_policy, Some(pw_rs::HarContentPolicy::Embed));
-		assert_eq!(har.mode, Some(pw_rs::HarMode::Minimal));
-		assert!(har.omit_content);
-		assert_eq!(har.url_filter.as_deref(), Some("*.api.example.com"));
-	}
+	Ok(RuntimeContext { ctx, ctx_state, info })
 }

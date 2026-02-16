@@ -1,25 +1,21 @@
-//! Integration tests for smart URL/selector argument detection.
-//!
-//! These tests verify that the CLI correctly distinguishes between URLs and
-//! CSS selectors when provided as positional arguments.
+//! Integration tests for URL/selector resolution in protocol v2.
 
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Mutex to serialize tests that share a test workspace.
-/// Use `lock_context()` to acquire, which handles poisoned locks.
+use serde_json::json;
+
 static CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock_context() -> std::sync::MutexGuard<'static, ()> {
 	CONTEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Helper to get the pw binary path
 fn pw_binary() -> PathBuf {
 	let mut path = std::env::current_exe().unwrap();
-	path.pop(); // Remove test binary name
-	path.pop(); // Remove deps
+	path.pop();
+	path.pop();
 	path.push("pw");
 	path
 }
@@ -32,160 +28,126 @@ fn clear_context_store() {
 	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
-/// Helper to run pw command with --no-project and explicit workspace.
-fn run_pw(args: &[&str]) -> (bool, String, String) {
+fn run_exec(op: &str, input: serde_json::Value) -> (bool, serde_json::Value, String) {
 	let workspace = workspace_root();
-	let workspace_str = workspace.to_string_lossy().to_string();
-	let mut full_args = vec!["--no-project", "--workspace", &workspace_str, "--namespace", "default"];
-	full_args.extend_from_slice(args);
-
-	let output = Command::new(pw_binary()).args(&full_args).output().expect("Failed to execute pw");
+	let _ = std::fs::create_dir_all(&workspace);
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", op, "--input"])
+		.arg(input.to_string())
+		.output()
+		.expect("failed to execute pw");
 
 	let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 	let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-	(output.status.success(), stdout, stderr)
+	let parsed = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| json!({ "raw": stdout }));
+	(output.status.success(), parsed, stderr)
 }
 
-/// Test: Selector-like positional argument with context URL
-///
-/// When context has a URL (from prior navigate), a selector-like positional
-/// argument should be treated as a selector.
 #[test]
-fn selector_positional_with_context() {
+fn selector_with_context_url() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// First, set up context with a URL
 	let url = "data:text/html,<div class=\"content\">Hello World</div>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// Now run text with just a selector - should use context URL
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", ".content"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Hello World"), "Expected content in output: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "selector": ".content" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["ok"], true);
+	assert_eq!(json["data"]["text"], "Hello World");
 }
 
-/// Test: URL-like positional argument
-///
-/// A string that looks like a URL should be treated as a URL, not a selector.
 #[test]
-fn url_positional_treated_as_url() {
+fn url_input_is_used_when_provided() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// Run text with a data: URL - should navigate and get body text
 	let url = "data:text/html,<body>Page Content</body>";
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", url, "-s", "body"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Page Content"), "Expected page content: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "url": url, "selector": "body" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Page Content");
 }
 
-/// Test: Both URL and selector as positional arguments
-///
-/// When two positional arguments are provided, the first should be URL and
-/// second should be selector.
 #[test]
-fn both_url_and_selector_positional() {
+fn url_and_selector_both_resolve() {
 	let _lock = lock_context();
 	clear_context_store();
 
 	let url = "data:text/html,<h1>Title</h1><p class=\"para\">Paragraph</p>";
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", url, ".para"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Paragraph"), "Expected paragraph content: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "url": url, "selector": ".para" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Paragraph");
 }
 
-/// Test: Explicit -s flag for selector (backward compatibility)
-///
-/// The explicit -s flag should always work regardless of what the argument
-/// looks like.
 #[test]
-fn explicit_selector_flag() {
+fn selector_flag_alias_is_supported() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// Set up context
 	let url = "data:text/html,<span id=\"test\">Test Text</span>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// Use explicit -s flag
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "-s", "#test"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Test Text"), "Expected test text: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "selectorFlag": "#test" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Test Text");
 }
 
-/// Test: ID selector detection
-///
-/// Selectors starting with # should be recognized as selectors.
 #[test]
-fn id_selector_detection() {
+fn id_selector_resolution() {
 	let _lock = lock_context();
 	clear_context_store();
 
 	let url = "data:text/html,<div id=\"main\">Main Content</div>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// #main should be detected as selector
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "#main"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Main Content"), "Expected main content: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "selector": "#main" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Main Content");
 }
 
-/// Test: Complex selector detection
-///
-/// Complex CSS selectors should be properly detected.
 #[test]
-fn complex_selector_detection() {
+fn complex_selector_resolution() {
 	let _lock = lock_context();
 	clear_context_store();
 
 	let url = "data:text/html,<ul><li>First</li><li>Second</li></ul>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// Complex selector with combinator - use :first-child to match exactly one element
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "li:first-child"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("First"), "Expected first item content: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "selector": "li:first-child" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "First");
 }
 
-/// Test: Click command with selector detection
-///
-/// The click command should also support smart selector detection.
 #[test]
-fn click_with_selector_detection() {
+fn click_with_context_selector() {
 	let _lock = lock_context();
 	clear_context_store();
 
 	let url = "data:text/html,<button class=\"btn\">Click Me</button>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// .btn should be detected as selector
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "click", ".btn"]);
-	assert!(success, "Click command failed: {}", stderr);
-	assert!(stdout.contains("\"ok\": true"), "Expected success: {}", stdout);
+	let (success, json, stderr) = run_exec("click", json!({ "selector": ".btn" }));
+	assert!(success, "click failed: {stderr}");
+	assert_eq!(json["ok"], true);
 }
 
-/// Test: HTML command with selector detection
-///
-/// The html command should also support smart selector detection.
 #[test]
-fn html_with_selector_detection() {
+fn html_with_context_selector() {
 	let _lock = lock_context();
 	clear_context_store();
 
 	let url = "data:text/html,<article><p>Article content</p></article>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// article should work as tag selector (contains no special chars)
-	// Let's use a more explicit selector
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "html", "-s", "article"]);
-	assert!(success, "HTML command failed: {}", stderr);
-	assert!(stdout.contains("<p>Article content</p>"), "Expected article HTML: {}", stdout);
+	let (success, json, stderr) = run_exec("page.html", json!({ "selector": "article" }));
+	assert!(success, "page.html failed: {stderr}");
+	let html = json["data"]["html"].as_str().unwrap_or_default();
+	assert!(html.contains("<p>Article content</p>"), "expected article HTML in: {html}");
 }

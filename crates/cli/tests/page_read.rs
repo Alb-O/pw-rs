@@ -1,13 +1,10 @@
-//! Integration tests for `page.read` command behavior.
-//!
-//! Tests use `data:` URLs and isolated workspace state to avoid network
-//! dependencies and cross-test interference.
+//! Integration tests for `page.read` in protocol v2.
 
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 static CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
@@ -27,37 +24,35 @@ fn clear_context_store() {
 	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
-fn run_pw(args: &[&str]) -> (bool, String, String) {
-	clear_context_store();
+fn run_exec(op: &str, input: serde_json::Value) -> (bool, Value, String) {
 	let workspace = workspace_root();
-	let workspace_str = workspace.to_string_lossy().to_string();
-
-	let mut full_args = vec!["--no-project", "--workspace", &workspace_str, "--namespace", "default", "-f", "json"];
-	full_args.extend_from_slice(args);
-
-	let output = Command::new(pw_binary()).args(&full_args).output().expect("Failed to execute pw");
+	let _ = std::fs::create_dir_all(&workspace);
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", op, "--input"])
+		.arg(input.to_string())
+		.output()
+		.expect("failed to execute pw");
 
 	let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 	let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-	(output.status.success(), stdout, stderr)
-}
-
-fn parse_json(stdout: &str, stderr: &str) -> Value {
-	serde_json::from_str(stdout).unwrap_or_else(|err| panic!("Expected JSON stdout from pw -f json: {err}\nstdout:\n{stdout}\nstderr:\n{stderr}"))
+	let parsed = serde_json::from_str(&stdout).unwrap_or_else(|err| panic!("expected JSON stdout: {err}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
+	(output.status.success(), parsed, stderr)
 }
 
 #[test]
 fn read_defaults_to_markdown_format() {
 	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	let (success, stdout, stderr) = run_pw(&[
-		"page",
-		"read",
-		"data:text/html,<article><h1>Guide</h1><p>This article is long enough to remain after extraction and should render markdown output.</p></article>",
-	]);
-	let json = parse_json(&stdout, &stderr);
+	clear_context_store();
 
-	assert!(success, "Command failed: {stderr}");
+	let (success, json, stderr) = run_exec(
+		"page.read",
+		json!({
+			"url": "data:text/html,<article><h1>Guide</h1><p>This article is long enough to remain after extraction and should render markdown output.</p></article>"
+		}),
+	);
+
+	assert!(success, "command failed: {stderr}");
 	assert_eq!(json["ok"], Value::Bool(true));
 	assert_eq!(json["data"]["format"], Value::String("markdown".to_string()));
 	assert!(json["data"]["content"].as_str().expect("content should be string").contains("# Guide"));
@@ -66,16 +61,17 @@ fn read_defaults_to_markdown_format() {
 #[test]
 fn read_supports_text_output() {
 	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	let (success, stdout, stderr) = run_pw(&[
-		"page",
-		"read",
-		"data:text/html,<article><h1>Title</h1><p>Hello world from text output.</p></article>",
-		"-o",
-		"text",
-	]);
-	let json = parse_json(&stdout, &stderr);
+	clear_context_store();
 
-	assert!(success, "Command failed: {stderr}");
+	let (success, json, stderr) = run_exec(
+		"page.read",
+		json!({
+			"url": "data:text/html,<article><h1>Title</h1><p>Hello world from text output.</p></article>",
+			"outputFormat": "text"
+		}),
+	);
+
+	assert!(success, "command failed: {stderr}");
 	assert_eq!(json["ok"], Value::Bool(true));
 	assert_eq!(json["data"]["format"], Value::String("text".to_string()));
 	let content = json["data"]["content"].as_str().expect("content should be string");
@@ -86,16 +82,17 @@ fn read_supports_text_output() {
 #[test]
 fn read_supports_html_output() {
 	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	let (success, stdout, stderr) = run_pw(&[
-		"page",
-		"read",
-		"data:text/html,<article><h1>Markup</h1><p>Retain html payload.</p></article>",
-		"-o",
-		"html",
-	]);
-	let json = parse_json(&stdout, &stderr);
+	clear_context_store();
 
-	assert!(success, "Command failed: {stderr}");
+	let (success, json, stderr) = run_exec(
+		"page.read",
+		json!({
+			"url": "data:text/html,<article><h1>Markup</h1><p>Retain html payload.</p></article>",
+			"outputFormat": "html"
+		}),
+	);
+
+	assert!(success, "command failed: {stderr}");
 	assert_eq!(json["ok"], Value::Bool(true));
 	assert_eq!(json["data"]["format"], Value::String("html".to_string()));
 	let content = json["data"]["content"].as_str().expect("content should be string");
@@ -105,16 +102,17 @@ fn read_supports_html_output() {
 #[test]
 fn read_includes_metadata_when_requested() {
 	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	let (success, stdout, stderr) = run_pw(&[
-		"page",
-		"read",
-		"data:text/html,<html><head><meta property='og:title' content='Meta Story'><meta name='author' content='Ada Lovelace'><meta property='article:published_time' content='2025-01-02'></head><body><article><p>Body</p></article></body></html>",
-		"--metadata",
-		"true",
-	]);
-	let json = parse_json(&stdout, &stderr);
+	clear_context_store();
 
-	assert!(success, "Command failed: {stderr}");
+	let (success, json, stderr) = run_exec(
+		"page.read",
+		json!({
+			"url": "data:text/html,<html><head><meta property='og:title' content='Meta Story'><meta name='author' content='Ada Lovelace'><meta property='article:published_time' content='2025-01-02'></head><body><article><p>Body</p></article></body></html>",
+			"metadata": true
+		}),
+	);
+
+	assert!(success, "command failed: {stderr}");
 	assert_eq!(json["ok"], Value::Bool(true));
 	assert_eq!(json["data"]["title"], Value::String("Meta Story".to_string()));
 	assert_eq!(json["data"]["author"], Value::String("Ada Lovelace".to_string()));
@@ -124,14 +122,16 @@ fn read_includes_metadata_when_requested() {
 #[test]
 fn read_omits_metadata_fields_without_flag() {
 	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-	let (success, stdout, stderr) = run_pw(&[
-		"page",
-		"read",
-		"data:text/html,<html><head><meta property='og:title' content='Hidden Meta'></head><body><article><p>Body</p></article></body></html>",
-	]);
-	let json = parse_json(&stdout, &stderr);
+	clear_context_store();
 
-	assert!(success, "Command failed: {stderr}");
+	let (success, json, stderr) = run_exec(
+		"page.read",
+		json!({
+			"url": "data:text/html,<html><head><meta property='og:title' content='Hidden Meta'></head><body><article><p>Body</p></article></body></html>"
+		}),
+	);
+
+	assert!(success, "command failed: {stderr}");
 	assert_eq!(json["ok"], Value::Bool(true));
 	let data = json["data"].as_object().expect("data should be object");
 	assert!(!data.contains_key("title"));

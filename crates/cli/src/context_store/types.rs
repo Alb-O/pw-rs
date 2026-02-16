@@ -10,7 +10,7 @@ use crate::types::BrowserKind;
 /// Schema version for config/cache files.
 pub const SCHEMA_VERSION: u32 = 4;
 
-/// Default settings applied for a namespace.
+/// Default settings applied for a profile.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Defaults {
@@ -22,9 +22,33 @@ pub struct Defaults {
 	pub base_url: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub cdp_endpoint: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub timeout_ms: Option<u64>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub auth_file: Option<PathBuf>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub use_daemon: Option<bool>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub launch_server: Option<bool>,
 }
 
-/// Persisted HAR recording defaults scoped to a namespace.
+/// Persisted network defaults scoped to a profile.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkDefaults {
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub block_patterns: Vec<String>,
+}
+
+/// Persisted download defaults scoped to a profile.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadDefaults {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub dir: Option<PathBuf>,
+}
+
+/// Persisted HAR recording defaults scoped to a profile.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HarDefaults {
@@ -37,7 +61,7 @@ pub struct HarDefaults {
 	pub url_filter: Option<String>,
 }
 
-/// Durable CLI configuration scoped to a namespace.
+/// Durable CLI configuration scoped to a profile.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CliConfig {
@@ -47,6 +71,10 @@ pub struct CliConfig {
 	pub defaults: Defaults,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub har: Option<HarDefaults>,
+	#[serde(default)]
+	pub network: NetworkDefaults,
+	#[serde(default)]
+	pub downloads: DownloadDefaults,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub protected_urls: Vec<String>,
 }
@@ -61,7 +89,7 @@ impl CliConfig {
 	}
 }
 
-/// Ephemeral namespace cache.
+/// Ephemeral profile cache.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CliCache {

@@ -15,19 +15,15 @@ use pw.nu
 const BASE_URL = "https://chatgpt.com"
 const DEFAULT_MODEL = "thinking"  # Default to GPT-5.2 Thinking
 
-# Show active workspace/namespace isolation bindings.
+# Show active workspace/profile isolation bindings.
 export def "pp isolate" []: nothing -> record {
-    let workspace = ($env.PW_WORKSPACE? | default ((pwd | path expand) | into string))
-    let namespace = ($env.PW_NAMESPACE? | default "default")
-
-    mut args = ["-f" "json" "--workspace" $workspace]
-    $args = ($args | append ["--namespace" $namespace "session" "status"])
-    let status = (^pw ...$args | complete)
-    let parsed = ($status.stdout | from json)
+    let workspace = ((pwd | path expand) | into string)
+    let profile = ($env.PW_PROFILE? | default ($env.PW_NAMESPACE? | default "default"))
+    let parsed = (pw session status --profile $profile)
 
     {
         workspace: $workspace
-        namespace: $namespace
+        profile: $profile
         active: ($parsed.data.active? | default false)
         session_key: ($parsed.data.session_key? | default null)
         workspace_id: ($parsed.data.workspace_id? | default null)
@@ -168,13 +164,22 @@ def insert-text [text: string, --clear (-c), --selector (-s): string = "#prompt-
     let do_clear = if $clear { "true" } else { "false" }
     rm $tmp
 
-    let js = "(async function() {
+    let js = "(function() {
         const el = document.querySelector(" + $js_selector + ");
         if (!el) return { error: 'textarea not found' };
         el.focus();
         const b64 = " + $js_b64 + ";
         const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
         const text = new TextDecoder().decode(bytes);
+        const readValue = () => {
+            if (el.tagName === 'TEXTAREA') {
+                return el.value || '';
+            }
+            const v = el.innerText || el.textContent || '';
+            // Browsers often report a lone newline for empty contenteditable nodes.
+            return v === '\\n' ? '' : v;
+        };
+
         if (el.tagName === 'TEXTAREA') {
             if (" + $do_clear + ") {
                 el.value = text;
@@ -182,23 +187,38 @@ def insert-text [text: string, --clear (-c), --selector (-s): string = "#prompt-
                 el.value = (el.value || '') + text;
             }
         } else {
-            el.focus();
+            const before = readValue();
+
             if (" + $do_clear + ") {
-                document.execCommand('selectAll');
-                document.execCommand('delete');
+                el.innerText = '';
             }
-            const dt = new DataTransfer();
-            dt.setData('text/plain', text);
-            const pasteEvent = new ClipboardEvent('paste', {
-                bubbles: true,
-                cancelable: true,
-                clipboardData: dt
-            });
-            el.dispatchEvent(pasteEvent);
+
+            // Primary path: synthetic paste preserves multiline structure in rich editors.
+            try {
+                const dt = new DataTransfer();
+                dt.setData('text/plain', text);
+                const pasteEvent = new ClipboardEvent('paste', {
+                    bubbles: true,
+                    cancelable: true,
+                    clipboardData: dt
+                });
+                el.dispatchEvent(pasteEvent);
+            } catch (_) {}
+
+            // Fallback path for simple contenteditable nodes (tests/headless).
+            const afterPaste = readValue();
+            if (afterPaste === before) {
+                const fullText = (" + $do_clear + ")
+                    ? text
+                    : (before + text);
+                // innerText preserves line breaks as <br> in contenteditable editors.
+                el.innerText = fullText;
+            }
         }
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
-        return { inserted: text.length };
+        const currentValue = readValue();
+        return { inserted: text.length, value: currentValue };
     })()"
 
     # Use --file to avoid command-line limits for large text

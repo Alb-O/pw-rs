@@ -3,11 +3,117 @@ mod tests;
 
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::output::OutputFormat;
 use crate::styles::cli_styles;
 use crate::types::BrowserKind;
+
+/// Root CLI for pw v2.
+#[derive(Parser, Debug)]
+#[command(name = "pw")]
+#[command(about = "Playwright CLI - protocol-first browser automation")]
+#[command(version)]
+#[command(styles = cli_styles())]
+pub struct Cli {
+	/// Increase verbosity (-v info, -vv debug)
+	#[arg(short, long, global = true, action = clap::ArgAction::Count)]
+	pub verbose: u8,
+
+	/// Output format: toon (default), json, ndjson, or text
+	#[arg(short = 'f', long, global = true, value_enum, default_value = "toon")]
+	pub format: OutputFormat,
+
+	#[command(subcommand)]
+	pub command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+	/// Execute a single canonical operation.
+	Exec(ExecArgs),
+	/// Stream request envelopes over stdin/stdout (NDJSON).
+	Batch(BatchArgs),
+	/// Manage profile-scoped runtime configuration.
+	Profile(ProfileArgs),
+	/// Manage daemon lifecycle.
+	Daemon(DaemonArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ExecArgs {
+	/// Canonical operation id (for example: page.text, navigate, click).
+	#[arg(value_name = "OP")]
+	pub op: Option<String>,
+
+	/// JSON object for operation input.
+	#[arg(long, value_name = "JSON", conflicts_with = "file")]
+	pub input: Option<String>,
+
+	/// Path to a full request envelope JSON file.
+	#[arg(long, value_name = "FILE", conflicts_with = "input")]
+	pub file: Option<PathBuf>,
+
+	/// Runtime profile name.
+	#[arg(long, value_name = "NAME", default_value = "default")]
+	pub profile: String,
+
+	/// Directory for failure artifacts.
+	#[arg(long, value_name = "DIR")]
+	pub artifacts_dir: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct BatchArgs {
+	/// Runtime profile name.
+	#[arg(long, value_name = "NAME", default_value = "default")]
+	pub profile: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ProfileArgs {
+	#[command(subcommand)]
+	pub action: ProfileAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ProfileAction {
+	/// List available profiles.
+	List,
+	/// Show profile configuration.
+	Show {
+		#[arg(value_name = "NAME")]
+		name: String,
+	},
+	/// Replace profile configuration from JSON file.
+	Set {
+		#[arg(value_name = "NAME")]
+		name: String,
+		#[arg(long, value_name = "FILE")]
+		file: PathBuf,
+	},
+	/// Delete a profile and its persisted state.
+	Delete {
+		#[arg(value_name = "NAME")]
+		name: String,
+	},
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DaemonArgs {
+	#[command(subcommand)]
+	pub action: DaemonAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum DaemonAction {
+	Start {
+		#[arg(long)]
+		foreground: bool,
+	},
+	Stop,
+	Status,
+}
 
 /// HAR content policy (CLI wrapper for pw_rs::HarContentPolicy)
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, serde::Serialize, serde::Deserialize)]
@@ -52,97 +158,7 @@ impl From<CliHarMode> for pw_rs::HarMode {
 	}
 }
 
-pub use crate::commands::graph::{AuthAction, Commands, DaemonAction, HarAction, PageAction, ProtectAction, SessionAction, TabsAction};
-// Re-export OutputFormat for backwards compatibility
-pub use crate::output::OutputFormat as CliOutputFormat;
-
-#[derive(Parser, Debug)]
-#[command(name = "pw")]
-#[command(about = "Playwright CLI - Browser automation from the command line")]
-#[command(version)]
-#[command(styles = cli_styles())]
-pub struct Cli {
-	/// Increase verbosity (-v info, -vv debug)
-	#[arg(short, long, global = true, action = clap::ArgAction::Count)]
-	pub verbose: u8,
-
-	/// Output format: toon (default), json, ndjson, or text
-	#[arg(short = 'f', long, global = true, value_enum, default_value = "toon")]
-	pub format: OutputFormat,
-
-	/// Load authentication state from file (cookies, localStorage)
-	#[arg(long, global = true, value_name = "FILE")]
-	pub auth: Option<PathBuf>,
-
-	/// Browser to use for automation
-	#[arg(short, long, global = true, value_enum, default_value = "chromium")]
-	pub browser: BrowserKind,
-
-	/// Connect to an existing CDP endpoint instead of launching a browser
-	#[arg(long, global = true, value_name = "URL")]
-	pub cdp_endpoint: Option<String>,
-
-	/// Launch a reusable local browser server and persist its endpoint
-	#[arg(long, global = true)]
-	pub launch_server: bool,
-
-	/// Disable daemon usage for this invocation
-	#[arg(long, global = true)]
-	pub no_daemon: bool,
-
-	/// Disable project detection (use current directory paths)
-	#[arg(long, global = true)]
-	pub no_project: bool,
-
-	/// Workspace root path for state/session isolation (or "auto")
-	#[arg(long, global = true, value_name = "PATH|auto")]
-	pub workspace: Option<String>,
-
-	/// Namespace inside the workspace for strict session isolation
-	#[arg(long, global = true, value_name = "NAME", default_value = "default")]
-	pub namespace: String,
-
-	/// Disable contextual inference/caching for this invocation
-	#[arg(long, global = true)]
-	pub no_context: bool,
-
-	/// Do not persist command results back to context store
-	#[arg(long, global = true)]
-	pub no_save_context: bool,
-
-	/// Clear cached context data before running
-	#[arg(long, global = true)]
-	pub refresh_context: bool,
-
-	/// Base URL used when URL argument is relative or omitted
-	#[arg(long, global = true, value_name = "URL")]
-	pub base_url: Option<String>,
-
-	/// Directory to save artifacts (screenshot, HTML) on command failure
-	#[arg(long, global = true, value_name = "DIR")]
-	pub artifacts_dir: Option<std::path::PathBuf>,
-
-	/// Block requests matching URL pattern (glob, can be used multiple times)
-	#[arg(long, global = true, value_name = "PATTERN", action = clap::ArgAction::Append)]
-	pub block: Vec<String>,
-
-	/// Load request blocking patterns from file (one pattern per line)
-	#[arg(long, global = true, value_name = "FILE")]
-	pub block_file: Option<PathBuf>,
-
-	/// Directory to save downloaded files (enables download tracking)
-	#[arg(long, global = true, value_name = "DIR")]
-	pub downloads_dir: Option<PathBuf>,
-
-	/// Timeout for navigation and wait operations in milliseconds
-	#[arg(long, global = true, value_name = "MS")]
-	pub timeout: Option<u64>,
-
-	#[command(subcommand)]
-	pub command: Commands,
-}
-
-/// Project template type for init command
+/// Project template type for init command.
 #[derive(Clone, Debug, ValueEnum, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InitTemplate {
@@ -153,7 +169,7 @@ pub enum InitTemplate {
 	Minimal,
 }
 
-/// Output format for the read command
+/// Output format for the read command.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReadOutputFormat {
@@ -165,3 +181,7 @@ pub enum ReadOutputFormat {
 	#[default]
 	Markdown,
 }
+
+/// Browser parsing helper retained for serde compatibility in command raw payloads.
+#[allow(dead_code)]
+fn _browser_kind_marker(_: BrowserKind) {}

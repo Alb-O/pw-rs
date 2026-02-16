@@ -1,25 +1,21 @@
-//! Integration tests for --no-context mode with CDP connections.
-//!
-//! These tests verify that when connected via CDP endpoint, the --no-context
-//! flag allows commands to operate on the current browser page without
-//! requiring an explicit URL.
+//! Integration tests for profile-scoped context behavior in protocol v2.
 
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Mutex to serialize tests that share a test workspace.
+use serde_json::json;
+
 static CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock_context() -> std::sync::MutexGuard<'static, ()> {
 	CONTEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Helper to get the pw binary path
 fn pw_binary() -> PathBuf {
 	let mut path = std::env::current_exe().unwrap();
-	path.pop(); // Remove test binary name
-	path.pop(); // Remove deps
+	path.pop();
+	path.pop();
 	path.push("pw");
 	path
 }
@@ -32,109 +28,90 @@ fn clear_context_store() {
 	let _ = std::fs::remove_dir_all(workspace_root());
 }
 
-/// Helper to run pw command with --no-project and explicit workspace.
-fn run_pw(args: &[&str]) -> (bool, String, String) {
+fn run_exec_with_profile(op: &str, input: serde_json::Value, profile: &str) -> (bool, serde_json::Value, String) {
 	let workspace = workspace_root();
-	let workspace_str = workspace.to_string_lossy().to_string();
-	let mut full_args = vec!["--no-project", "--workspace", &workspace_str, "--namespace", "default"];
-	full_args.extend_from_slice(args);
+	let _ = std::fs::create_dir_all(&workspace);
 
-	let output = Command::new(pw_binary()).args(&full_args).output().expect("Failed to execute pw");
+	let request_path = workspace.join("request.json");
+	let request = json!({
+		"schemaVersion": 5,
+		"op": op,
+		"input": input,
+		"runtime": {
+			"profile": profile,
+			"overrides": {
+				"useDaemon": false
+			}
+		}
+	});
+	std::fs::write(&request_path, serde_json::to_string(&request).unwrap()).expect("failed to write request file");
+
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", "--file"])
+		.arg(request_path)
+		.output()
+		.expect("failed to execute pw");
 
 	let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 	let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-	(output.status.success(), stdout, stderr)
+	let parsed = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| json!({ "raw": stdout }));
+	(output.status.success(), parsed, stderr)
 }
 
-/// Test: --no-context mode requires URL without CDP endpoint
-///
-/// When --no-context is used without a CDP endpoint, commands should error
-/// if no URL is provided.
+fn run_exec(op: &str, input: serde_json::Value) -> (bool, serde_json::Value, String) {
+	run_exec_with_profile(op, input, "default")
+}
+
 #[test]
-fn no_context_without_cdp_requires_url() {
+fn no_cached_url_requires_explicit_url() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// Run text command with --no-context but without URL or CDP
-	let (success, stdout, _stderr) = run_pw(&["-f", "json", "--no-context", "page", "text", "-s", "body"]);
-
-	// Should fail because no URL provided and no CDP endpoint
-	assert!(!success, "Expected failure when --no-context without URL or CDP");
-	assert!(
-		stdout.contains("URL is required") || stdout.contains("error"),
-		"Expected error about missing URL: {}",
-		stdout
-	);
+	let (success, json, _stderr) = run_exec("page.text", json!({ "selector": "body" }));
+	assert!(success, "exec transport should succeed");
+	assert_eq!(json["ok"], false, "expected protocol error without context URL");
+	let msg = json["error"]["message"].as_str().unwrap_or_default().to_lowercase();
+	assert!(msg.contains("url"), "expected URL-related message, got: {msg}");
 }
 
-/// Test: Normal mode with context works without URL
-///
-/// When context is enabled (default), subsequent commands can use the cached URL.
 #[test]
-fn normal_mode_uses_cached_url() {
+fn cached_url_allows_omitted_url() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// First, navigate to set up context
 	let url = "data:text/html,<h1>Cached Test</h1>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// Now run text without URL - should use context
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "-s", "h1"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Cached Test"), "Expected cached content: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "selector": "h1" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Cached Test");
 }
 
-/// Test: --no-context mode ignores cached URL
-///
-/// When --no-context is used, cached URLs should be ignored.
 #[test]
-fn no_context_ignores_cached_url() {
+fn profile_isolation_prevents_cross_profile_context_reuse() {
 	let _lock = lock_context();
 	clear_context_store();
 
-	// First, navigate to set up context
-	let url = "data:text/html,<h1>Should Be Ignored</h1>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "Navigate failed: {}", stderr);
+	let url = "data:text/html,<h1>Default Profile</h1>";
+	let (success, _json, stderr) = run_exec_with_profile("navigate", json!({ "url": url }), "default");
+	assert!(success, "default profile navigate failed: {stderr}");
 
-	// Now run text with --no-context but without URL
-	// Should fail even though context has a URL
-	let (success, stdout, _stderr) = run_pw(&["-f", "json", "--no-context", "page", "text", "-s", "h1"]);
-
-	assert!(!success, "Expected failure with --no-context and no URL");
-	assert!(
-		stdout.contains("URL is required") || stdout.contains("error"),
-		"Expected error about missing URL: {}",
-		stdout
-	);
+	let (success, json, _stderr) = run_exec_with_profile("page.text", json!({ "selector": "h1" }), "other");
+	assert!(success, "exec transport should succeed");
+	assert_eq!(json["ok"], false, "expected profile-isolated URL resolution failure");
+	let msg = json["error"]["message"].as_str().unwrap_or_default().to_lowercase();
+	assert!(msg.contains("url"), "expected URL-related error in isolated profile, got: {msg}");
 }
 
-/// Test: --no-context with explicit URL still works
-///
-/// When --no-context is used with an explicit URL, the command should work.
 #[test]
-fn no_context_with_explicit_url_works() {
+fn explicit_url_works_without_cached_context() {
 	let _lock = lock_context();
 	clear_context_store();
 
 	let url = "data:text/html,<p>Explicit URL Test</p>";
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "--no-context", "page", "text", url, "-s", "p"]);
-
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Explicit URL Test"), "Expected content: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "url": url, "selector": "p" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Explicit URL Test");
 }
-
-// Note: Testing --no-context with an actual CDP connection requires
-// launching a browser with remote debugging enabled, which is complex
-// for automated tests. The unit tests for the sentinel logic in
-// context_store.rs and session_broker.rs cover the core functionality.
-//
-// Manual verification:
-// 1. Launch Chrome with: google-chrome --remote-debugging-port=9222
-// 2. Get the WS URL: curl -s http://127.0.0.1:9222/json/version | jq -r .webSocketDebuggerUrl
-// 3. Connect: pw connect "ws://..."
-// 4. Navigate: pw navigate "https://example.com"
-// 5. Test: pw --no-context text -s "h1"  # Should work on current page

@@ -192,7 +192,7 @@ fn session_descriptor_path_is_namespace_scoped() {
 	let ctx_state = ContextState::test_new(state, "ws1".to_string(), "dev".to_string());
 
 	let path = ctx_state.session_descriptor_path().unwrap();
-	assert!(path.ends_with("playwright/.pw-cli-v3/namespaces/dev/sessions/session.json"));
+	assert!(path.ends_with("playwright/.pw-cli-v4/profiles/dev/sessions/session.json"));
 }
 
 #[test]

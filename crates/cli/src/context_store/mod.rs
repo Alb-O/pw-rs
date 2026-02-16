@@ -1,4 +1,4 @@
-//! Persistent namespace-scoped context storage for CLI state across invocations.
+//! Persistent profile-scoped context storage for CLI state across invocations.
 //!
 //! State categories:
 //! * [`CliConfig`]: durable settings (base URL, browser defaults, protected URLs)
@@ -23,13 +23,13 @@ const SESSION_TIMEOUT_SECS: u64 = 3600;
 
 /// Runtime context state manager.
 ///
-/// Uses [`LoadedState`] for namespace-scoped storage.
+/// Uses [`LoadedState`] for profile-scoped storage.
 /// Auto-refreshes stale sessions after [`SESSION_TIMEOUT_SECS`].
 #[derive(Debug)]
 pub struct ContextState {
 	state: LoadedState,
 	workspace_id: String,
-	namespace: String,
+	profile: String,
 	base_url_override: Option<String>,
 	no_context: bool,
 	no_save: bool,
@@ -41,20 +41,20 @@ impl ContextState {
 	pub fn new(
 		workspace_root: PathBuf,
 		workspace_id: String,
-		namespace: String,
+		profile: String,
 		base_url_override: Option<String>,
 		no_context: bool,
 		no_save: bool,
 		refresh: bool,
 	) -> Result<Self> {
-		let state = LoadedState::load(&workspace_root, &namespace)?;
+		let state = LoadedState::load(&workspace_root, &profile)?;
 		let is_stale = state.cache.is_stale(SESSION_TIMEOUT_SECS);
 
 		Ok(Self {
 			refresh: refresh || is_stale,
 			state,
 			workspace_id,
-			namespace,
+			profile,
 			base_url_override,
 			no_context,
 			no_save,
@@ -62,11 +62,11 @@ impl ContextState {
 	}
 
 	#[cfg(test)]
-	pub(crate) fn test_new(state: LoadedState, workspace_id: String, namespace: String) -> Self {
+	pub(crate) fn test_new(state: LoadedState, workspace_id: String, profile: String) -> Self {
 		Self {
 			state,
 			workspace_id,
-			namespace,
+			profile,
 			base_url_override: None,
 			no_context: false,
 			no_save: false,
@@ -78,12 +78,20 @@ impl ContextState {
 		&self.workspace_id
 	}
 
+	pub fn profile(&self) -> &str {
+		&self.profile
+	}
+
+	pub fn profile_id(&self) -> String {
+		format!("{}:{}", self.workspace_id, self.profile)
+	}
+
 	pub fn namespace(&self) -> &str {
-		&self.namespace
+		self.profile()
 	}
 
 	pub fn namespace_id(&self) -> String {
-		format!("{}:{}", self.workspace_id, self.namespace)
+		self.profile_id()
 	}
 
 	pub fn workspace_root(&self) -> &Path {
@@ -91,7 +99,7 @@ impl ContextState {
 	}
 
 	pub fn session_key(&self, browser: BrowserKind, headless: bool) -> String {
-		format!("{}:{}:{}", self.namespace_id(), browser, if headless { "headless" } else { "headful" })
+		format!("{}:{}:{}", self.profile_id(), browser, if headless { "headless" } else { "headful" })
 	}
 
 	pub fn session_descriptor_path(&self) -> Option<PathBuf> {

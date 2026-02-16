@@ -9,14 +9,14 @@ def open_page [html: string] {
     let url = $"data:text/html;base64,($b64)"
     pw nav $url | ignore
     pw wait-for "#prompt-textarea" | ignore
+    sleep 150ms
 }
 
 def "test contenteditable preserves newlines" [] {
     open_page "<div id='prompt-textarea' contenteditable='true'></div>"
     let input = "one\n\ntwo\nthree"
-    pp debug-insert $input --clear
-    sleep 100ms
-    let actual = (pw eval "document.querySelector('#prompt-textarea').innerText").data.result
+    let result = (pp debug-insert $input --clear)
+    let actual = ($result.value | default "")
     def normalize [text: string]: nothing -> string {
         mut out = ($text | str replace -a "\r" "")
         while ($out | str contains "\n\n\n") {
@@ -30,9 +30,8 @@ def "test contenteditable preserves newlines" [] {
 def "test textarea preserves newlines" [] {
     open_page "<textarea id='prompt-textarea'></textarea>"
     let input = "first\n\nthird\nfourth"
-    pp debug-insert $input --clear
-    sleep 100ms
-    let actual = (pw eval "document.querySelector('#prompt-textarea').value").data.result
+    let result = (pp debug-insert $input --clear)
+    let actual = ($result.value | default "")
     assert equal $actual $input
 }
 

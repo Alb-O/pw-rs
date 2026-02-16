@@ -1,23 +1,17 @@
-//! Integration tests for context URL tracking.
-//!
-//! These tests verify that the context store records the *actual* browser URL
-//! after command execution, not just the input URL. This is critical for
-//! proper context caching when clicks cause navigation or redirects occur.
-//!
-//! Note: Tests use --no-project with explicit --workspace to isolate state.
+//! Integration tests for context URL tracking in protocol v2.
 
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Mutex to serialize tests that use the global context store
+use serde_json::json;
+
 static CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
-/// Helper to get the pw binary path
 fn pw_binary() -> PathBuf {
 	let mut path = std::env::current_exe().unwrap();
-	path.pop(); // Remove test binary name
-	path.pop(); // Remove deps
+	path.pop();
+	path.pop();
 	path.push("pw");
 	path
 }
@@ -29,8 +23,8 @@ fn workspace_root() -> PathBuf {
 fn context_store_path() -> PathBuf {
 	workspace_root()
 		.join("playwright")
-		.join(".pw-cli-v3")
-		.join("namespaces")
+		.join(".pw-cli-v4")
+		.join("profiles")
 		.join("default")
 		.join("cache.json")
 }
@@ -49,91 +43,59 @@ fn get_last_url_from_context() -> Option<String> {
 	store.get("lastUrl")?.as_str().map(String::from)
 }
 
-/// Helper to run pw command with --no-project and explicit workspace isolation.
-fn run_pw(args: &[&str]) -> (bool, String, String) {
+fn run_exec(op: &str, input: serde_json::Value) -> (bool, serde_json::Value, String) {
 	let workspace = workspace_root();
-	let workspace_str = workspace.to_string_lossy().to_string();
-	let mut full_args = vec!["--no-project", "--workspace", &workspace_str, "--namespace", "default"];
-	full_args.extend_from_slice(args);
-
-	let output = Command::new(pw_binary()).args(&full_args).output().expect("Failed to execute pw");
+	let _ = std::fs::create_dir_all(&workspace);
+	let output = Command::new(pw_binary())
+		.current_dir(&workspace)
+		.args(["-f", "json", "exec", op, "--input"])
+		.arg(input.to_string())
+		.output()
+		.expect("failed to execute pw");
 
 	let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 	let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-	(output.status.success(), stdout, stderr)
+	let parsed = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| json!({ "raw": stdout }));
+	(output.status.success(), parsed, stderr)
 }
 
-/// Test: Click that changes URL via pushState should update context with new URL
-///
-/// This verifies that after a click triggers a URL change, the context store
-/// records the *actual* post-click URL, not the original input URL.
 #[test]
 fn click_updates_context_with_actual_url() {
-	let _lock = CONTEXT_LOCK.lock().unwrap();
+	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 	clear_context_store();
 
-	// Page with a button that changes URL via history.pushState
-	// Use simpler HTML that's URL-safe
 	let html = "data:text/html,<button id=btn onclick=\"history.pushState(null,null,location.href+'?changed=1')\">Go</button>";
+	let (success, json, stderr) = run_exec("click", json!({ "url": html, "selector": "#btn", "waitMs": 100 }));
+	assert!(success, "click failed: {stderr}");
+	assert_eq!(json["ok"], true);
 
-	// Run click command
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "click", html, "#btn", "--wait-ms", "100"]);
-
-	assert!(success, "Click command failed: {}", stderr);
-	assert!(stdout.contains("\"ok\": true"), "Expected success: {}", stdout);
-
-	// Verify context was updated with the new URL (containing changed=1)
-	let last_url = get_last_url_from_context();
-	assert!(last_url.is_some(), "Expected lastUrl to be set in context store");
-
-	let last_url = last_url.unwrap();
-	assert!(
-		last_url.contains("changed=1"),
-		"Context should store actual URL with query param, got: {}",
-		last_url
-	);
+	let last_url = get_last_url_from_context().expect("lastUrl should be set");
+	assert!(last_url.contains("changed=1"), "context should store changed URL, got: {last_url}");
 }
 
-/// Test: Navigate command should store the actual browser URL
-///
-/// While we can't easily test HTTP redirects without a real server,
-/// we can verify that the URL is stored after navigation.
 #[test]
 fn navigate_stores_url_in_context() {
-	let _lock = CONTEXT_LOCK.lock().unwrap();
+	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 	clear_context_store();
 
 	let url = "data:text/html,<title>Test</title><body>Hello</body>";
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-
-	assert!(success, "Navigate command failed: {}", stderr);
-
-	// Verify context has the URL
-	let last_url = get_last_url_from_context();
-	assert!(last_url.is_some(), "Expected lastUrl to be set after navigate");
-
-	let last_url = last_url.unwrap();
-	assert!(last_url.contains("data:text/html"), "Context should store the navigated URL: {}", last_url);
+	let last_url = get_last_url_from_context().expect("lastUrl should be set");
+	assert!(last_url.contains("data:text/html"), "context should store navigated URL: {last_url}");
 }
 
-/// Test: Subsequent command can use URL from context
-///
-/// Verifies that after a command updates context, the next command
-/// can use that URL without specifying it again.
 #[test]
 fn subsequent_command_uses_context_url() {
-	let _lock = CONTEXT_LOCK.lock().unwrap();
+	let _lock = CONTEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 	clear_context_store();
 
-	// First, navigate to set up context
 	let url = "data:text/html,<h1>Title</h1>";
-	let (success, _stdout, stderr) = run_pw(&["-f", "json", "navigate", url]);
-	assert!(success, "First navigate failed: {}", stderr);
+	let (success, _json, stderr) = run_exec("navigate", json!({ "url": url }));
+	assert!(success, "navigate failed: {stderr}");
 
-	// Now run text command without URL - should use context
-	let (success, stdout, stderr) = run_pw(&["-f", "json", "page", "text", "-s", "h1"]);
-	assert!(success, "Text command failed: {}", stderr);
-	assert!(stdout.contains("Title"), "Expected to find Title in output: {}", stdout);
+	let (success, json, stderr) = run_exec("page.text", json!({ "selector": "h1" }));
+	assert!(success, "page.text failed: {stderr}");
+	assert_eq!(json["data"]["text"], "Title");
 }

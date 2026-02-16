@@ -1,19 +1,19 @@
 ---
 name: pw-higgsfield
-description: higgsfield ai image/video generation using `pw`. trigger when user wants to generate images or videos.
+description: higgsfield ai image/video generation using pw protocol wrappers. trigger when user wants to generate images or videos.
 ---
 
 # higgsfield ai
 
-generate images and videos with higgsfield ai using `pw` and the `higgsfield.nu` nushell script.
+generate images and videos with higgsfield ai using `pw` and `higgsfield.nu`.
 
 ## setup
 
 requires cdp connection to your browser with an active higgsfield session:
 
 ```bash
-pw connect --launch    # launch browser with debugging
-pw navigate https://higgsfield.ai
+pw exec connect --input '{"launch":true}'
+pw exec navigate --input '{"url":"https://higgsfield.ai"}'
 ```
 
 ## invocation
@@ -26,14 +26,14 @@ use higgsfield.nu *
 ## generation
 
 `higgsfield create-image` generate image.
-- `--model (-m)`: default `nano_banana_2`.
-- `--wait-for-result (-w)`: wait for completion.
-- `--spend`: allow credit usage.
+* `--model (-m)`: default `nano_banana_2`.
+* `--wait-for-result (-w)`: wait for completion.
+* `--spend`: allow credit usage.
 
 `higgsfield create-video` generate video.
-- `--model (-m)`: default `wan_2_6`.
-- `--wait-for-result (-w)`: wait for completion (5min timeout).
-- `--spend`: allow credit usage.
+* `--model (-m)`: default `wan_2_6`.
+* `--wait-for-result (-w)`: wait for completion (5min timeout).
+* `--spend`: allow credit usage.
 
 ## unlimited mode
 

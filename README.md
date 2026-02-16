@@ -2,37 +2,42 @@
 
 Rust bindings for Playwright, plus a CLI for browser automation from the terminal.
 
-`pw` Sspawns the Playwright Node.js driver as a subprocess and communicates over JSON-RPC. This gives you the full power of Playwright inside an LLM-friendly CLI tool. No MCP server, pure CLI, baby!
+`pw` spawns the Playwright Node.js driver as a subprocess and communicates over JSON-RPC. This gives you the full power of Playwright inside an LLM-friendly CLI tool. No MCP server, pure CLI baby!
 
 ## CLI
 
-The `pw` command lets you automate browsers without writing code. Great for scripting, shell pipelines, and usage by AI agents.
+The `pw` command is protocol-first:
+
+* `pw exec <op> --input '<json>'` for one-shot requests
+* `pw batch` for NDJSON request/response streaming
+* `pw profile ...` for runtime/config defaults
 
 ```bash
 # Navigate and extract content
-pw navigate https://example.com
-pw text -s "h1"                    # get text content
-pw html -s "main"                  # get HTML
-pw screenshot -o page.png
+pw exec navigate --input '{"url":"https://example.com"}'
+pw exec page.text --input '{"selector":"h1"}'
+pw exec page.html --input '{"selector":"main"}'
+pw exec screenshot --input '{"output":"page.png"}'
 
 # Interact with pages
-pw click -s "button.submit"
-pw fill -s "input[name=email]" "user@example.com"
-pw eval "document.title"
+pw exec click --input '{"selector":"button.submit"}'
+pw exec fill --input '{"selector":"input[name=email]","text":"user@example.com"}'
+pw exec page.eval --input '{"expression":"document.title"}'
 
-# Extract readable content (strips ads, nav, sidebars)
-pw read https://news.ycombinator.com
+# Extract readable content
+pw exec page.read --input '{"url":"https://news.ycombinator.com"}'
 ```
 
-### Context caching
+### Batch mode
 
-Commands remember the last URL and selector, so you can work conversationally:
+Run many operations over one process:
 
 ```bash
-pw navigate https://example.com    # saves URL
-pw text -s h1                      # uses saved URL
-pw click -s ".next"                # still same page
-pw screenshot -o after.png         # no URL needed
+pw batch <<'EOF'
+{"schemaVersion":5,"requestId":"1","op":"navigate","input":{"url":"https://example.com"}}
+{"schemaVersion":5,"requestId":"2","op":"page.text","input":{"selector":"h1"}}
+{"schemaVersion":5,"requestId":"3","op":"quit","input":{}}
+EOF
 ```
 
 ### Connect to your real browser
@@ -40,16 +45,16 @@ pw screenshot -o after.png         # no URL needed
 Use your actual browser to bypass Cloudflare and bot detection. Your cookies, extensions, and fingerprint are all real:
 
 ```bash
-pw connect --launch                # launches Chrome/Brave/Helium with debugging
-pw navigate https://chatgpt.com    # Cloudflare passes - it's your real browser!
-pw text -s "h1"
-pw connect --clear                 # disconnect when done
+pw exec connect --input '{"launch":true}'
+pw exec navigate --input '{"url":"https://chatgpt.com"}'
+pw exec page.text --input '{"selector":"h1"}'
+pw exec connect --input '{"clear":true}'
 ```
 
 If you already have a browser running with `--remote-debugging-port=9222`:
 
 ```bash
-pw connect --discover              # auto-finds it
+pw exec connect --input '{"discover":true}'
 ```
 
 ### Daemon mode
@@ -58,24 +63,21 @@ For performance, run the daemon to keep a browser warm:
 
 ```bash
 pw daemon start                    # background daemon
-pw navigate https://example.com    # fast! reuses browser
+pw exec navigate --input '{"url":"https://example.com"}'
 pw daemon stop                     # cleanup
 ```
 
 Without the daemon, each command launches a fresh browser (~500ms). With the daemon, commands take ~5ms.
 On Windows, background daemon mode is unavailable; use `pw daemon start --foreground`.
 
-### Run Playwright tests
-
-Run `@playwright/test` tests without npm or Node.js installed:
+### Profiles
 
 ```bash
-pw test                            # run all tests
-pw test -- --headed                # show browser
-pw test -- -g "login"              # filter by name
+pw profile list
+pw profile show default
+pw profile set default --file profile.json
+pw profile delete throwaway
 ```
-
-Note: If you hit a `webServer` hang on older releases, start the server separately and add `reuseExistingServer: true` to your config. See [docs/issues/webserver-hang.md](docs/issues/webserver-hang.md) for details.
 
 ## Library
 

@@ -351,7 +351,7 @@ impl CommandContext {
 		self.workspace_root.clone()
 	}
 
-	/// Get all auth files in the namespace auth directory (*.json)
+	/// Get all auth files in the profile auth directory (*.json)
 	pub fn auth_files(&self) -> Vec<PathBuf> {
 		let auth_dir = self.namespace_auth_dir();
 
@@ -375,7 +375,7 @@ impl CommandContext {
 		self.workspace_root
 			.join(pw_rs::dirs::PLAYWRIGHT)
 			.join(STATE_VERSION_DIR)
-			.join("namespaces")
+			.join("profiles")
 			.join(&self.namespace)
 			.join("auth")
 	}

@@ -507,7 +507,7 @@ fn resolve_user_data_dir(ctx_state: &ContextState, user_data_dir: Option<&std::p
 	} else {
 		let state_root = ctx_state.workspace_root().join(dirs::PLAYWRIGHT).join(STATE_VERSION_DIR);
 		ensure_state_root_gitignore(&state_root)?;
-		state_root.join("namespaces").join(ctx_state.namespace()).join("connect-user-data")
+		state_root.join("profiles").join(ctx_state.namespace()).join("connect-user-data")
 	};
 
 	std::fs::create_dir_all(&resolved)?;
@@ -628,11 +628,11 @@ mod tests {
 			);
 		} else {
 			assert!(
-				dir.ends_with("playwright/.pw-cli-v3/namespaces/agent-a/connect-user-data"),
+				dir.ends_with("playwright/.pw-cli-v4/profiles/agent-a/connect-user-data"),
 				"resolved path was {}",
 				dir.display()
 			);
-			assert!(temp.path().join("playwright").join(".pw-cli-v3").join(".gitignore").exists());
+			assert!(temp.path().join("playwright").join(".pw-cli-v4").join(".gitignore").exists());
 		}
 	}
 
