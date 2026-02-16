@@ -149,10 +149,10 @@ fn select_drivers_dir(project_root: &Path) -> PathBuf {
 
 /// Detect the current platform and return the Playwright platform identifier
 fn detect_platform() -> &'static str {
-	let os = env::consts::OS;
-	let arch = env::consts::ARCH;
+	let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| env::consts::OS.to_string());
+	let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| env::consts::ARCH.to_string());
 
-	match (os, arch) {
+	match (target_os.as_str(), target_arch.as_str()) {
 		("macos", "x86_64") => "mac",
 		("macos", "aarch64") => "mac-arm64",
 		("linux", "x86_64") => "linux",
@@ -160,7 +160,7 @@ fn detect_platform() -> &'static str {
 		("windows", "x86_64") => "win32_x64",
 		("windows", "aarch64") => "win32_arm64",
 		_ => {
-			println!("cargo:warning=Unsupported platform: {} {}", os, arch);
+			println!("cargo:warning=Unsupported target platform: {} {}", target_os, target_arch);
 			println!("cargo:warning=Defaulting to linux platform");
 			"linux"
 		}
@@ -483,7 +483,8 @@ fn set_output_env_vars(driver_dir: &Path, platform: &str, drivers_dir: &Path) {
 	println!("cargo:rustc-env=PLAYWRIGHT_DRIVER_PLATFORM={}", platform);
 	println!("cargo:rustc-env=PLAYWRIGHT_DRIVERS_DIR={}", drivers_dir.display());
 
-	let node_exe = driver_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
+	let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| env::consts::OS.to_string());
+	let node_exe = driver_dir.join(if target_os == "windows" { "node.exe" } else { "node" });
 	if node_exe.exists() {
 		println!("cargo:rustc-env=PLAYWRIGHT_BUNDLED_NODE_EXE={}", node_exe.display());
 	}

@@ -94,21 +94,18 @@ struct CdpVersionInfo {
 
 /// Find Chrome/Chromium executable on the system
 fn find_chrome_executable() -> Option<String> {
-	let candidates = if cfg!(target_os = "macos") {
+	let candidates: Vec<String> = if cfg!(target_os = "macos") {
 		vec![
 			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 			"/Applications/Chromium.app/Contents/MacOS/Chromium",
 			"/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
 		]
+		.into_iter()
+		.map(str::to_string)
+		.collect()
 	} else if cfg!(target_os = "windows") {
-		vec![
-			r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-			r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-			r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
-			r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
-			r"C:\Program Files\Chromium\Application\chrome.exe",
-		]
+		windows_browser_candidates()
 	} else {
 		// Linux
 		vec![
@@ -129,23 +126,71 @@ fn find_chrome_executable() -> Option<String> {
 			"/snap/bin/chromium",
 			"/snap/bin/brave",
 		]
+		.into_iter()
+		.map(str::to_string)
+		.collect()
 	};
 
 	for candidate in candidates {
-		if candidate.starts_with('/') || candidate.contains('\\') {
+		if candidate.starts_with('/') || candidate.contains('\\') || candidate.contains(':') {
 			// Absolute path - check if file exists
-			if std::path::Path::new(candidate).exists() {
-				return Some(candidate.to_string());
+			if std::path::Path::new(&candidate).exists() {
+				return Some(candidate);
 			}
 		} else {
 			// Command name - check if it's in PATH
-			if which::which(candidate).is_ok() {
-				return Some(candidate.to_string());
+			if which::which(&candidate).is_ok() {
+				return Some(candidate);
 			}
 		}
 	}
 
 	None
+}
+
+fn windows_browser_candidates() -> Vec<String> {
+	let mut candidates = Vec::new();
+
+	let mut roots = Vec::new();
+	for key in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"] {
+		if let Ok(value) = std::env::var(key) {
+			roots.push(PathBuf::from(value));
+		}
+	}
+	if roots.is_empty() {
+		roots.push(PathBuf::from(r"C:\Program Files"));
+		roots.push(PathBuf::from(r"C:\Program Files (x86)"));
+	}
+
+	let suffixes: &[&[&str]] = &[
+		&["Google", "Chrome", "Application", "chrome.exe"],
+		&["Microsoft", "Edge", "Application", "msedge.exe"],
+		&["BraveSoftware", "Brave-Browser", "Application", "brave.exe"],
+		&["Chromium", "Application", "chrome.exe"],
+	];
+
+	for root in roots {
+		for suffix in suffixes {
+			let mut path = root.clone();
+			for component in *suffix {
+				path.push(component);
+			}
+			candidates.push(path.to_string_lossy().to_string());
+		}
+	}
+
+	candidates.extend([
+		"chrome".to_string(),
+		"chrome.exe".to_string(),
+		"msedge".to_string(),
+		"msedge.exe".to_string(),
+		"brave".to_string(),
+		"brave.exe".to_string(),
+		"chromium".to_string(),
+		"chromium.exe".to_string(),
+	]);
+
+	candidates
 }
 
 /// Fetch CDP endpoint from a remote debugging port
@@ -187,13 +232,19 @@ async fn fetch_cdp_endpoint(port: u16) -> Result<CdpVersionInfo> {
 
 /// Discover Chrome instances running with remote debugging enabled
 async fn discover_chrome(port: u16) -> Result<CdpVersionInfo> {
+	let launch_hint = if cfg!(target_os = "windows") {
+		format!("msedge.exe --remote-debugging-port={}", port)
+	} else {
+		format!("google-chrome --remote-debugging-port={}", port)
+	};
+
 	fetch_cdp_endpoint(port).await.map_err(|e| {
 		PwError::Context(format!(
 			"No Chrome instance with remote debugging found on port {}. \n\
-             Last error: {}\n\
-             Try running: google-chrome --remote-debugging-port={}\n\
-             Or use: pw connect --launch --port {}",
-			port, e, port, port
+	             Last error: {}\n\
+	             Try running: {}\n\
+	             Or use: pw connect --launch --port {}",
+			port, e, launch_hint, port
 		))
 	})
 }
@@ -660,5 +711,13 @@ mod tests {
 		.unwrap();
 
 		assert_eq!(resolve_connect_port(&ctx_state, Some(9555)), 9555);
+	}
+
+	#[test]
+	fn windows_browser_candidates_include_common_commands() {
+		let candidates = windows_browser_candidates();
+		assert!(candidates.contains(&"chrome.exe".to_string()));
+		assert!(candidates.contains(&"msedge.exe".to_string()));
+		assert!(candidates.contains(&"brave.exe".to_string()));
 	}
 }

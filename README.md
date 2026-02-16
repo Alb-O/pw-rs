@@ -63,6 +63,7 @@ pw daemon stop                     # cleanup
 ```
 
 Without the daemon, each command launches a fresh browser (~500ms). With the daemon, commands take ~5ms.
+On Windows, background daemon mode is unavailable; use `pw daemon start --foreground`.
 
 ### Run Playwright tests
 

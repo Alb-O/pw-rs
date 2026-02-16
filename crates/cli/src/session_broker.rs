@@ -72,9 +72,7 @@ impl SessionDescriptor {
 	}
 
 	pub(crate) fn is_alive(&self) -> bool {
-		// Best-effort: on Linux, check /proc; otherwise assume alive if pid matches current process
-		let proc_path = PathBuf::from("/proc").join(self.pid.to_string());
-		proc_path.exists()
+		pid_is_alive(self.pid)
 	}
 
 	pub(crate) fn belongs_to(&self, ctx: &CommandContext) -> bool {
@@ -92,6 +90,47 @@ impl SessionDescriptor {
 
 fn now_ts() -> u64 {
 	std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+fn pid_is_alive(pid: u32) -> bool {
+	#[cfg(unix)]
+	{
+		return PathBuf::from("/proc").join(pid.to_string()).exists();
+	}
+
+	#[cfg(windows)]
+	{
+		let filter = format!("PID eq {pid}");
+		if let Ok(output) = std::process::Command::new("tasklist").args(["/FI", &filter, "/FO", "CSV", "/NH"]).output() {
+			if output.status.success() {
+				let stdout = String::from_utf8_lossy(&output.stdout);
+				return tasklist_has_pid(stdout.as_ref(), pid);
+			}
+		}
+
+		return pid == std::process::id();
+	}
+
+	#[cfg(not(any(unix, windows)))]
+	{
+		pid == std::process::id()
+	}
+}
+
+#[cfg(any(test, windows))]
+fn tasklist_has_pid(output: &str, pid: u32) -> bool {
+	let pid_str = pid.to_string();
+	output.lines().any(|line| {
+		let line = line.trim();
+		if !line.starts_with('"') {
+			return false;
+		}
+
+		line.trim_matches('"')
+			.split("\",\"")
+			.nth(1)
+			.is_some_and(|field| field.trim() == pid_str.as_str())
+	})
 }
 
 /// Request for a browser session; future reuse/daemon logic will live here.
@@ -666,5 +705,18 @@ mod tests {
 		assert!(!urls_match("https://example.com", "https://other.com"));
 		assert!(!urls_match("https://example.com/a", "https://example.com/b"));
 		assert!(!urls_match("https://example.com", "http://example.com"));
+	}
+
+	#[test]
+	fn tasklist_has_pid_matches_csv_line() {
+		let output = "\"chrome.exe\",\"1234\",\"Console\",\"1\",\"250,000 K\"\r\n";
+		assert!(tasklist_has_pid(output, 1234));
+		assert!(!tasklist_has_pid(output, 9999));
+	}
+
+	#[test]
+	fn tasklist_has_pid_ignores_non_csv_lines() {
+		let output = "INFO: No tasks are running which match the specified criteria.\r\n";
+		assert!(!tasklist_has_pid(output, 1234));
 	}
 }

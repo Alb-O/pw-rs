@@ -19,8 +19,8 @@ use crate::error::{PwError, Result};
 /// Starts a WebSocket server that receives cookies from the pw browser extension.
 ///
 /// Displays a token on stdout, then waits for the browser extension to connect.
-/// Received cookies are saved to the project's auth directory (or `~/.config/pw/auth/`
-/// if no project).
+/// Received cookies are saved to the project's auth directory (or the platform
+/// config directory like `~/.config/pw/auth/` / `%APPDATA%\\pw\\auth` if no project).
 ///
 /// # Protocol
 ///
@@ -33,15 +33,17 @@ use crate::error::{PwError, Result};
 ///
 /// Returns an error if:
 /// * The server cannot bind to the specified address
-/// * The home directory cannot be determined (when no project context)
+/// * The config directory cannot be determined (when no project context)
 pub async fn listen(host: &str, port: u16, ctx: &CommandContext) -> Result<()> {
 	let token = generate_token();
 
 	let auth_dir = match ctx.project {
 		Some(ref proj) => proj.paths.auth_dir(),
 		None => {
-			let home = dirs::home_dir().ok_or_else(|| PwError::Context("Could not determine home directory".into()))?;
-			home.join(".config").join("pw").join("auth")
+			let config_root = dirs::config_dir()
+				.or_else(|| dirs::home_dir().map(|home| home.join(".config")))
+				.ok_or_else(|| PwError::Context("Could not determine config directory".into()))?;
+			config_root.join("pw").join("auth")
 		}
 	};
 

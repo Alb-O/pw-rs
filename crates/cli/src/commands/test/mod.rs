@@ -140,11 +140,36 @@ fn symlink_to_parent(link: &Path) -> Result<()> {
 	remove_existing(link)?;
 
 	#[cfg(unix)]
-	std::os::unix::fs::symlink("..", link)?;
+	{
+		std::os::unix::fs::symlink("..", link)?;
+	}
 
 	#[cfg(windows)]
-	std::os::windows::fs::symlink_dir("..", link)?;
+	{
+		if std::os::windows::fs::symlink_dir("..", link).is_ok() {
+			return Ok(());
+		}
 
+		// Many Windows environments disallow symlinks without Developer Mode or
+		// elevated privileges. Fall back to a lightweight shim package so
+		// `require("playwright/test")` and `node .../playwright/cli.js` still work.
+		create_playwright_shim(link)?;
+	}
+
+	Ok(())
+}
+
+/// Creates a minimal `node_modules/playwright` proxy package.
+///
+/// The proxy forwards entry points to the parent playwright package
+/// (`../../*.js`), avoiding directory symlink requirements on Windows.
+#[cfg(any(test, windows))]
+fn create_playwright_shim(link: &Path) -> Result<()> {
+	fs::create_dir_all(link)?;
+	fs::write(link.join("package.json"), r#"{"name":"playwright","private":true}"#)?;
+	fs::write(link.join("cli.js"), "module.exports = require('../../cli.js');\n")?;
+	fs::write(link.join("test.js"), "module.exports = require('../../test.js');\n")?;
+	fs::write(link.join("index.js"), "module.exports = require('../../index.js');\n")?;
 	Ok(())
 }
 
@@ -229,4 +254,26 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 		}
 	}
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use tempfile::TempDir;
+
+	use super::*;
+
+	#[test]
+	fn create_playwright_shim_writes_proxy_files() {
+		let temp = TempDir::new().unwrap();
+		let link = temp.path().join("node_modules").join("playwright");
+
+		create_playwright_shim(&link).unwrap();
+
+		assert!(link.join("package.json").exists());
+		assert_eq!(fs::read_to_string(link.join("cli.js")).unwrap(), "module.exports = require('../../cli.js');\n");
+		assert_eq!(
+			fs::read_to_string(link.join("test.js")).unwrap(),
+			"module.exports = require('../../test.js');\n"
+		);
+	}
 }
