@@ -1,11 +1,15 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{Error, Expr, Ident, LitBool, LitStr, Pat, Path, Result, Token, braced, bracketed, parse_macro_input};
+use syn::{Error, Expr, Ident, ItemEnum, LitBool, LitStr, Pat, Path, Result, Token, braced, bracketed, parse_macro_input, parse_quote};
 
 struct CatalogInput {
 	entries: Vec<CommandEntry>,
 	passthrough: Vec<Pat>,
+}
+
+struct CliSubcommandsInput {
+	enums: Vec<ItemEnum>,
 }
 
 impl Parse for CatalogInput {
@@ -59,6 +63,27 @@ impl Parse for CatalogInput {
 		}
 
 		Ok(Self { entries, passthrough })
+	}
+}
+
+impl Parse for CliSubcommandsInput {
+	fn parse(input: ParseStream<'_>) -> Result<Self> {
+		let mut enums = Vec::new();
+		while !input.is_empty() {
+			enums.push(input.parse::<ItemEnum>()?);
+			if input.peek(Token![,]) {
+				input.parse::<Token![,]>()?;
+			}
+			if input.peek(Token![;]) {
+				input.parse::<Token![;]>()?;
+			}
+		}
+
+		if enums.is_empty() {
+			return Err(Error::new(proc_macro2::Span::call_site(), "expected at least one enum declaration"));
+		}
+
+		Ok(Self { enums })
 	}
 }
 
@@ -381,4 +406,17 @@ pub fn command_graph(input: TokenStream) -> TokenStream {
 pub fn command_catalog(input: TokenStream) -> TokenStream {
 	let catalog = parse_macro_input!(input as CatalogInput);
 	expand_command_graph(catalog)
+}
+
+#[proc_macro]
+pub fn cli_subcommands(input: TokenStream) -> TokenStream {
+	let parsed = parse_macro_input!(input as CliSubcommandsInput);
+	let enums = parsed.enums.into_iter().map(|mut item| {
+		item.attrs.insert(0, parse_quote!(#[derive(clap::Subcommand, Debug)]));
+		quote! { #item }
+	});
+
+	TokenStream::from(quote! {
+		#(#enums)*
+	})
 }
