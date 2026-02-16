@@ -35,6 +35,29 @@ static PARTIAL_PATTERN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 	}
 });
 
+/// Extract <meta ...> tags for metadata parsing.
+static META_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<meta\b[^>]*>").unwrap());
+/// Parse key="value" attributes from an HTML tag fragment.
+static META_ATTR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*["']([^"']*)["']"#).unwrap());
+
+/// Header opening tags (<h1 ...>, <h2 ...>, ...), precompiled for markdown conversion.
+static MD_HEADER_OPEN_RES: LazyLock<Vec<Regex>> = LazyLock::new(|| (1..=6).map(|level| Regex::new(&format!(r"(?i)<h{level}\s*[^>]*>")).unwrap()).collect());
+static MD_STRONG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<strong[^>]*>([^<]*)</strong>").unwrap());
+static MD_B_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<b[^>]*>([^<]*)</b>").unwrap());
+static MD_EM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<em[^>]*>([^<]*)</em>").unwrap());
+static MD_I_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<i[^>]*>([^<]*)</i>").unwrap());
+static MD_LINK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)<a[^>]*href=["']([^"']+)["'][^>]*>([^<]*)</a>"#).unwrap());
+static MD_IMG_SRC_ALT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)<img[^>]*src=["']([^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*/?>"#).unwrap());
+static MD_IMG_ALT_SRC_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)<img[^>]*alt=["']([^"']*)["'][^>]*src=["']([^"']+)["'][^>]*/?>"#).unwrap());
+static MD_P_OPEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<p[^>]*>").unwrap());
+static MD_BR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<br\s*/?>").unwrap());
+static MD_LI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<li[^>]*>").unwrap());
+static MD_LIST_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)</?[uo]l[^>]*>").unwrap());
+static MD_CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<code[^>]*>([^<]*)</code>").unwrap());
+static MD_PRE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<pre[^>]*>([^<]*)</pre>").unwrap());
+static MD_BLOCKQUOTE_OPEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<blockquote[^>]*>").unwrap());
+static MD_ANY_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
+
 #[allow(dead_code, reason = "fields accessed via serde deserialization")]
 #[derive(Debug, Deserialize)]
 struct ClutterPatterns {
@@ -154,28 +177,35 @@ fn extract_metadata(html: &str, url: Option<&str>) -> PageMetadata {
 
 /// Extract content from a meta tag
 fn extract_meta_content(html: &str, name: &str) -> Option<String> {
-	// Try property attribute (og:*, article:*)
-	let property_pattern = format!(r#"<meta[^>]*property=["']{}["'][^>]*content=["']([^"']+)["']"#, regex_lite::escape(name));
-	if let Some(caps) = Regex::new(&property_pattern).ok()?.captures(html) {
-		return Some(decode_html_entities(caps.get(1)?.as_str()));
-	}
+	let target = name.to_ascii_lowercase();
+	for meta_tag in META_TAG_RE.find_iter(html) {
+		let mut property = None;
+		let mut named = None;
+		let mut content = None;
 
-	// Try content first, then property (different order)
-	let property_pattern2 = format!(r#"<meta[^>]*content=["']([^"']+)["'][^>]*property=["']{}["']"#, regex_lite::escape(name));
-	if let Some(caps) = Regex::new(&property_pattern2).ok()?.captures(html) {
-		return Some(decode_html_entities(caps.get(1)?.as_str()));
-	}
+		for caps in META_ATTR_RE.captures_iter(meta_tag.as_str()) {
+			let Some(key) = caps.get(1).map(|m| m.as_str()) else {
+				continue;
+			};
+			let Some(value) = caps.get(2).map(|m| m.as_str()) else {
+				continue;
+			};
+			match key.to_ascii_lowercase().as_str() {
+				"property" => property = Some(value),
+				"name" => named = Some(value),
+				"content" => content = Some(value),
+				_ => {}
+			}
+		}
 
-	// Try name attribute
-	let name_pattern = format!(r#"<meta[^>]*name=["']{}["'][^>]*content=["']([^"']+)["']"#, regex_lite::escape(name));
-	if let Some(caps) = Regex::new(&name_pattern).ok()?.captures(html) {
-		return Some(decode_html_entities(caps.get(1)?.as_str()));
-	}
-
-	// Try content first, then name
-	let name_pattern2 = format!(r#"<meta[^>]*content=["']([^"']+)["'][^>]*name=["']{}["']"#, regex_lite::escape(name));
-	if let Some(caps) = Regex::new(&name_pattern2).ok()?.captures(html) {
-		return Some(decode_html_entities(caps.get(1)?.as_str()));
+		let Some(content_value) = content else {
+			continue;
+		};
+		let matched =
+			property.is_some_and(|value| value.eq_ignore_ascii_case(target.as_str())) || named.is_some_and(|value| value.eq_ignore_ascii_case(target.as_str()));
+		if matched {
+			return Some(decode_html_entities(content_value));
+		}
 	}
 
 	None
@@ -464,63 +494,44 @@ fn html_to_markdown(html: &str) -> String {
 	// Headers
 	for i in 1..=6 {
 		let hashes = "#".repeat(i);
-		let open = format!("<h{}", i);
 		let close = format!("</h{}>", i);
-		result = Regex::new(&format!(r"(?i){}\s*[^>]*>", regex_lite::escape(&open)))
-			.unwrap()
-			.replace_all(&result, &format!("\n{} ", hashes))
-			.to_string();
+		result = MD_HEADER_OPEN_RES[i - 1].replace_all(&result, &format!("\n{} ", hashes)).to_string();
 		result = result.replace(&close, "\n");
 	}
 
 	// Bold and italic
-	result = Regex::new(r"(?i)<strong[^>]*>([^<]*)</strong>")
-		.unwrap()
-		.replace_all(&result, "**$1**")
-		.to_string();
-	result = Regex::new(r"(?i)<b[^>]*>([^<]*)</b>").unwrap().replace_all(&result, "**$1**").to_string();
-	result = Regex::new(r"(?i)<em[^>]*>([^<]*)</em>").unwrap().replace_all(&result, "*$1*").to_string();
-	result = Regex::new(r"(?i)<i[^>]*>([^<]*)</i>").unwrap().replace_all(&result, "*$1*").to_string();
+	result = MD_STRONG_RE.replace_all(&result, "**$1**").to_string();
+	result = MD_B_RE.replace_all(&result, "**$1**").to_string();
+	result = MD_EM_RE.replace_all(&result, "*$1*").to_string();
+	result = MD_I_RE.replace_all(&result, "*$1*").to_string();
 
 	// Links
-	result = Regex::new(r#"(?i)<a[^>]*href=["']([^"']+)["'][^>]*>([^<]*)</a>"#)
-		.unwrap()
-		.replace_all(&result, "[$2]($1)")
-		.to_string();
+	result = MD_LINK_RE.replace_all(&result, "[$2]($1)").to_string();
 
 	// Images
-	result = Regex::new(r#"(?i)<img[^>]*src=["']([^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*/?>"#)
-		.unwrap()
-		.replace_all(&result, "![$2]($1)")
-		.to_string();
-	result = Regex::new(r#"(?i)<img[^>]*alt=["']([^"']*)["'][^>]*src=["']([^"']+)["'][^>]*/?>"#)
-		.unwrap()
-		.replace_all(&result, "![$1]($2)")
-		.to_string();
+	result = MD_IMG_SRC_ALT_RE.replace_all(&result, "![$2]($1)").to_string();
+	result = MD_IMG_ALT_SRC_RE.replace_all(&result, "![$1]($2)").to_string();
 
 	// Paragraphs and line breaks
-	result = Regex::new(r"(?i)<p[^>]*>").unwrap().replace_all(&result, "\n\n").to_string();
+	result = MD_P_OPEN_RE.replace_all(&result, "\n\n").to_string();
 	result = result.replace("</p>", "\n");
-	result = Regex::new(r"(?i)<br\s*/?>").unwrap().replace_all(&result, "\n").to_string();
+	result = MD_BR_RE.replace_all(&result, "\n").to_string();
 
 	// Lists
-	result = Regex::new(r"(?i)<li[^>]*>").unwrap().replace_all(&result, "\n- ").to_string();
+	result = MD_LI_RE.replace_all(&result, "\n- ").to_string();
 	result = result.replace("</li>", "");
-	result = Regex::new(r"(?i)</?[uo]l[^>]*>").unwrap().replace_all(&result, "\n").to_string();
+	result = MD_LIST_RE.replace_all(&result, "\n").to_string();
 
 	// Code
-	result = Regex::new(r"(?i)<code[^>]*>([^<]*)</code>").unwrap().replace_all(&result, "`$1`").to_string();
-	result = Regex::new(r"(?i)<pre[^>]*>([^<]*)</pre>")
-		.unwrap()
-		.replace_all(&result, "\n```\n$1\n```\n")
-		.to_string();
+	result = MD_CODE_RE.replace_all(&result, "`$1`").to_string();
+	result = MD_PRE_RE.replace_all(&result, "\n```\n$1\n```\n").to_string();
 
 	// Blockquotes
-	result = Regex::new(r"(?i)<blockquote[^>]*>").unwrap().replace_all(&result, "\n> ").to_string();
+	result = MD_BLOCKQUOTE_OPEN_RE.replace_all(&result, "\n> ").to_string();
 	result = result.replace("</blockquote>", "\n");
 
 	// Remove remaining tags
-	result = Regex::new(r"<[^>]+>").unwrap().replace_all(&result, "").to_string();
+	result = MD_ANY_TAG_RE.replace_all(&result, "").to_string();
 
 	// Decode entities and clean up
 	result = decode_html_entities(&result);

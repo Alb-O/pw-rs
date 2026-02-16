@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use pw_rs::{StorageState, WaitUntil};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::artifact_collector::{CollectedArtifacts, collect_failure_artifacts};
 use crate::browser::{BrowserSession, DownloadInfo, SessionOptions};
@@ -95,7 +95,20 @@ fn now_ts() -> u64 {
 fn pid_is_alive(pid: u32) -> bool {
 	#[cfg(unix)]
 	{
-		PathBuf::from("/proc").join(pid.to_string()).exists()
+		if pid == 0 {
+			return false;
+		}
+
+		if PathBuf::from("/proc").join(pid.to_string()).exists() {
+			return true;
+		}
+
+		std::process::Command::new("kill")
+			.arg("-0")
+			.arg(pid.to_string())
+			.status()
+			.map(|status| status.success())
+			.unwrap_or(pid == std::process::id())
 	}
 
 	#[cfg(windows)]
@@ -401,13 +414,21 @@ impl<'a> SessionBroker<'a> {
 					driver_hash: Some(DRIVER_HASH.to_string()),
 					created_at: now_ts(),
 				};
-				let _ = descriptor.save(path);
-				debug!(
-					target = "pw.session",
-					cdp = ?descriptor.cdp_endpoint,
-					ws = ?descriptor.ws_endpoint,
-					"saved session descriptor"
-				);
+				if let Err(err) = descriptor.save(path) {
+					warn!(
+						target = "pw.session",
+						path = %path.display(),
+						error = %err,
+						"failed to save session descriptor"
+					);
+				} else {
+					debug!(
+						target = "pw.session",
+						cdp = ?descriptor.cdp_endpoint,
+						ws = ?descriptor.ws_endpoint,
+						"saved session descriptor"
+					);
+				}
 			} else {
 				debug!(target = "pw.session", "no endpoint available; skipping descriptor save");
 			}
@@ -718,5 +739,17 @@ mod tests {
 	fn tasklist_has_pid_ignores_non_csv_lines() {
 		let output = "INFO: No tasks are running which match the specified criteria.\r\n";
 		assert!(!tasklist_has_pid(output, 1234));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn pid_is_alive_accepts_current_process_on_unix() {
+		assert!(pid_is_alive(std::process::id()));
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn pid_zero_is_never_alive() {
+		assert!(!pid_is_alive(0));
 	}
 }

@@ -8,7 +8,7 @@ use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::types::error::ErrorObjectOwned;
 use pw_rs::{LaunchOptions, Playwright};
 use serde_json::json;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, oneshot, watch};
 use tracing::{debug, info, warn};
 
 use super::DAEMON_TCP_PORT;
@@ -124,7 +124,11 @@ impl Daemon {
 		})
 	}
 
-	pub async fn run(mut self) -> Result<()> {
+	pub async fn run(self) -> Result<()> {
+		self.run_with_ready(None).await
+	}
+
+	pub async fn run_with_ready(mut self, ready_tx: Option<oneshot::Sender<()>>) -> Result<()> {
 		let addr = format!("127.0.0.1:{}", DAEMON_TCP_PORT);
 		let server = ServerBuilder::default()
 			.build(&addr)
@@ -137,6 +141,9 @@ impl Daemon {
 		};
 		let handle = server.start(rpc.into_rpc());
 		info!(target = "pw.daemon", addr, "daemon listening");
+		if let Some(tx) = ready_tx {
+			let _ = tx.send(());
+		}
 
 		#[cfg(unix)]
 		{
