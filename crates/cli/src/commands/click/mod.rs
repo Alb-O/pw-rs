@@ -7,13 +7,13 @@ use pw_rs::{ClickOptions, WaitUntil};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::args;
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_and_selector, standard_delta_with_url, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::Result;
-use crate::output::{ClickData, CommandInputs, DownloadedFile};
-use crate::session_broker::SessionRequest;
+use crate::output::{ClickData, DownloadedFile};
 use crate::session_helpers::{ArtifactsPolicy, with_session};
-use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
+use crate::target::{ResolveEnv, ResolvedTarget};
 
 /// Raw inputs from CLI or batch JSON.
 #[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
@@ -61,10 +61,7 @@ impl CommandDef for ClickCommand {
 	type Data = ClickData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let resolved = args::resolve_url_and_selector(raw.url.clone(), raw.url_flag, raw.selector_flag.or(raw.selector));
-
-		let target = env.resolve_target(resolved.url, TargetPolicy::AllowCurrentPage)?;
-		let selector = env.resolve_selector(resolved.selector, Some("css=button"))?;
+		let (target, selector) = resolve_target_and_selector(raw.url, raw.selector, raw.url_flag, raw.selector_flag, env, Some("css=button"))?;
 		let wait_ms = raw.wait_ms.unwrap_or(0);
 
 		Ok(ClickResolved { target, selector, wait_ms })
@@ -78,16 +75,14 @@ impl CommandDef for ClickCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, selector = %args.selector, browser = %exec.ctx.browser, "click element");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let selector = args.selector.clone();
 			let selector_for_outcome = selector.clone();
 			let wait_ms = args.wait_ms;
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			let (after_url, data) = with_session(&mut exec, req, ArtifactsPolicy::OnError { command: "click" }, move |session| {
+			let (after_url, data) = with_session(&mut exec, plan.request, ArtifactsPolicy::OnError { command: "click" }, move |session| {
 				let selector = selector.clone();
 				Box::pin(async move {
 					session.goto_target(&target, timeout_ms).await?;
@@ -166,20 +161,12 @@ impl CommandDef for ClickCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				selector: Some(selector_for_outcome.clone()),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, Some(&selector_for_outcome), None, None, None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: Some(after_url),
-					selector: Some(selector_for_outcome),
-					output: None,
-				},
+				delta: standard_delta_with_url(Some(after_url), Some(&selector_for_outcome), None),
 			})
 		})
 	}

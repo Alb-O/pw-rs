@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::browser::js::console_capture_injection_js;
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_from_url_pair, standard_delta, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::Result;
-use crate::output::CommandInputs;
-use crate::session_broker::SessionRequest;
 use crate::session_helpers::{ArtifactsPolicy, with_session};
 use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
 use crate::types::ConsoleMessage;
@@ -77,8 +77,7 @@ impl CommandDef for ConsoleCommand {
 	type Data = ConsoleData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let url = raw.url_flag.or(raw.url);
-		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
+		let target = resolve_target_from_url_pair(raw.url, raw.url_flag, env, TargetPolicy::AllowCurrentPage)?;
 
 		Ok(ConsoleResolved {
 			target,
@@ -94,14 +93,12 @@ impl CommandDef for ConsoleCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, timeout_ms = args.timeout_ms, browser = %exec.ctx.browser, "capture console");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let capture_timeout_ms = args.timeout_ms;
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			let data = with_session(&mut exec, req, ArtifactsPolicy::Never, move |session| {
+			let data = with_session(&mut exec, plan.request, ArtifactsPolicy::Never, move |session| {
 				Box::pin(async move {
 					if let Err(err) = session.page().evaluate(console_capture_injection_js()).await {
 						warn!(target = "pw.browser.console", error = %err, "failed to inject console capture");
@@ -143,20 +140,12 @@ impl CommandDef for ConsoleCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				extra: Some(serde_json::json!({ "timeout_ms": args.timeout_ms })),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, None, None, None, Some(serde_json::json!({ "timeout_ms": args.timeout_ms })));
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: args.target.url_str().map(String::from),
-					selector: None,
-					output: None,
-				},
+				delta: standard_delta(&args.target, None, None),
 			})
 		})
 	}

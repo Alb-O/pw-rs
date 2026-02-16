@@ -30,10 +30,12 @@ use pw_rs::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_from_url_pair, standard_delta_with_url, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::Result;
-use crate::output::{CommandInputs, InteractiveElement, SnapshotData};
-use crate::session_broker::{SessionHandle, SessionRequest};
+use crate::output::{InteractiveElement, SnapshotData};
+use crate::session_broker::SessionHandle;
 use crate::session_helpers::{ArtifactsPolicy, with_session};
 use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
 
@@ -96,8 +98,7 @@ impl CommandDef for SnapshotCommand {
 	type Data = SnapshotData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let url = raw.url_flag.or(raw.url);
-		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
+		let target = resolve_target_from_url_pair(raw.url, raw.url_flag, env, TargetPolicy::AllowCurrentPage)?;
 
 		Ok(SnapshotResolved {
 			target,
@@ -115,16 +116,14 @@ impl CommandDef for SnapshotCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, text_only = %args.text_only, full = %args.full, browser = %exec.ctx.browser, "snapshot");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let text_only = args.text_only;
 			let full = args.full;
 			let max_text_length = args.max_text_length;
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			let (final_url, data) = with_session(&mut exec, req, ArtifactsPolicy::OnError { command: "snapshot" }, move |session| {
+			let (final_url, data) = with_session(&mut exec, plan.request, ArtifactsPolicy::OnError { command: "snapshot" }, move |session| {
 				Box::pin(async move {
 					session.goto_target(&target, timeout_ms).await?;
 
@@ -154,19 +153,12 @@ impl CommandDef for SnapshotCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, None, None, None, None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: Some(final_url),
-					selector: None,
-					output: None,
-				},
+				delta: standard_delta_with_url(Some(final_url), None, None),
 			})
 		})
 	}

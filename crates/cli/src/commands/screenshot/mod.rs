@@ -7,10 +7,11 @@ use pw_rs::{ScreenshotOptions, WaitUntil};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_from_url_pair, standard_delta, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::Result;
-use crate::output::{CommandInputs, ScreenshotData};
-use crate::session_broker::SessionRequest;
+use crate::output::ScreenshotData;
 use crate::session_helpers::{ArtifactsPolicy, with_session};
 use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
 
@@ -56,8 +57,7 @@ impl CommandDef for ScreenshotCommand {
 	type Data = ScreenshotData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let url = raw.url_flag.or(raw.url);
-		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
+		let target = resolve_target_from_url_pair(raw.url, raw.url_flag, env, TargetPolicy::AllowCurrentPage)?;
 
 		let output = raw.output.unwrap_or_else(|| PathBuf::from("screenshot.png"));
 		let full_page = raw.full_page.unwrap_or(false);
@@ -86,15 +86,13 @@ impl CommandDef for ScreenshotCommand {
 				}
 			}
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let output = args.output.clone();
 			let full_page = args.full_page;
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			with_session(&mut exec, req, ArtifactsPolicy::Never, move |session| {
+			with_session(&mut exec, plan.request, ArtifactsPolicy::Never, move |session| {
 				let output = output.clone();
 				Box::pin(async move {
 					session.goto_target(&target, timeout_ms).await?;
@@ -118,20 +116,12 @@ impl CommandDef for ScreenshotCommand {
 				height: None,
 			};
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				output_path: Some(args.output.clone()),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, None, None, Some(&args.output), None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: args.target.url_str().map(String::from),
-					selector: None,
-					output: Some(args.output.clone()),
-				},
+				delta: standard_delta(&args.target, None, Some(&args.output)),
 			})
 		})
 	}

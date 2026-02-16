@@ -14,10 +14,11 @@ use pw_rs::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_from_url_pair, standard_delta, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::Result;
-use crate::output::{CommandInputs, FillData};
-use crate::session_broker::SessionRequest;
+use crate::output::FillData;
 use crate::session_helpers::{ArtifactsPolicy, with_session};
 use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
 
@@ -62,7 +63,7 @@ impl CommandDef for FillCommand {
 	type Data = FillData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let target = env.resolve_target(raw.url, TargetPolicy::AllowCurrentPage)?;
+		let target = resolve_target_from_url_pair(raw.url, None, env, TargetPolicy::AllowCurrentPage)?;
 		let selector = env.resolve_selector(raw.selector, None)?;
 		let text = raw.text.unwrap_or_default();
 
@@ -77,15 +78,13 @@ impl CommandDef for FillCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, selector = %args.selector, "fill");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::Load);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let selector = args.selector.clone();
 			let text = args.text.clone();
 
-			let req = SessionRequest::from_context(WaitUntil::Load, exec.ctx).with_preferred_url(preferred_url);
-
-			let data = with_session(&mut exec, req, ArtifactsPolicy::OnError { command: "fill" }, move |session| {
+			let data = with_session(&mut exec, plan.request, ArtifactsPolicy::OnError { command: "fill" }, move |session| {
 				let selector = selector.clone();
 				let text = text.clone();
 				Box::pin(async move {
@@ -99,20 +98,12 @@ impl CommandDef for FillCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				selector: Some(args.selector.clone()),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, Some(&args.selector), None, None, None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: args.target.url_str().map(String::from),
-					selector: Some(args.selector.clone()),
-					output: None,
-				},
+				delta: standard_delta(&args.target, Some(&args.selector), None),
 			})
 		})
 	}

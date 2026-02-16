@@ -5,11 +5,12 @@ use pw_rs::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_from_url_pair, standard_delta_with_url, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::commands::page::snapshot::{EXTRACT_ELEMENTS_JS, EXTRACT_META_JS, EXTRACT_TEXT_JS, PageMeta, RawElement};
 use crate::error::Result;
-use crate::output::{CommandInputs, InteractiveElement, SnapshotData};
-use crate::session_broker::SessionRequest;
+use crate::output::{InteractiveElement, SnapshotData};
 use crate::target::{ResolveEnv, ResolvedTarget, Target, TargetPolicy};
 
 const DEFAULT_MAX_TEXT_LENGTH: usize = 5000;
@@ -44,8 +45,7 @@ impl CommandDef for NavigateCommand {
 	type Data = SnapshotData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let url = raw.url_flag.or(raw.url);
-		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
+		let target = resolve_target_from_url_pair(raw.url, raw.url_flag, env, TargetPolicy::AllowCurrentPage)?;
 		Ok(NavigateResolved { target })
 	}
 
@@ -57,13 +57,10 @@ impl CommandDef for NavigateCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, browser = %exec.ctx.browser, "navigate");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::Load);
+			let session = exec.broker.session(plan.request).await?;
 
-			let req = SessionRequest::from_context(WaitUntil::Load, exec.ctx).with_preferred_url(preferred_url);
-
-			let session = exec.broker.session(req).await?;
-
-			match &args.target.target {
+			match &plan.target {
 				Target::Navigate(url) => {
 					session.goto_if_needed(url.as_str(), exec.ctx.timeout_ms()).await?;
 				}
@@ -94,21 +91,14 @@ impl CommandDef for NavigateCommand {
 				element_count,
 			};
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, None, None, None, None);
 
 			session.close().await?;
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: Some(meta.url),
-					selector: None,
-					output: None,
-				},
+				delta: standard_delta_with_url(Some(meta.url), None, None),
 			})
 		})
 	}

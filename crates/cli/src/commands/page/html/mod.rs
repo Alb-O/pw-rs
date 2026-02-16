@@ -5,13 +5,12 @@ use pw_rs::WaitUntil;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::args;
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_and_selector, standard_delta, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::Result;
-use crate::output::CommandInputs;
-use crate::session_broker::SessionRequest;
 use crate::session_helpers::{ArtifactsPolicy, with_session};
-use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
+use crate::target::{ResolveEnv, ResolvedTarget};
 
 /// Raw inputs from CLI or batch JSON.
 #[derive(Debug, Clone, Default, Args, Serialize, Deserialize)]
@@ -65,10 +64,7 @@ impl CommandDef for HtmlCommand {
 	type Data = HtmlData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let resolved = args::resolve_url_and_selector(raw.url.clone(), raw.url_flag, raw.selector_flag.or(raw.selector));
-
-		let target = env.resolve_target(resolved.url, TargetPolicy::AllowCurrentPage)?;
-		let selector = env.resolve_selector(resolved.selector, Some("html"))?;
+		let (target, selector) = resolve_target_and_selector(raw.url, raw.selector, raw.url_flag, raw.selector_flag, env, Some("html"))?;
 
 		Ok(HtmlResolved { target, selector })
 	}
@@ -86,14 +82,12 @@ impl CommandDef for HtmlCommand {
 				info!(target = "pw", url = %url_display, selector = %args.selector, browser = %exec.ctx.browser, "get HTML for selector");
 			}
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let selector = args.selector.clone();
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			let data = with_session(&mut exec, req, ArtifactsPolicy::Never, move |session| {
+			let data = with_session(&mut exec, plan.request, ArtifactsPolicy::Never, move |session| {
 				let selector = selector.clone();
 				Box::pin(async move {
 					session.goto_target(&target, timeout_ms).await?;
@@ -110,20 +104,12 @@ impl CommandDef for HtmlCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				selector: Some(args.selector.clone()),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, Some(&args.selector), None, None, None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: args.target.url_str().map(String::from),
-					selector: Some(args.selector.clone()),
-					output: None,
-				},
+				delta: standard_delta(&args.target, Some(&args.selector), None),
 			})
 		})
 	}

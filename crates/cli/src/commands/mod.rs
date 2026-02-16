@@ -1,9 +1,11 @@
 mod auth;
 pub(crate) mod click;
 mod connect;
+pub(crate) mod contract;
 mod daemon;
 pub(crate) mod def;
 pub(crate) mod dispatch;
+pub(crate) mod exec_flow;
 pub(crate) mod fill;
 mod har;
 pub mod init;

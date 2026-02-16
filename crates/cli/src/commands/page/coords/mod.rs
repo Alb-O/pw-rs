@@ -22,12 +22,12 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::browser::js;
-use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ContextDelta, ExecCtx};
+use crate::commands::contract::{resolve_target_and_explicit_selector, standard_delta, standard_inputs};
+use crate::commands::def::{BoxFut, CommandDef, CommandOutcome, ExecCtx};
+use crate::commands::exec_flow::navigation_plan;
 use crate::error::{PwError, Result};
-use crate::output::CommandInputs;
-use crate::session_broker::SessionRequest;
 use crate::session_helpers::{ArtifactsPolicy, with_session};
-use crate::target::{ResolveEnv, ResolvedTarget, TargetPolicy};
+use crate::target::{ResolveEnv, ResolvedTarget};
 use crate::types::{ElementCoords, IndexedElementCoords};
 
 /// Raw inputs from CLI or batch JSON before resolution.
@@ -98,9 +98,7 @@ impl CommandDef for CoordsCommand {
 	type Data = CoordsData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let url = raw.url_flag.or(raw.url);
-		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
-		let selector = env.resolve_selector(raw.selector_flag.or(raw.selector), None)?;
+		let (target, selector) = resolve_target_and_explicit_selector(raw.url, raw.url_flag, raw.selector, raw.selector_flag, env, None)?;
 
 		Ok(CoordsResolved { target, selector })
 	}
@@ -113,14 +111,12 @@ impl CommandDef for CoordsCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, selector = %args.selector, browser = %exec.ctx.browser, "coords single");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let selector = args.selector.clone();
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			let data = with_session(&mut exec, req, ArtifactsPolicy::Never, move |session| {
+			let data = with_session(&mut exec, plan.request, ArtifactsPolicy::Never, move |session| {
 				let selector = selector.clone();
 				Box::pin(async move {
 					session.goto_target(&target, timeout_ms).await?;
@@ -138,20 +134,12 @@ impl CommandDef for CoordsCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				selector: Some(args.selector.clone()),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, Some(&args.selector), None, None, None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: args.target.url_str().map(String::from),
-					selector: Some(args.selector.clone()),
-					output: None,
-				},
+				delta: standard_delta(&args.target, Some(&args.selector), None),
 			})
 		})
 	}
@@ -167,9 +155,7 @@ impl CommandDef for CoordsAllCommand {
 	type Data = CoordsAllData;
 
 	fn resolve(raw: Self::Raw, env: &ResolveEnv<'_>) -> Result<Self::Resolved> {
-		let url = raw.url_flag.or(raw.url);
-		let target = env.resolve_target(url, TargetPolicy::AllowCurrentPage)?;
-		let selector = env.resolve_selector(raw.selector_flag.or(raw.selector), None)?;
+		let (target, selector) = resolve_target_and_explicit_selector(raw.url, raw.url_flag, raw.selector, raw.selector_flag, env, None)?;
 
 		Ok(CoordsAllResolved { target, selector })
 	}
@@ -182,14 +168,12 @@ impl CommandDef for CoordsAllCommand {
 			let url_display = args.target.url_str().unwrap_or("<current page>");
 			info!(target = "pw", url = %url_display, selector = %args.selector, browser = %exec.ctx.browser, "coords all");
 
-			let preferred_url = args.target.preferred_url(exec.last_url);
-			let timeout_ms = exec.ctx.timeout_ms();
-			let target = args.target.target.clone();
+			let plan = navigation_plan(exec.ctx, exec.last_url, &args.target, WaitUntil::NetworkIdle);
+			let timeout_ms = plan.timeout_ms;
+			let target = plan.target;
 			let selector = args.selector.clone();
 
-			let req = SessionRequest::from_context(WaitUntil::NetworkIdle, exec.ctx).with_preferred_url(preferred_url);
-
-			let data = with_session(&mut exec, req, ArtifactsPolicy::Never, move |session| {
+			let data = with_session(&mut exec, plan.request, ArtifactsPolicy::Never, move |session| {
 				let selector = selector.clone();
 				Box::pin(async move {
 					session.goto_target(&target, timeout_ms).await?;
@@ -204,20 +188,12 @@ impl CommandDef for CoordsAllCommand {
 			})
 			.await?;
 
-			let inputs = CommandInputs {
-				url: args.target.url_str().map(String::from),
-				selector: Some(args.selector.clone()),
-				..Default::default()
-			};
+			let inputs = standard_inputs(&args.target, Some(&args.selector), None, None, None);
 
 			Ok(CommandOutcome {
 				inputs,
 				data,
-				delta: ContextDelta {
-					url: args.target.url_str().map(String::from),
-					selector: Some(args.selector.clone()),
-					output: None,
-				},
+				delta: standard_delta(&args.target, Some(&args.selector), None),
 			})
 		})
 	}
