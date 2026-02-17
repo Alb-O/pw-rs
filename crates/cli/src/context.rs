@@ -2,7 +2,7 @@
 //!
 //! Provides shared context (project, browser, auth) to all commands.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use pw_rs::{HarContentPolicy, HarMode};
 
@@ -200,6 +200,7 @@ impl CommandContext {
 
 		// Resolve auth file path based on project
 		let resolved_auth = auth_file.map(|auth| {
+			let auth = expand_home_path(auth);
 			if auth.is_absolute() {
 				auth
 			} else if let Some(ref proj) = project {
@@ -381,6 +382,32 @@ impl CommandContext {
 	}
 }
 
+fn expand_home_path(path: PathBuf) -> PathBuf {
+	if path.is_absolute() {
+		return path;
+	}
+
+	let mut components = path.components();
+	let Some(first) = components.next() else {
+		return path;
+	};
+
+	match first {
+		Component::Normal(part) if part == "~" => match dirs::home_dir() {
+			Some(home) => {
+				let rest: PathBuf = components.collect();
+				if rest.as_os_str().is_empty() {
+					home
+				} else {
+					home.join(rest)
+				}
+			}
+			None => path,
+		},
+		_ => path,
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use std::fs;
@@ -442,5 +469,28 @@ mod tests {
 
 		std::env::set_current_dir(original_dir).unwrap();
 		result.unwrap();
+	}
+
+	#[test]
+	fn test_auth_file_tilde_expands_to_home() {
+		let home = ::dirs::home_dir().expect("home directory should be available for tests");
+		let expected = home.join("pw-auth.json");
+		let ctx = CommandContext::with_config(CommandContextConfig {
+			no_project: true,
+			auth_file: Some(PathBuf::from("~/pw-auth.json")),
+			..Default::default()
+		});
+		assert_eq!(ctx.auth_file(), Some(expected.as_path()));
+	}
+
+	#[test]
+	fn test_auth_file_bare_tilde_expands_to_home() {
+		let home = ::dirs::home_dir().expect("home directory should be available for tests");
+		let ctx = CommandContext::with_config(CommandContextConfig {
+			no_project: true,
+			auth_file: Some(PathBuf::from("~")),
+			..Default::default()
+		});
+		assert_eq!(ctx.auth_file(), Some(home.as_path()));
 	}
 }
