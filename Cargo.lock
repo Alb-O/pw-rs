@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "pw-cli"
-version = "0.19.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "pw-cli-command-macros"
-version = "0.19.0"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "pw-protocol"
-version = "0.19.0"
+version = "1.0.0"
 dependencies = [
  "base64",
  "serde",
@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "pw-rs"
-version = "0.19.0"
+version = "1.0.0"
 dependencies = [
  "base64",
  "downcast-rs",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "pw-runtime"
-version = "0.19.0"
+version = "1.0.0"
 dependencies = [
  "dashmap",
  "dirs",
