@@ -12,7 +12,9 @@ export def "pp send" [
     --file (-f): path      # Read message from file (avoids shell escaping)
     --force                # Send even if last message matches (bypass dedup)
     --echo-message (-e)    # Include full message text in output
-]: [string -> record, nothing -> record] {
+    --wait (-w)            # Wait for Navigator response after sending
+    --timeout (-t): int = 1200000 # Wait timeout in ms when --wait is set
+]: [string -> any, nothing -> any] {
     let msg = if ($file | is-not-empty) {
         open --raw $file | into string
     } else if ($message | is-not-empty) {
@@ -57,11 +59,16 @@ export def "pp send" [
                 model: (get-current-model)
                 chars: ($msg | str length)
             }
-            return (if $echo_message {
+            let out = (if $echo_message {
                 $dedup | merge { message: $msg }
             } else {
                 $dedup
             })
+            if $wait and (($out.sent? | default false) == true) {
+                pp wait --timeout $timeout
+            } else {
+                $out
+            }
         }
     }
 
@@ -77,11 +84,16 @@ export def "pp send" [
             model: (get-current-model)
             chars: ($msg | str length)
         }
-        return (if $echo_message {
+        let out = (if $echo_message {
             $blocked | merge { message: $msg }
         } else {
             $blocked
         })
+        if $wait and (($out.sent? | default false) == true) {
+            pp wait --timeout $timeout
+        } else {
+            $out
+        }
     }
 
     let result = (insert-text $msg --clear)
@@ -110,10 +122,16 @@ export def "pp send" [
         model: (get-current-model)
         chars: ($msg | str length)
     }
-    if $echo_message {
+    let out = if $echo_message {
         $sent | merge { message: $msg }
     } else {
         $sent
+    }
+
+    if $wait and (($out.sent? | default false) == true) {
+        pp wait --timeout $timeout
+    } else {
+        $out
     }
 }
 

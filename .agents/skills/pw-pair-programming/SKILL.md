@@ -26,7 +26,7 @@ From a global skills directory (most basic usage):
 
 ## commands
 
-`pp send` send message (`--file` supported)
+`pp send` send message (`--file`, `--wait`, `--timeout` supported)
 `pp compose` build message from preamble + context entries
 `pp brief` compose + send (`--wait` for 10+ minutes to avoid timeouts)
 `pp attach` attach files/text/images (binary-safe; infers common MIME types)
