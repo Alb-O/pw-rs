@@ -183,6 +183,10 @@ export def is-generating []: nothing -> bool {
         const thinking = document.querySelector('.result-thinking');
         if (thinking) return true;
 
+        const answerNow = Array.from(document.querySelectorAll('span'))
+            .some(el => (el.textContent || '').trim() === 'Answer now');
+        if (answerNow) return true;
+
         const stopBtn = document.querySelector('button[aria-label=\"Stop streaming\"]');
         if (stopBtn) return true;
 
