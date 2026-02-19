@@ -333,11 +333,11 @@ export def maybe-warn-conversation-length [source: string]: nothing -> record {
     })
 
     if $state.level == "critical" {
-        print -e $"\n⚠  Conversation is very large: ($state.chars) chars (~($state.percent)% of safe limit ($state.effective_limit))."
-        print -e $"Start a fresh chat now: `pp new`, briefing with summary of work up until this point.\n"
+        print -e $"\n⚠  Conversation is very large: ($state.chars) chars \(approx ($state.percent)% of safe limit ($state.effective_limit)\)."
+        print -e "Start a fresh chat now: pp new, briefing with summary of work up until this point.\n"
     } else if $state.level == "warn" {
-        print -e $"\n⚠️ Conversation is getting large: ($state.chars) chars (~($state.percent)% of safe limit ($state.effective_limit))."
-        print -e $"Consider starting a fresh chat soon (`pp new`) at a good breakpoint, briefing with summary of work up until this point.\n"
+        print -e $"\n⚠️ Conversation is getting large: ($state.chars) chars \(approx ($state.percent)% of safe limit ($state.effective_limit)\)."
+        print -e "Consider starting a fresh chat soon (pp new) at a good breakpoint, briefing with summary of work up until this point.\n"
     }
 
     ($state | merge { source: $source })

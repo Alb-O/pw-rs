@@ -120,7 +120,37 @@ export def ensure-project-tab [
 # Hidden helper: configure the active ChatGPT project for this pw profile.
 export def "pp set-project" [
     project?: string  # g-p-... or ChatGPT project/conversation URL
+    --clear (-c)      # Clear project binding from profile context
 ]: nothing -> record {
+    let profile = (active-profile)
+    let config = (profile-config-show $profile)
+    let defaults = ($config | get -o defaults | default {})
+
+    if $clear {
+        if ($project | is-not-empty) {
+            error make { msg: "Use either `pp set-project --clear` or `pp set-project <project>`, not both." }
+        }
+
+        let previous_base_url = ($defaults | get -o baseUrl | default "")
+        let previous_project_id = (try {
+            if ($previous_base_url | is-empty) { null } else { parse-project-id $previous_base_url }
+        } catch {
+            null
+        })
+        let updated = ($config | upsert defaults ($defaults | upsert baseUrl null))
+        profile-config-set $profile $updated | ignore
+
+        return {
+            saved: true
+            cleared: true
+            profile: $profile
+            had_project: ($previous_base_url | is-not-empty)
+            previous_project_id: $previous_project_id
+            project_id: null
+            project_url: null
+        }
+    }
+
     let source = if ($project | is-not-empty) {
         $project
     } else {
@@ -135,15 +165,13 @@ export def "pp set-project" [
 
     let project_id = (parse-project-id $source)
     let urls = (project-urls $project_id)
-    let profile = (active-profile)
-    let config = (profile-config-show $profile)
-    let defaults = ($config | get -o defaults | default {})
     let updated = ($config | upsert defaults ($defaults | upsert baseUrl $urls.project))
 
     profile-config-set $profile $updated | ignore
 
     {
         saved: true
+        cleared: false
         profile: $profile
         project_id: $project_id
         project_url: $urls.project

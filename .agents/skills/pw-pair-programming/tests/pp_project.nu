@@ -42,6 +42,29 @@ def "test set-project accepts conversation URL" [] {
     rm -rf $workspace
 }
 
+def "test set-project clear removes project URL from context" [] {
+    let workspace = (mktemp -d)
+    let previous = (pwd)
+    cd $workspace
+
+    let profile = "pp-project-clear"
+    with-env { PW_PROFILE: $profile } {
+        pp set-project "g-p-clear123" | ignore
+        let clear_result = (pp set-project --clear)
+        let shown = (^pw -f json exec profile.show --profile $profile --input ({ name: $profile } | to json) | from json)
+        let base_url = ($shown.data | get -o defaults.baseUrl | default "")
+
+        assert equal true $clear_result.saved
+        assert equal true $clear_result.cleared
+        assert equal true $clear_result.had_project
+        assert equal "g-p-clear123" ($clear_result.previous_project_id | default "")
+        assert equal "" $base_url
+    }
+
+    cd $previous
+    rm -rf $workspace
+}
+
 def "test send without project does not raise project-required error" [] {
     let workspace = (mktemp -d)
     let previous = (pwd)
@@ -82,6 +105,7 @@ def main [] {
     let results = [
         (run-test "test set-project stores project URL in profile context" { test set-project stores project URL in profile context })
         (run-test "test set-project accepts conversation URL" { test set-project accepts conversation URL })
+        (run-test "test set-project clear removes project URL from context" { test set-project clear removes project URL from context })
         (run-test "test send without project does not raise project-required error" { test send without project does not raise project-required error })
     ]
 
