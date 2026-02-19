@@ -91,6 +91,20 @@ def read-slice [file_path: path, start: int, end: int]: nothing -> string {
     $lines | slice (($start - 1)..($end - 1)) | str join "\n"
 }
 
+def ensure-file-path [file_path: path, entry_text: string, context: string]: nothing -> nothing {
+    let path_kind = (try {
+        $file_path | path type
+    } catch {
+        "unknown"
+    })
+
+    if $path_kind != "file" {
+        error make {
+            msg: $"($context) is not a file: ($entry_text) resolved=($file_path) type=($path_kind) cwd=($env.PWD). Pass a file path."
+        }
+    }
+}
+
 # Compose a Navigator message from a prompt preamble + code context entries.
 # Entry formats:
 #   - full file: "src/main.rs" or "file:src/main.rs"
@@ -130,6 +144,7 @@ export def "pp compose" [
                     msg: $"Slice file not found: ($parsed.path_text) cwd=($env.PWD). Run from your project root or use absolute paths."
                 }
             }
+            ensure-file-path $file_path $parsed.path_text "Slice file"
 
             let snippet = (read-slice $file_path $parsed.start $parsed.end)
             let header = if ($parsed.label | is-empty) {
@@ -147,6 +162,7 @@ export def "pp compose" [
 
             let file_path = $file_text
             if ($file_path | path exists) {
+                ensure-file-path $file_path $file_text "File entry"
                 let content = (open --raw $file_path | into string)
                 $parts = ($parts | append $"\n\n[FILE: ($file_text)]\n($content)")
                 continue
@@ -160,6 +176,7 @@ export def "pp compose" [
                         msg: $"Range entry file not found: ($shorthand.path_text) cwd=($env.PWD). Parsed from '($file_text)'. Run from your project root or use absolute paths."
                     }
                 }
+                ensure-file-path $shorthand_path $shorthand.path_text "Range entry file"
 
                 for range in $shorthand.ranges {
                     let snippet = (read-slice $shorthand_path $range.start $range.end)

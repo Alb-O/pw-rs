@@ -72,6 +72,22 @@ def "test compose rejects out of bounds slice end" [] {
     assert equal true ($result.msg | str contains "Slice end 99 exceeds file length")
 }
 
+def "test compose rejects directory entry with clear message" [] {
+    let f = (fixture)
+    mkdir $"($f.dir)/notes"
+
+    let result = (try {
+        pp compose --preamble-file $f.prompt $"($f.dir)/notes"
+        { ok: true }
+    } catch {|e|
+        { ok: false, msg: $e.msg }
+    })
+
+    assert equal false $result.ok
+    assert equal true ($result.msg | str contains "File entry is not a file")
+    assert equal true ($result.msg | str contains "type=dir")
+}
+
 def main [] {
     def run-test [name: string, block: closure] {
         print -n $"Running ($name)... "
@@ -91,6 +107,7 @@ def main [] {
         (run-test "test compose supports shorthand range entries" { test compose supports shorthand range entries })
         (run-test "test compose rejects invalid slice range" { test compose rejects invalid slice range })
         (run-test "test compose rejects out of bounds slice end" { test compose rejects out of bounds slice end })
+        (run-test "test compose rejects directory entry with clear message" { test compose rejects directory entry with clear message })
     ]
 
     let passed = ($results | where ok == true | length)
