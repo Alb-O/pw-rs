@@ -5,12 +5,11 @@ description: driver-to-navigator collaboration using pp (send messages, attach f
 
 # pw-pair-programming
 
-interact with the navigator using the pp.nu nushell script. uses pw protocol wrappers (pw exec) behind the scenes.
+interact with the navigator using the pp.nu nushell script, uses pw protocol wrappers behind the scenes
 
-* the driver (you) must collaborate with the navigator in back-and-forth loops.
-* the driver writes code and runs tools; the navigator steers design.
-
-setup: requires cdp connection to a debug-enabled browser with an active navigator session. user should already have this setup.
+* the driver (you) must collaborate with the navigator in back-and-forth loops
+* the driver writes code and runs tools; the navigator steers design
+* requires cdp connection to a debug-enabled browser with an active navigator session, user should already have this setup
 
 ## invocation
 
@@ -25,7 +24,8 @@ from a global skills directory (most basic usage):
 3. use a nu list + splat for entries, and keep the `nu -c` body in single quotes so bash does not consume `$entries`
 4. `pp send`/`pp brief` wait for navigator response to finish by default
 	* be patient; set your bash tool timeout extremely high (2+ hours if possible), and let navigator take its time
-	* use `--no-wait` only for fire-and-continue flows (not recommended for regular use).
+	* if your timeout and no response returned, use `pp wait`, do NOT try to send more responses
+	* use `--no-wait` only for fire-and-continue flows (not recommended for regular use)
 
 example:
 
@@ -67,6 +67,8 @@ pp brief --preamble-file /tmp/preamble.md ...$entries
 * when running inside `nu -c`, use single quotes around the script and prefer list + splat (`...$entries`) instead of bash-style line continuations.
 * entries like `path:10-40`, can pass them directly as shorthand slices.
 * the outer agent bash terminal tool may have its own timeout, hitting it means the flow will break, so set it very high (e.g. 2+ hours) when running pp.
+* if compacting/summarizing context, always restore this skill or invoke the skill immediately again and continue the workflow loop (don't wait for confirmation/approval)
+* sessions have a char size limit, if hit and starting pp new, continue the workflow loop (don't wait for confirmation/approval)
 * ask about good commit breakpoints, committing progress is encouraged, but no upstream PRs/pushes
 * always show your actual working files (entries), be honest and transparent, don't just summarize and pretend all is perfect
 * if getting stuck, complexity rising, tests failing for unclear reason, SHOW TO NAVIGATOR AND GET ADVICE
