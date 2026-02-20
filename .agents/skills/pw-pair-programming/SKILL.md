@@ -14,22 +14,36 @@ setup: requires cdp connection to a debug-enabled browser with an active navigat
 
 ## invocation
 
-From a global skills directory (most basic usage):
+from a global skills directory (most basic usage):
 
-`nu -I ~/.claude/skills/pw-pair-programming/scripts -c "use pp.nu *; pp send 'Hello'"`
+`nu -I ~/.claude/skills/pw-pair-programming/scripts -c 'use pp.nu *; pp send "Hello" --wait'`
 
 ## quickstart
 
-1. Write a prompt preamble to a temp file.
-2. Run `pp brief --preamble-file <file> ...<entries> --wait`.
-3. Run from your project root when using relative paths.
+1. write a prompt preamble to a temp file
+2. run from your project root when using relative paths
+3. use a nu list + splat for entries, and keep the `nu -c` body in single quotes so bash does not consume `$entries`
+4. wait before the next send (`--wait` on `pp brief`/`pp send`, or run `pp wait`)
+
+example:
+
+```bash
+nu -I ~/.claude/skills/pw-pair-programming/scripts -c '
+use pp.nu *
+let entries = [
+  "crates/worker/src/lib.rs"
+  "crates/worker/src/supervisor.rs"
+]
+pp brief --preamble-file /tmp/preamble.md ...$entries --wait --timeout 900000
+'
+```
 
 ## commands
 
-`pp send` send message (`--file`, `--wait`, `--timeout` supported)
+`pp send` send one message (`--file` accepts one file path; for many files use `pp brief` or `pp attach`)
 `pp compose` build message from preamble + context entries
 `pp brief` compose + send (`--wait` for 10+ minutes to avoid timeouts)
-`pp attach` attach files/text/images (binary-safe; infers common MIME types)
+`pp attach` attach files/text/images (binary-safe; infers common MIME types; add `--send` to submit)
 `pp paste` paste inline text
 `pp new` start fresh conversation
 `pp set-model` set mode (`auto` | `instant` | `thinking` | `pro`)
@@ -48,7 +62,7 @@ From a global skills directory (most basic usage):
 ## notes
 
 * write preamble content to files instead of inline shell.
-* when running inside nu -c, prefer list + splat (`...$entries`) instead of bash-style line continuations.
+* when running inside `nu -c`, use single quotes around the script and prefer list + splat (`...$entries`) instead of bash-style line continuations.
 * entries like `path:10-40`, can pass them directly as shorthand slices.
 * `pp send` and `pp brief` (without `--wait`) return compact send metadata by default; use `pp send --echo-message` only when you need the full text echoed back.
 * always set a long timeout on your bash command when `--wait`ing (10+ minutes) - navigator needs to think and prep
