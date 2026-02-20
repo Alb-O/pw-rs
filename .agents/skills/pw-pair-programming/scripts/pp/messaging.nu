@@ -4,6 +4,222 @@ use ./common.nu *
 use ./project.nu *
 use ./session.nu [ "pp set-model" ]
 
+def get-response-markdown-via-conversation []: nothing -> record {
+    let js = "(() => {
+        const messages = document.querySelectorAll(\"[data-message-author-role='assistant']\");
+        if (messages.length === 0) {
+            return { ok: false, error: 'no assistant message in DOM' };
+        }
+
+        const lastVisible = messages[messages.length - 1];
+        const lastVisibleId = (lastVisible && lastVisible.dataset) ? lastVisible.dataset.messageId : null;
+        const convMatch = window.location.pathname.match(/\\/c\\/([a-f0-9-]+)/);
+        const convId = convMatch ? convMatch[1] : null;
+        if (!convId) {
+            return { ok: false, error: 'conversation id not found' };
+        }
+
+        const sessionXhr = new XMLHttpRequest();
+        sessionXhr.open('GET', '/api/auth/session', false);
+        sessionXhr.withCredentials = true;
+        sessionXhr.send();
+        if (sessionXhr.status !== 200) {
+            return { ok: false, error: 'session request failed: ' + sessionXhr.status };
+        }
+
+        let token = null;
+        try {
+            const session = JSON.parse(sessionXhr.responseText || '{}');
+            token = session.accessToken || null;
+        } catch (_) {
+            return { ok: false, error: 'failed to parse session response' };
+        }
+        if (!token) {
+            return { ok: false, error: 'access token missing' };
+        }
+
+        const convXhr = new XMLHttpRequest();
+        convXhr.open('GET', '/backend-api/conversation/' + convId, false);
+        convXhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        convXhr.withCredentials = true;
+        convXhr.send();
+        if (convXhr.status !== 200) {
+            return { ok: false, error: 'conversation request failed: ' + convXhr.status };
+        }
+
+        let conversation = null;
+        try {
+            conversation = JSON.parse(convXhr.responseText || '{}');
+        } catch (_) {
+            return { ok: false, error: 'failed to parse conversation response' };
+        }
+
+        const mapping = conversation.mapping || {};
+        const assistants = Object.values(mapping)
+            .filter(Boolean)
+            .map(item => item.message)
+            .filter(msg => msg && msg.author && msg.author.role === 'assistant');
+
+        if (assistants.length === 0) {
+            return { ok: false, error: 'no assistant messages in conversation' };
+        }
+
+        let target = null;
+        if (lastVisibleId) {
+            target = assistants.find(msg => msg.id === lastVisibleId) || null;
+        }
+        if (!target) {
+            target = assistants[assistants.length - 1];
+        }
+
+        const content = (target && target.content) ? target.content : {};
+        const parts = Array.isArray(content.parts) ? content.parts : [];
+        const textPart = parts.find(part => typeof part === 'string' && part.length > 0) || '';
+        if (textPart.length > 0) {
+            return {
+                ok: true,
+                text: textPart,
+                source: 'conversation',
+                messageId: target.id || null
+            };
+        }
+
+        const objectParts = parts
+            .filter(part => part && typeof part === 'object')
+            .map(part => {
+                if (typeof part.text === 'string' && part.text.length > 0) return part.text;
+                if (typeof part.content === 'string' && part.content.length > 0) return part.content;
+                if (typeof part.value === 'string' && part.value.length > 0) return part.value;
+                return null;
+            })
+            .filter(Boolean);
+
+        if (objectParts.length > 0) {
+            return {
+                ok: true,
+                text: objectParts.join('\\n\\n'),
+                source: 'conversation-object-parts',
+                messageId: target.id || null
+            };
+        }
+
+        return { ok: false, error: 'assistant content has no text parts' };
+    })()"
+
+    try {
+        (pw eval $js).data.result
+    } catch {
+        {}
+    }
+}
+
+def get-response-markdown-via-react []: nothing -> record {
+    let js = "(() => {
+        const messages = document.querySelectorAll(\"[data-message-author-role='assistant']\");
+        if (messages.length === 0) {
+            return { ok: false, error: 'no assistant message in DOM' };
+        }
+
+        const last = messages[messages.length - 1];
+        const roots = [];
+
+        const reactPropsKey = Object.keys(last).find(key => key.startsWith('__reactProps'));
+        if (reactPropsKey) {
+            roots.push(last[reactPropsKey]);
+        }
+
+        const reactFiberKey = Object.keys(last).find(key => key.startsWith('__reactFiber'));
+        if (reactFiberKey) {
+            const fiber = last[reactFiberKey];
+            if (fiber && fiber.memoizedProps) {
+                roots.push(fiber.memoizedProps);
+            }
+            if (fiber && fiber.pendingProps) {
+                roots.push(fiber.pendingProps);
+            }
+        }
+
+        if (roots.length === 0) {
+            return { ok: false, error: 'react internals not found' };
+        }
+
+        const findPartsText = (root) => {
+            const seen = new WeakSet();
+            const queue = [root];
+
+            while (queue.length > 0) {
+                const node = queue.shift();
+                if (node == null) continue;
+                const nodeType = typeof node;
+                if (nodeType !== 'object' && nodeType !== 'function') continue;
+                if (seen.has(node)) continue;
+                seen.add(node);
+
+                if (Array.isArray(node.parts)) {
+                    const direct = node.parts.find(part => typeof part === 'string' && part.length > 0);
+                    if (direct) return direct;
+                }
+
+                if (Array.isArray(node.displayParts)) {
+                    const display = node.displayParts
+                        .map(part => {
+                            if (typeof part === 'string' && part.length > 0) return part;
+                            if (part && typeof part.text === 'string' && part.text.length > 0) return part.text;
+                            return null;
+                        })
+                        .find(Boolean);
+                    if (display) return display;
+                }
+
+                if (Array.isArray(node)) {
+                    for (const child of node) {
+                        queue.push(child);
+                    }
+                    continue;
+                }
+
+                for (const key of Object.keys(node).slice(0, 120)) {
+                    let child = null;
+                    try {
+                        child = node[key];
+                    } catch (_) {
+                        child = null;
+                    }
+                    queue.push(child);
+                }
+            }
+
+            return null;
+        };
+
+        for (const root of roots) {
+            const text = findPartsText(root);
+            if (typeof text === 'string' && text.length > 0) {
+                return { ok: true, text: text, source: 'react-props' };
+            }
+        }
+
+        return { ok: false, error: 'no markdown text in react props' };
+    })()"
+
+    try {
+        (pw eval $js).data.result
+    } catch {
+        {}
+    }
+}
+
+def get-response-inner-text []: nothing -> string {
+    let js = "(() => {
+        const messages = document.querySelectorAll(\"[data-message-author-role='assistant']\");
+        if (messages.length === 0) return '';
+        const last = messages[messages.length - 1];
+        return last.innerText || '';
+    })()"
+    let response = (pw eval $js).data.result
+    if ($response | is-empty) { "" } else { clean-response-text $response }
+}
+
 # Send a message to the Navigator
 export def "pp send" [
     message?: string       # Message to send (or use --file or stdin)
@@ -172,15 +388,21 @@ export def "pp wait" [
 # Get the last response from the Navigator
 export def "pp get-response" []: nothing -> any {
     ensure-project-tab | ignore
-    let js = "(() => {
-        const messages = document.querySelectorAll(\"[data-message-author-role='assistant']\");
-        if (messages.length === 0) return null;
-        const last = messages[messages.length - 1];
-        return last.innerText;
-    })()"
-    let response = (pw eval $js).data.result
+    let from_conversation = (get-response-markdown-via-conversation)
+    let from_react = (if (($from_conversation | get -o ok | default false) == true) {
+        {}
+    } else {
+        get-response-markdown-via-react
+    })
+    let response = if (($from_conversation | get -o ok | default false) == true) {
+        ($from_conversation | get -o text | default "")
+    } else if (($from_react | get -o ok | default false) == true) {
+        ($from_react | get -o text | default "")
+    } else {
+        get-response-inner-text
+    }
     maybe-warn-conversation-length "pp get-response" | ignore
-    if ($response | is-empty) { "" } else { clean-response-text $response }
+    if ($response | is-empty) { "" } else { $response }
 }
 
 # Get conversation history (all driver and navigator messages)
