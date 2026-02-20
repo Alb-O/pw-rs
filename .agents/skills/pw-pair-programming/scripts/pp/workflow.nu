@@ -4,8 +4,8 @@ use ./messaging.nu [ "pp send" "pp wait" ]
 # One-shot helper: compose and send a Navigator brief.
 export def "pp brief" [
     --preamble-file (-p): path    # Prompt preamble file
-    --wait (-w)                   # Wait for Navigator response
-    --timeout (-t): int = 1200000 # Wait timeout in ms when --wait is set
+    --no-wait                     # Return immediately after sending (default behavior is to wait)
+    --timeout (-t): int           # Optional wait timeout in ms when waiting
     --model (-m): string          # Optional model override
     --new (-n)                    # Start new temporary chat before sending
     --force                       # Send even if last message matches
@@ -16,35 +16,39 @@ export def "pp brief" [
     let sent = if $new {
         if ($model | is-not-empty) {
             if $force {
-                $message | pp send --new --model $model --force
+                $message | pp send --new --model $model --force --no-wait
             } else {
-                $message | pp send --new --model $model
+                $message | pp send --new --model $model --no-wait
             }
         } else {
             if $force {
-                $message | pp send --new --force
+                $message | pp send --new --force --no-wait
             } else {
-                $message | pp send --new
+                $message | pp send --new --no-wait
             }
         }
     } else {
         if ($model | is-not-empty) {
             if $force {
-                $message | pp send --model $model --force
+                $message | pp send --model $model --force --no-wait
             } else {
-                $message | pp send --model $model
+                $message | pp send --model $model --no-wait
             }
         } else {
             if $force {
-                $message | pp send --force
+                $message | pp send --force --no-wait
             } else {
-                $message | pp send
+                $message | pp send --no-wait
             }
         }
     }
 
-    if $wait and (($sent.sent? | default false) == true) {
-        pp wait --timeout $timeout
+    if (not $no_wait) and (($sent.sent? | default false) == true) {
+        if ($timeout | is-empty) {
+            pp wait
+        } else {
+            pp wait --timeout $timeout
+        }
     } else {
         $sent
     }

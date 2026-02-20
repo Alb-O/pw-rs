@@ -228,8 +228,8 @@ export def "pp send" [
     --file (-f): path      # Read message from file (avoids shell escaping)
     --force                # Send even if last message matches (bypass dedup)
     --echo-message (-e)    # Include full message text in output
-    --wait (-w)            # Wait for Navigator response after sending
-    --timeout (-t): int = 1200000 # Wait timeout in ms when --wait is set
+    --no-wait              # Return immediately after sending (default behavior is to wait)
+    --timeout (-t): int    # Optional wait timeout in ms when waiting
 ]: [string -> any, nothing -> any] {
     let msg = if ($file | is-not-empty) {
         open --raw $file | into string
@@ -280,8 +280,12 @@ export def "pp send" [
             } else {
                 $dedup
             })
-            if $wait and (($out.sent? | default false) == true) {
-                pp wait --timeout $timeout
+            if (not $no_wait) and (($out.sent? | default false) == true) {
+                if ($timeout | is-empty) {
+                    pp wait
+                } else {
+                    pp wait --timeout $timeout
+                }
             } else {
                 $out
             }
@@ -305,8 +309,12 @@ export def "pp send" [
         } else {
             $blocked
         })
-        if $wait and (($out.sent? | default false) == true) {
-            pp wait --timeout $timeout
+        if (not $no_wait) and (($out.sent? | default false) == true) {
+            if ($timeout | is-empty) {
+                pp wait
+            } else {
+                pp wait --timeout $timeout
+            }
         } else {
             $out
         }
@@ -344,8 +352,12 @@ export def "pp send" [
         $sent
     }
 
-    if $wait and (($out.sent? | default false) == true) {
-        pp wait --timeout $timeout
+    if (not $no_wait) and (($out.sent? | default false) == true) {
+        if ($timeout | is-empty) {
+            pp wait
+        } else {
+            pp wait --timeout $timeout
+        }
     } else {
         $out
     }
@@ -353,16 +365,21 @@ export def "pp send" [
 
 # Wait for Navigator response to complete
 export def "pp wait" [
-    --timeout (-t): int = 1200000  # Timeout in ms (default: 20 minutes for thinking model)
+    --timeout (-t): int  # Optional timeout in ms. Omit to wait indefinitely.
 ]: nothing -> any {
     ensure-project-tab | ignore
     let start = (date now)
     let initial_count = (message-count)
-    let timeout_dur = ($timeout | into duration --unit ms)
+    let has_timeout = ($timeout | is-not-empty)
+    let timeout_dur = if $has_timeout {
+        $timeout | into duration --unit ms
+    } else {
+        null
+    }
 
     mut started = false
     for _ in 1..300 {
-        if ((date now) - $start) > $timeout_dur { break }
+        if $has_timeout and (((date now) - $start) > $timeout_dur) { break }
         if (is-generating) or ((message-count) > $initial_count) {
             $started = true
             break
@@ -371,11 +388,15 @@ export def "pp wait" [
     }
 
     if not $started {
-        error make { msg: "streaming never started" }
+        if $has_timeout and (((date now) - $start) > $timeout_dur) {
+            error make { msg: "streaming timeout" }
+        } else {
+            error make { msg: "streaming never started" }
+        }
     }
 
     loop {
-        if ((date now) - $start) > $timeout_dur {
+        if $has_timeout and (((date now) - $start) > $timeout_dur) {
             error make { msg: "streaming timeout" }
         }
         if not (is-generating) {

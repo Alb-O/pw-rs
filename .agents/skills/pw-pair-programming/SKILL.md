@@ -16,14 +16,16 @@ setup: requires cdp connection to a debug-enabled browser with an active navigat
 
 from a global skills directory (most basic usage):
 
-`nu -I ~/.claude/skills/pw-pair-programming/scripts -c 'use pp.nu *; pp send "Hello" --wait'`
+`nu -I ~/.claude/skills/pw-pair-programming/scripts -c 'use pp.nu *; pp send "Hello"'`
 
 ## quickstart
 
 1. write a prompt preamble to a temp file
 2. run from your project root when using relative paths
 3. use a nu list + splat for entries, and keep the `nu -c` body in single quotes so bash does not consume `$entries`
-4. wait before the next send (`--wait` on `pp brief`/`pp send`, or run `pp wait`)
+4. `pp send`/`pp brief` wait for navigator response to finish by default
+	* be patient; set your bash tool timeout extremely high (2+ hours if possible), and let navigator take its time
+	* use `--no-wait` only for fire-and-continue flows (not recommended for regular use).
 
 example:
 
@@ -34,15 +36,15 @@ let entries = [
   "crates/worker/src/lib.rs"
   "crates/worker/src/supervisor.rs"
 ]
-pp brief --preamble-file /tmp/preamble.md ...$entries --wait --timeout 900000
+pp brief --preamble-file /tmp/preamble.md ...$entries
 '
 ```
 
 ## commands
 
-`pp send` send one message (`--file` accepts one file path; for many files use `pp brief` or `pp attach`)
+`pp send` send one message and wait for response by default (`--file` accepts *one* file path)
 `pp compose` build message from preamble + context entries
-`pp brief` compose + send (`--wait` for 10+ minutes to avoid timeouts)
+`pp brief` compose + send and wait for response by default
 `pp attach` attach files/text/images (binary-safe; infers common MIME types; add `--send` to submit)
 `pp paste` paste inline text
 `pp new` start fresh conversation
@@ -64,8 +66,7 @@ pp brief --preamble-file /tmp/preamble.md ...$entries --wait --timeout 900000
 * write preamble content to files instead of inline shell.
 * when running inside `nu -c`, use single quotes around the script and prefer list + splat (`...$entries`) instead of bash-style line continuations.
 * entries like `path:10-40`, can pass them directly as shorthand slices.
-* `pp send` and `pp brief` (without `--wait`) return compact send metadata by default; use `pp send --echo-message` only when you need the full text echoed back.
-* always set a long timeout on your bash command when `--wait`ing (10+ minutes) - navigator needs to think and prep
+* the outer agent bash terminal tool may have its own timeout, hitting it means the flow will break, so set it very high (e.g. 2+ hours) when running pp.
 * ask about good commit breakpoints, committing progress is encouraged, but no upstream PRs/pushes
 * always show your actual working files (entries), be honest and transparent, don't just summarize and pretend all is perfect
 * if getting stuck, complexity rising, tests failing for unclear reason, SHOW TO NAVIGATOR AND GET ADVICE
