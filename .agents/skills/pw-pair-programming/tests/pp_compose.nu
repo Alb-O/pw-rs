@@ -37,6 +37,7 @@ def "test compose supports shorthand range entries" [] {
     let f = (fixture)
     let out = (pp compose --preamble-file $f.prompt $"($f.code):2-3")
     let out_multi = (pp compose --preamble-file $f.prompt $"($f.code):1-1,4-4")
+    let out_clamped = (pp compose --preamble-file $f.prompt $"($f.code):3-99")
 
     assert equal true ($out | str contains $"[FILE: ($f.code) | lines 2-3]")
     assert equal true ($out | str contains "line2\nline3")
@@ -44,6 +45,8 @@ def "test compose supports shorthand range entries" [] {
     assert equal true ($out_multi | str contains $"[FILE: ($f.code) | line 4]")
     assert equal true ($out_multi | str contains "line1")
     assert equal true ($out_multi | str contains "line4")
+    assert equal true ($out_clamped | str contains $"[FILE: ($f.code) | lines 3-4]")
+    assert equal true ($out_clamped | str contains "line3\nline4")
 }
 
 def "test compose rejects invalid slice range" [] {
@@ -59,17 +62,26 @@ def "test compose rejects invalid slice range" [] {
     assert equal true ($result.msg | str contains "Slice end must be >= start")
 }
 
-def "test compose rejects out of bounds slice end" [] {
+def "test compose clamps out of bounds slice end" [] {
+    let f = (fixture)
+    let out = (pp compose --preamble-file $f.prompt $"slice:($f.code):2:99")
+
+    assert equal true ($out | str contains $"[FILE: ($f.code) | lines 2-4]")
+    assert equal true ($out | str contains "line2\nline3\nline4")
+}
+
+def "test compose rejects out of bounds slice start" [] {
     let f = (fixture)
     let result = (try {
-        pp compose --preamble-file $f.prompt $"slice:($f.code):2:99"
+        pp compose --preamble-file $f.prompt $"slice:($f.code):99:99"
         { ok: true }
     } catch {|e|
         { ok: false, msg: $e.msg }
     })
 
     assert equal false $result.ok
-    assert equal true ($result.msg | str contains "Slice end 99 exceeds file length")
+    assert equal true ($result.msg | str contains "Slice start")
+    assert equal true ($result.msg | str contains "exceeds file length")
 }
 
 def "test compose rejects directory entry with clear message" [] {
@@ -106,7 +118,8 @@ def main [] {
         (run-test "test compose supports slice entries" { test compose supports slice entries })
         (run-test "test compose supports shorthand range entries" { test compose supports shorthand range entries })
         (run-test "test compose rejects invalid slice range" { test compose rejects invalid slice range })
-        (run-test "test compose rejects out of bounds slice end" { test compose rejects out of bounds slice end })
+        (run-test "test compose clamps out of bounds slice end" { test compose clamps out of bounds slice end })
+        (run-test "test compose rejects out of bounds slice start" { test compose rejects out of bounds slice start })
         (run-test "test compose rejects directory entry with clear message" { test compose rejects directory entry with clear message })
     ]
 

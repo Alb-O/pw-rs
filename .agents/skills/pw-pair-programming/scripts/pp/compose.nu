@@ -70,7 +70,8 @@ def parse-range-shorthand-entry [entry: string]: nothing -> any {
 }
 
 # Read a 1-indexed line range from a file.
-def read-slice [file_path: path, start: int, end: int]: nothing -> string {
+# Returns the snippet text and effective end after clamping to file length.
+def read-slice [file_path: path, start: int, end: int]: nothing -> record {
     let lines = (open --raw $file_path | lines)
     let line_count = ($lines | length)
 
@@ -82,13 +83,13 @@ def read-slice [file_path: path, start: int, end: int]: nothing -> string {
             msg: $"Slice start ($start) exceeds file length ($line_count): ($file_path)"
         }
     }
-    if $end > $line_count {
-        error make {
-            msg: $"Slice end ($end) exceeds file length ($line_count): ($file_path)"
-        }
-    }
 
-    $lines | slice (($start - 1)..($end - 1)) | str join "\n"
+    let effective_end = if $end > $line_count { $line_count } else { $end }
+    {
+        start: $start
+        end: $effective_end
+        text: ($lines | slice (($start - 1)..($effective_end - 1)) | str join "\n")
+    }
 }
 
 def ensure-file-path [file_path: path, entry_text: string, context: string]: nothing -> nothing {
@@ -146,11 +147,12 @@ export def "pp compose" [
             }
             ensure-file-path $file_path $parsed.path_text "Slice file"
 
-            let snippet = (read-slice $file_path $parsed.start $parsed.end)
+            let slice = (read-slice $file_path $parsed.start $parsed.end)
+            let snippet = $slice.text
             let header = if ($parsed.label | is-empty) {
-                $"[FILE: ($parsed.path_text) | lines ($parsed.start)-($parsed.end)]"
+                $"[FILE: ($parsed.path_text) | lines ($slice.start)-($slice.end)]"
             } else {
-                $"[FILE: ($parsed.path_text) | lines ($parsed.start)-($parsed.end) | ($parsed.label)]"
+                $"[FILE: ($parsed.path_text) | lines ($slice.start)-($slice.end) | ($parsed.label)]"
             }
             $parts = ($parts | append $"\n\n($header)\n($snippet)")
         } else {
@@ -179,11 +181,12 @@ export def "pp compose" [
                 ensure-file-path $shorthand_path $shorthand.path_text "Range entry file"
 
                 for range in $shorthand.ranges {
-                    let snippet = (read-slice $shorthand_path $range.start $range.end)
-                    let header = if $range.start == $range.end {
-                        $"[FILE: ($shorthand.path_text) | line ($range.start)]"
+                    let slice = (read-slice $shorthand_path $range.start $range.end)
+                    let snippet = $slice.text
+                    let header = if $slice.start == $slice.end {
+                        $"[FILE: ($shorthand.path_text) | line ($slice.start)]"
                     } else {
-                        $"[FILE: ($shorthand.path_text) | lines ($range.start)-($range.end)]"
+                        $"[FILE: ($shorthand.path_text) | lines ($slice.start)-($slice.end)]"
                     }
                     $parts = ($parts | append $"\n\n($header)\n($snippet)")
                 }
