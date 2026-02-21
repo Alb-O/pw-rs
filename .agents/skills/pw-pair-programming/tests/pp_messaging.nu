@@ -16,36 +16,23 @@ def open_page [html: string] {
 }
 
 def "test get-response falls back to cleaned rendered text" [] {
-    open_page "<div id='prompt-textarea' contenteditable='true'></div><div id='msg' data-message-author-role='assistant'></div>"
-    pw eval "(() => {
-        const msg = document.querySelector('#msg');
-        msg.innerText = 'line1\\n\\nline2';
-        return true;
-    })()" | ignore
+    let profile = $"pp-messaging-fallback-((random int 100000..999999))"
+    with-env { PW_PROFILE: $profile } {
+        open_page "<div id='prompt-textarea' contenteditable='true'></div><div id='msg' data-message-author-role='assistant'></div><script>const msg=document.querySelector('#msg');msg.innerText='line1\\n\\nline2';</script>"
 
-    let out = (pp get-response)
-    assert equal "line1\nline2" $out
+        let out = (pp get-response)
+        assert equal "line1\nline2" $out
+    }
 }
 
 def "test get-response preserves markdown via react fallback" [] {
-    open_page "<div id='prompt-textarea' contenteditable='true'></div><div id='msg' data-message-author-role='assistant'></div>"
-    pw eval "(() => {
-        const msg = document.querySelector('#msg');
-        msg.innerText = 'rendered heading\\nrendered bullet';
-        msg.__reactPropsFake = {
-            children: [
-                {
-                    props: {
-                        parts: ['## Heading\\n\\n- **ALPHA** item\\n- `code` sample']
-                    }
-                }
-            ]
-        };
-        return true;
-    })()" | ignore
+    let profile = $"pp-messaging-react-((random int 100000..999999))"
+    with-env { PW_PROFILE: $profile } {
+        open_page "<div id='prompt-textarea' contenteditable='true'></div><div id='msg' data-message-author-role='assistant'></div><script>const msg=document.querySelector('#msg');msg.innerText='rendered heading\\nrendered bullet';msg.__reactPropsFake={children:[{props:{parts:['## Heading\\n\\n- **ALPHA** item\\n- `code` sample']}}]};</script>"
 
-    let out = (pp get-response)
-    assert equal "## Heading\n\n- **ALPHA** item\n- `code` sample" $out
+        let out = (pp get-response)
+        assert equal "## Heading\n\n- **ALPHA** item\n- `code` sample" $out
+    }
 }
 
 def main [] {
